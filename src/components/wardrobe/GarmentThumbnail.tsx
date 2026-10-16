@@ -12,6 +12,8 @@ interface GarmentThumbnailProps {
   size: number
   /** Hang the garment from a hanger hook, like a shop product shot. */
   hanger?: boolean
+  /** Fill the container's width; `size` then only sets the drawing resolution. */
+  fluid?: boolean
   className?: string
 }
 
@@ -19,7 +21,13 @@ interface GarmentThumbnailProps {
 const HANGER_HOOK =
   'M50 22 V12.5 C50 10 52.6 9 52.6 6.6 C52.6 4.6 51.4 3.3 49.6 3.3 C47.9 3.3 46.8 4.5 46.8 6'
 
-export function GarmentThumbnail({ garment, size, hanger = false, className }: GarmentThumbnailProps) {
+export function GarmentThumbnail({
+  garment,
+  size,
+  hanger = false,
+  fluid = false,
+  className,
+}: GarmentThumbnailProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -92,7 +100,7 @@ export function GarmentThumbnail({ garment, size, hanger = false, className }: G
       ref={canvasRef}
       aria-hidden="true"
       className={className}
-      style={{ width: size, height: size }}
+      style={fluid ? { width: '100%', aspectRatio: '1 / 1' } : { width: size, height: size }}
     />
   )
 }
