@@ -30,6 +30,9 @@ export interface Notice {
   message: string
 }
 
+/** How fitting a photo onto the mannequin is going. */
+export type FittingStatus = 'loading' | 'failed'
+
 let noticeCount = 0
 
 /** Adds records read from the device after any made during this visit, skipping ones already there. */
@@ -48,6 +51,8 @@ interface WardrobeState {
   outfits: Outfit[]
   storage: StorageStatus
   notice: Notice | null
+  /** Photo garments still being fitted onto the mannequin, or that couldn't be, by id. */
+  fitting: Record<string, FittingStatus>
   setBodyPreset: (preset: BodyPreset) => void
   toggleGarment: (garment: Pick<Garment, 'id' | 'category'>) => void
   /** Puts garments on without toggling, e.g. when opening a suggested look. */
@@ -74,6 +79,8 @@ interface WardrobeState {
   showNotice: (kind: Notice['kind'], message: string) => void
   /** Clears the notice, unless a newer one has replaced it. */
   dismissNotice: (id: number) => void
+  /** Records how fitting a garment is going; null once it's on, or off the mannequin. */
+  setFitting: (id: string, status: FittingStatus | null) => void
 }
 
 /**
@@ -89,6 +96,7 @@ export const useWardrobeStore = create<WardrobeState>()((set) => ({
   outfits: [],
   storage: 'idle',
   notice: null,
+  fitting: {},
   setBodyPreset: (bodyPreset) => set({ bodyPreset }),
   toggleGarment: (garment) =>
     set((state) => ({ selection: toggleInSelection(state.selection, garment) })),
@@ -120,4 +128,14 @@ export const useWardrobeStore = create<WardrobeState>()((set) => ({
   restoreOutfits: (outfits) => set((state) => ({ outfits: mergeRestored(state.outfits, outfits) })),
   showNotice: (kind, message) => set({ notice: { id: ++noticeCount, kind, message } }),
   dismissNotice: (id) => set((state) => (state.notice?.id === id ? { notice: null } : {})),
+  setFitting: (id, status) =>
+    set((state) => {
+      if (status === null) {
+        if (!(id in state.fitting)) return {}
+        const fitting = { ...state.fitting }
+        delete fitting[id]
+        return { fitting }
+      }
+      return state.fitting[id] === status ? {} : { fitting: { ...state.fitting, [id]: status } }
+    }),
 }))

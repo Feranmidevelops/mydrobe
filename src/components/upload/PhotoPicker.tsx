@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type DragEvent } from 'react'
 import { PhotoIcon } from '../ui/icons'
+import { Spinner } from '../ui/Spinner'
 
 /** The photo contract from the Milestone 2 trial: photos like this map onto the mannequin well. */
 const PHOTO_RULES = [
@@ -79,7 +80,7 @@ export function PhotoPicker({ onPhoto, busy, error, autoFocus = false }: PhotoPi
       >
         {busy ? (
           <p role="status" className="flex flex-col items-center gap-3 text-sm text-muted">
-            <span className="size-8 animate-spin rounded-full border-2 border-line border-t-ink motion-reduce:animate-none" />
+            <Spinner />
             Checking your photo…
           </p>
         ) : (

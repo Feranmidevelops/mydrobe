@@ -18,6 +18,7 @@ import {
 } from '../../features/garments/upload-review'
 import { StorageError } from '../../features/storage/storage-error'
 import { loadPhotoPixels } from '../../lib/image-processing'
+import { Spinner } from '../ui/Spinner'
 import { SeparationPreview } from './SeparationPreview'
 
 /** How long the slider must rest before the photo is analysed again. */
@@ -190,7 +191,7 @@ export function GarmentReview({ photo, onChooseAnother, onAdd }: GarmentReviewPr
                   role="status"
                   className="absolute inset-x-0 bottom-3 mx-auto flex w-max items-center gap-2 rounded-full bg-surface/90 px-3 py-1.5 text-xs text-ink-soft shadow-sm ring-1 ring-line"
                 >
-                  <span className="size-3.5 animate-spin rounded-full border-2 border-line border-t-ink motion-reduce:animate-none" />
+                  <Spinner className="size-3.5" />
                   Finding the garment…
                 </span>
               )}

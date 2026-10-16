@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from 'react'
 import { supportsWebGL } from '../../features/mannequin/webgl'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
+import { Spinner } from '../ui/Spinner'
 
 // Three.js is the heaviest part of the app, so it loads after the shell.
 const FittingRoom = lazy(() => import('../../features/mannequin/FittingRoom'))
@@ -20,7 +21,7 @@ function ViewerLoading() {
   return (
     <div role="status" className="grid h-full place-items-center">
       <div className="flex flex-col items-center gap-3 text-muted">
-        <span className="size-8 animate-spin rounded-full border-2 border-line border-t-ink" />
+        <Spinner />
         <span className="text-sm">Setting up the fitting room…</span>
       </div>
     </div>

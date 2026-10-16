@@ -28,6 +28,18 @@
   --color-accent: var(--color-tan);
   --color-warn: #7a4f0e;
   --color-warn-soft: #f9eed6;
+
+  /* Fades in after a beat, so things that finish quickly never flash up. */
+  --animate-appear: appear 200ms ease-out 400ms both;
+
+  @keyframes appear {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 }
 
 /*
