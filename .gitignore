@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
+
+# Personal garment photos for the photo-mapping trial stay on this machine
+trial-photos/
