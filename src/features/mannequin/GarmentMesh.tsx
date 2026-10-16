@@ -6,6 +6,8 @@ import type { BodyShape } from './body-shape'
 import { buildGarmentGeometry } from './geometry/garment-geometry'
 import { createDemoGarmentTextures } from './garment-textures'
 
+const PHOTO_PLACEHOLDER_COLOR = '#cdbfb1'
+
 interface GarmentMeshProps {
   garment: Garment
   templateId: GarmentTemplateId
@@ -15,9 +17,13 @@ interface GarmentMeshProps {
 /** A garment template fitted to the current body preset and dressed in the garment's fabric. */
 export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
   const geometry = useMemo(() => buildGarmentGeometry(templateId, shape), [templateId, shape])
+  const { source } = garment
   const textures = useMemo(
-    () => createDemoGarmentTextures(garment, templateId, geometry.panel, shape),
-    [garment, templateId, geometry.panel, shape],
+    () =>
+      source.kind === 'demo'
+        ? createDemoGarmentTextures(source.fabric, templateId, geometry.panel, shape)
+        : null,
+    [source, templateId, geometry.panel, shape],
   )
 
   useEffect(
@@ -35,8 +41,12 @@ export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
     [textures],
   )
 
-  // Without a 2D canvas there are no textures; fall back to the fabric's base colour.
-  const fallbackColor = textures ? undefined : fabricBaseColor(garment.source.fabric)
+  // Until textures exist (no 2D canvas, or a photo still loading), show a flat colour.
+  const fallbackColor = textures
+    ? undefined
+    : source.kind === 'demo'
+      ? fabricBaseColor(source.fabric)
+      : PHOTO_PLACEHOLDER_COLOR
 
   return (
     <group>

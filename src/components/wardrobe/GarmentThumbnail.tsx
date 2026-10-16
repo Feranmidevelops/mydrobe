@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Garment } from '../../features/garments/garment.types'
-import { drawFlatLay } from './flat-lay'
+import { drawFlatLay, drawPhotoThumbnail } from './flat-lay'
 
 interface GarmentThumbnailProps {
   garment: Garment
@@ -30,7 +30,27 @@ export function GarmentThumbnail({
     const pixels = Math.round(size * Math.min(window.devicePixelRatio || 1, 2))
     canvas.width = pixels
     canvas.height = pixels
-    drawFlatLay(ctx, garment, garment.source.fabric, pixels, { hanger })
+
+    const { source } = garment
+    if (source.kind === 'demo') {
+      drawFlatLay(ctx, garment, source.fabric, pixels, { hanger })
+      return
+    }
+
+    let cancelled = false
+    const image = new Image()
+    image.src = source.url
+    image
+      .decode()
+      .then(() => {
+        if (!cancelled) drawPhotoThumbnail(ctx, image, pixels)
+      })
+      .catch(() => {
+        // A photo that fails to load leaves the thumbnail blank.
+      })
+    return () => {
+      cancelled = true
+    }
   }, [garment, size, hanger])
 
   return (

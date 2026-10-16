@@ -33,10 +33,12 @@ export type FabricPattern =
   | { kind: 'twill'; color: string }
 
 /**
- * Where a garment's imagery comes from. Built-in demo garments draw a fabric
- * pattern; uploaded photos will add an `upload` variant backed by IndexedDB.
+ * Where a garment's imagery comes from: a procedurally drawn demo fabric, or
+ * a front-facing photo. Uploads will point `url` at an image kept in IndexedDB.
  */
-export type GarmentSource = { kind: 'demo'; fabric: FabricPattern }
+export type GarmentSource =
+  | { kind: 'demo'; fabric: FabricPattern }
+  | { kind: 'photo'; url: string }
 
 export interface Garment {
   id: string

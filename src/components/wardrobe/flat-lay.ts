@@ -9,6 +9,17 @@ const MM_PER_UNIT = 6
 const HANGER_HOOK =
   'M50 22 V12.5 C50 10 52.6 9 52.6 6.6 C52.6 4.6 51.4 3.3 49.6 3.3 C47.9 3.3 46.8 4.5 46.8 6'
 
+/** Draws a garment photo centred in a square canvas of `pixels` × `pixels`, with a little padding. */
+export function drawPhotoThumbnail(ctx: CanvasRenderingContext2D, image: HTMLImageElement, pixels: number) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, pixels, pixels)
+  const box = pixels * 0.88
+  const scale = Math.min(box / image.naturalWidth, box / image.naturalHeight)
+  const width = image.naturalWidth * scale
+  const height = image.naturalHeight * scale
+  ctx.drawImage(image, (pixels - width) / 2, (pixels - height) / 2, width, height)
+}
+
 /**
  * Draws a demo garment as a flat-lay product shot filling a square canvas of
  * `pixels` × `pixels`, optionally hanging from a hanger hook.
