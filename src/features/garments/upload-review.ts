@@ -1,5 +1,5 @@
 import type { GarmentCategory, GarmentTemplateId } from './garment.types'
-import { DEFAULT_BACKGROUND_TOLERANCE, type Rect, type RgbaImage } from './photo-mapping'
+import { DEFAULT_BACKGROUND_TOLERANCE, type Rect, type Rgb, type RgbaImage } from './photo-mapping'
 
 export type Sleeves = 'long' | 'short'
 
@@ -49,4 +49,22 @@ export function reviewWarnings(
     )
   }
   return warnings
+}
+
+/**
+ * A copy of the photo with everything that isn't garment faded towards
+ * `tint`, so the cut-out stands out. Transparent background takes the tint.
+ */
+export function fadeBackground(image: RgbaImage, mask: Uint8Array, tint: Rgb, strength = 0.75): RgbaImage {
+  const data = new Uint8ClampedArray(image.data)
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i]) continue
+    const offset = i * 4
+    const fade = data[offset + 3] < 128 ? 1 : strength
+    for (let channel = 0; channel < 3; channel++) {
+      data[offset + channel] += (tint[channel] - data[offset + channel]) * fade
+    }
+    data[offset + 3] = 255
+  }
+  return { data, width: image.width, height: image.height }
 }

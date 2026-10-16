@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analysisTemplateFor, reviewWarnings, templateFor } from './upload-review'
+import { analysisTemplateFor, fadeBackground, reviewWarnings, templateFor } from './upload-review'
 
 describe('templateFor', () => {
   it('matches shirts and trousers to their 3D templates', () => {
@@ -48,5 +48,23 @@ describe('reviewWarnings', () => {
       expect.stringMatching(/background may show/),
     ])
     expect(reviewWarnings({ image, bounds: centred, coverage: 0.6 }, null)).toEqual([])
+  })
+})
+
+describe('fadeBackground', () => {
+  it('fades the background towards the tint and leaves the garment alone', () => {
+    const image = {
+      data: new Uint8ClampedArray([
+        200, 40, 40, 255, // garment
+        0, 0, 0, 255, // background
+        10, 20, 30, 0, // transparent background
+      ]),
+      width: 3,
+      height: 1,
+    }
+    const faded = fadeBackground(image, new Uint8Array([1, 0, 0]), [240, 240, 240], 0.75)
+
+    expect([...faded.data]).toEqual([200, 40, 40, 255, 180, 180, 180, 255, 240, 240, 240, 255])
+    expect(image.data[4]).toBe(0)
   })
 })
