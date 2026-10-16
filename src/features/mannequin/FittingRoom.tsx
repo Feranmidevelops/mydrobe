@@ -1,10 +1,13 @@
 import { ContactShadows, Environment, Lightformer } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { useMemo } from 'react'
+import { useWardrobeGarments } from '../../hooks/useWardrobeGarments'
 import { useWardrobeStore } from '../../store/wardrobe.store'
+import { resolveSelection } from '../outfits/outfit.selection'
 import { createBodyShape } from './body-shape'
 import { CameraRig } from './CameraRig'
 import { CAMERA_FOV } from './camera-views'
+import { GarmentMesh } from './GarmentMesh'
 import { Mannequin } from './Mannequin'
 
 /** Soft studio light baked into a small environment map; no HDR download needed. */
@@ -34,7 +37,12 @@ function Plinth() {
 
 export default function FittingRoom() {
   const preset = useWardrobeStore((state) => state.bodyPreset)
+  const selection = useWardrobeStore((state) => state.selection)
+  const garments = useWardrobeGarments()
   const shape = useMemo(() => createBodyShape(preset), [preset])
+  const worn = resolveSelection(selection, garments).flatMap(({ garment, renderability }) =>
+    renderability.renderable ? [{ garment, templateId: renderability.template.id }] : [],
+  )
 
   return (
     <Canvas
@@ -47,10 +55,13 @@ export default function FittingRoom() {
       <StudioLighting />
       <group scale={shape.scale}>
         <Mannequin shape={shape} />
+        {worn.map(({ garment, templateId }) => (
+          <GarmentMesh key={garment.id} garment={garment} templateId={templateId} shape={shape} />
+        ))}
       </group>
       <Plinth />
       <ContactShadows
-        key={preset}
+        key={[preset, ...worn.map(({ garment }) => garment.id)].join()}
         frames={1}
         position={[0, 0.001, 0]}
         scale={1.6}
