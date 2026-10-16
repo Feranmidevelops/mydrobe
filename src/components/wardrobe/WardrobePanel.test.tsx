@@ -130,6 +130,17 @@ describe('WardrobePanel', () => {
     expect(useWardrobeStore.getState().selection).toEqual({})
   })
 
+  it('moves focus to Add clothes once a piece is removed, rather than losing it', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    useWardrobeStore.getState().addUpload(navyShirt)
+    render(<WardrobePanel garments={[navyShirt, ...DEMO_GARMENTS]} onAddClothes={() => {}} />)
+
+    await user.click(screen.getByRole('button', { name: 'Remove Navy shirt from your wardrobe' }))
+
+    await waitFor(() => expect(card(/add clothes/i, 'Your clothes')).toHaveFocus())
+  })
+
   it('keeps the piece when removing is cancelled', async () => {
     const user = userEvent.setup()
     vi.spyOn(window, 'confirm').mockReturnValue(false)
