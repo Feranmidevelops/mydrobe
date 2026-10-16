@@ -1,4 +1,6 @@
 import '@testing-library/jest-dom/vitest'
+// An in-memory IndexedDB, so saving to the device is tested for real.
+import 'fake-indexeddb/auto'
 import { cleanup } from '@testing-library/react'
 import { afterEach, vi } from 'vitest'
 
