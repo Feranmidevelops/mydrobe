@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from 'react'
-import { isUpload } from '../../features/garments/garment.service'
+import { isUpload, removeUploadedGarment } from '../../features/garments/garment.service'
 import {
   GARMENT_CATEGORIES,
   GARMENT_CATEGORY_LABELS,
@@ -18,6 +18,12 @@ interface WardrobePanelProps {
   garments: Garment[]
   /** Opens the upload dialog; without it the panel has no way to add clothes. */
   onAddClothes?: () => void
+}
+
+function confirmAndRemove(garment: Garment) {
+  if (window.confirm(`Remove ${garment.name} from your wardrobe? You'd need to upload the photo again.`)) {
+    removeUploadedGarment(garment)
+  }
 }
 
 function Shelf({ title, children }: { title: string; children: ReactNode }) {
@@ -62,6 +68,7 @@ export function WardrobePanel({ garments, onAddClothes }: WardrobePanelProps) {
         garment={garment}
         selected={isSelected(selection, garment)}
         onToggle={toggleGarment}
+        onRemove={isUpload(garment) ? confirmAndRemove : undefined}
       />
     </li>
   )

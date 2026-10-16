@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEMO_GARMENTS } from '../../features/garments/demo-garments'
 import type { Garment } from '../../features/garments/garment.types'
 import { useWardrobeStore } from '../../store/wardrobe.store'
@@ -30,6 +30,10 @@ function card(name: RegExp, from: 'Your clothes' | 'Demo pieces' = 'Demo pieces'
 describe('WardrobePanel', () => {
   beforeEach(() => {
     useWardrobeStore.setState(initialState, true)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('prompts for a selection when nothing is worn', () => {
@@ -86,7 +90,7 @@ describe('WardrobePanel', () => {
     render(<WardrobePanel garments={[navyShirt, ...DEMO_GARMENTS]} />)
 
     expect(shelf('Your clothes').getAllByRole('listitem')).toHaveLength(1)
-    expect(card(/navy shirt/i, 'Your clothes')).toBeInTheDocument()
+    expect(card(/^navy shirt/i, 'Your clothes')).toBeInTheDocument()
     expect(shelf('Demo pieces').getAllByRole('listitem')).toHaveLength(8)
     expect(screen.getByText('9 items')).toBeInTheDocument()
   })
@@ -107,8 +111,38 @@ describe('WardrobePanel', () => {
 
     await user.click(screen.getByRole('button', { name: 'Trousers' }))
 
-    expect(shelf('Your clothes').queryByRole('button', { name: /navy shirt/i })).not.toBeInTheDocument()
+    expect(shelf('Your clothes').queryByRole('button', { name: /^navy shirt/i })).not.toBeInTheDocument()
     expect(card(/add clothes/i, 'Your clothes')).toBeInTheDocument()
+  })
+
+  it('removes one of your own clothes after checking, taking it off the mannequin', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    useWardrobeStore.getState().addUpload(navyShirt)
+    useWardrobeStore.getState().wear([navyShirt])
+    render(<WardrobePanel garments={[navyShirt, ...DEMO_GARMENTS]} />)
+
+    await user.click(screen.getByRole('button', { name: 'Remove Navy shirt from your wardrobe' }))
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Remove Navy shirt from your wardrobe?'))
+    expect(useWardrobeStore.getState().uploads).toEqual([])
+    expect(useWardrobeStore.getState().selection).toEqual({})
+  })
+
+  it('keeps the piece when removing is cancelled', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    useWardrobeStore.getState().addUpload(navyShirt)
+    render(<WardrobePanel garments={[navyShirt, ...DEMO_GARMENTS]} />)
+
+    await user.click(screen.getByRole('button', { name: 'Remove Navy shirt from your wardrobe' }))
+
+    expect(useWardrobeStore.getState().uploads).toEqual([navyShirt])
+  })
+
+  it('never offers to remove a demo piece', () => {
+    render(<WardrobePanel garments={DEMO_GARMENTS} />)
+    expect(shelf('Demo pieces').queryAllByRole('button', { name: /remove/i })).toHaveLength(0)
   })
 
   it('goes back to everything when the filtered category runs out', async () => {
