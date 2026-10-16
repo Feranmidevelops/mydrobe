@@ -208,7 +208,7 @@ export function garmentMask(
 
   const mask = new Uint8Array(total)
   for (let i = 0; i < total; i++) mask[i] = isBackground[i] ? 0 : 1
-  return largestComponent(mask, width, height)
+  return largestComponent(tidyMask(mask, width, height), width, height)
 }
 
 /**
@@ -241,10 +241,23 @@ export function maskBounds(mask: Uint8Array, width: number, height: number): Rec
  * shown, and get filled like the rest of the background.
  */
 export function erodeMask(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  return morph(mask, width, height, radius, 'erode')
+}
+
+/** Grows the garment region by `radius` pixels on every side. */
+export function dilateMask(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  return morph(mask, width, height, radius, 'dilate')
+}
+
+/**
+ * Square erosion or dilation, done as two quick passes (rows, then columns).
+ * Outside the image counts as background either way.
+ */
+function morph(mask: Uint8Array, width: number, height: number, radius: number, mode: 'erode' | 'dilate') {
   if (radius <= 0) return mask.slice()
   const span = radius * 2 + 1
 
-  // A pixel survives a pass if every pixel within `radius` along that axis is garment.
+  // Erosion keeps a pixel only if its whole window is garment; dilation if any of it is.
   function pass(source: Uint8Array, length: number, lines: number, index: (line: number, i: number) => number) {
     const result = new Uint8Array(source.length)
     const ones = new Int32Array(length + 1)
@@ -252,7 +265,7 @@ export function erodeMask(mask: Uint8Array, width: number, height: number, radiu
       for (let i = 0; i < length; i++) ones[i + 1] = ones[i] + source[index(line, i)]
       for (let i = 0; i < length; i++) {
         const inside = ones[Math.min(i + radius + 1, length)] - ones[Math.max(i - radius, 0)]
-        if (inside === span) result[index(line, i)] = 1
+        if (mode === 'erode' ? inside === span : inside > 0) result[index(line, i)] = 1
       }
     }
     return result
@@ -260,6 +273,18 @@ export function erodeMask(mask: Uint8Array, width: number, height: number, radiu
 
   const rows = pass(mask, width, height, (y, x) => y * width + x)
   return pass(rows, height, width, (x, y) => y * width + x)
+}
+
+/**
+ * Tidies a raw garment mask: an opening removes thin attachments such as a
+ * hanger hook or rail, and a closing fills notches along the edge, such as
+ * dark checks that merged into a dark backdrop.
+ */
+export function tidyMask(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const thin = Math.max(1, Math.round(Math.min(width, height) * 0.008))
+  const gap = Math.max(1, Math.round(Math.max(width, height) * 0.025))
+  const opened = dilateMask(erodeMask(mask, width, height, thin), width, height, thin)
+  return erodeMask(dilateMask(opened, width, height, gap), width, height, gap)
 }
 
 /** The unbroken run of garment pixels on a row that contains, or is nearest to, `centre`. */
@@ -279,12 +304,26 @@ function runNear(mask: Uint8Array, width: number, row: number, centre: number) {
   return { left, right }
 }
 
+/** The garment's balance point across the photo, which a stray rail or strap can't drag far. */
+function massCentreX(mask: Uint8Array, width: number, bounds: Rect) {
+  let sum = 0
+  let count = 0
+  for (let y = bounds.y; y < bounds.y + bounds.height; y++) {
+    for (let x = bounds.x; x < bounds.x + bounds.width; x++) {
+      if (!mask[y * width + x]) continue
+      sum += x
+      count++
+    }
+  }
+  return count > 0 ? sum / count : bounds.x + bounds.width / 2
+}
+
 /**
  * The body of a top, without its sleeves: as wide as the hem, which sleeves
  * never reach, and as tall as the whole garment.
  */
 export function torsoRect(mask: Uint8Array, width: number, bounds: Rect): Rect {
-  const centre = bounds.x + bounds.width / 2
+  const centre = massCentreX(mask, width, bounds)
   const runs = [0.86, 0.9, 0.94].flatMap((fraction) => {
     const row = Math.round(bounds.y + fraction * (bounds.height - 1))
     const run = runNear(mask, width, row, centre)

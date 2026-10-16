@@ -11,6 +11,7 @@ import {
   largestComponent,
   maskBounds,
   swatchRect,
+  tidyMask,
   torsoRect,
   type Rect,
   type RgbaImage,
@@ -53,8 +54,8 @@ function shirtPhoto() {
 function trousersPhoto() {
   const image = blank(100, 100)
   paint(image, { x: 30, y: 10, width: 40, height: 15 }, NAVY)
-  paint(image, { x: 30, y: 25, width: 17, height: 65 }, NAVY)
-  paint(image, { x: 53, y: 25, width: 17, height: 65 }, NAVY)
+  paint(image, { x: 30, y: 25, width: 15, height: 65 }, NAVY)
+  paint(image, { x: 55, y: 25, width: 15, height: 65 }, NAVY)
   return image
 }
 
@@ -155,6 +156,24 @@ describe('largestComponent', () => {
   })
 })
 
+describe('tidyMask', () => {
+  it('drops a thin hanger rail attached to the garment', () => {
+    const image = blank(200, 200)
+    paint(image, { x: 60, y: 40, width: 80, height: 140 }, NAVY)
+    paint(image, { x: 140, y: 50, width: 60, height: 3 }, NAVY)
+    expect(maskBounds(garmentMask(image, WHITE), 200, 200)).toEqual({ x: 60, y: 40, width: 80, height: 140 })
+  })
+
+  it('fills notches along the hem, like dark checks lost to a dark backdrop', () => {
+    const image = blank(200, 200)
+    paint(image, { x: 60, y: 40, width: 80, height: 140 }, NAVY)
+    for (let x = 68; x < 132; x += 16) paint(image, { x, y: 172, width: 8, height: 8 }, WHITE)
+    const mask = tidyMask(garmentMask(image, WHITE), 200, 200)
+    expect(mask[176 * 200 + 72]).toBe(1)
+    expect(torsoRect(mask, 200, maskBounds(mask, 200, 200)!).width).toBe(80)
+  })
+})
+
 describe('erodeMask', () => {
   it('shaves the given number of pixels off every side', () => {
     const image = blank(20, 20)
@@ -232,6 +251,6 @@ describe('filling the background inside the crop', () => {
 
   it('reports how much of the crop is garment', () => {
     const { mask, bounds } = analyse(trousersPhoto())
-    expect(coverage(mask, 100, bounds)).toBeCloseTo((40 * 15 + 2 * 17 * 65) / (40 * 80), 5)
+    expect(coverage(mask, 100, bounds)).toBeCloseTo((40 * 15 + 2 * 15 * 65) / (40 * 80), 5)
   })
 })
