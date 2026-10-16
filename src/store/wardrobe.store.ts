@@ -19,6 +19,8 @@ interface WardrobeState {
   bodyPreset: BodyPreset
   selection: GarmentSelection
   viewRequest: ViewRequest | null
+  /** The person's own clothes, newest first. Kept for this visit only until saving arrives. */
+  uploads: Garment[]
   setBodyPreset: (preset: BodyPreset) => void
   toggleGarment: (garment: Pick<Garment, 'id' | 'category'>) => void
   /** Puts garments on without toggling, e.g. when opening a suggested look. */
@@ -26,6 +28,9 @@ interface WardrobeState {
   takeOff: (category: GarmentCategory) => void
   clearOutfit: () => void
   requestView: (view: ViewRequest['view']) => void
+  addUpload: (garment: Garment) => void
+  /** Removes an upload and takes it off the mannequin if it was being worn. */
+  removeUpload: (id: string) => void
 }
 
 /**
@@ -37,6 +42,7 @@ export const useWardrobeStore = create<WardrobeState>()((set) => ({
   bodyPreset: 'medium',
   selection: {},
   viewRequest: null,
+  uploads: [],
   setBodyPreset: (bodyPreset) => set({ bodyPreset }),
   toggleGarment: (garment) =>
     set((state) => ({ selection: toggleInSelection(state.selection, garment) })),
@@ -46,4 +52,14 @@ export const useWardrobeStore = create<WardrobeState>()((set) => ({
   clearOutfit: () => set({ selection: {} }),
   requestView: (view) =>
     set((state) => ({ viewRequest: { view, id: (state.viewRequest?.id ?? 0) + 1 } })),
+  addUpload: (garment) => set((state) => ({ uploads: [garment, ...state.uploads] })),
+  removeUpload: (id) =>
+    set((state) => {
+      const garment = state.uploads.find((upload) => upload.id === id)
+      const worn = garment && state.selection[garment.category] === id
+      return {
+        uploads: state.uploads.filter((upload) => upload.id !== id),
+        selection: worn ? removeFromSelection(state.selection, garment.category) : state.selection,
+      }
+    }),
 }))
