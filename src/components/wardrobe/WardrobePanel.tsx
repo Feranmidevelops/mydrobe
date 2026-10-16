@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
+import { isUpload, removeUploadedGarment } from '../../features/garments/garment.service'
 import {
   GARMENT_CATEGORIES,
   GARMENT_CATEGORY_LABELS,
@@ -7,12 +8,39 @@ import {
 } from '../../features/garments/garment.types'
 import { isSelected } from '../../features/outfits/outfit.selection'
 import { useWardrobeStore } from '../../store/wardrobe.store'
+import { AddClothesCard } from './AddClothesCard'
 import { GarmentCard } from './GarmentCard'
 import { OutfitSummary } from './OutfitSummary'
 
 type Filter = GarmentCategory | 'all'
 
-export function WardrobePanel({ garments }: { garments: Garment[] }) {
+interface WardrobePanelProps {
+  garments: Garment[]
+  /** Opens the upload dialog; without it the panel has no way to add clothes. */
+  onAddClothes?: () => void
+}
+
+function confirmAndRemove(garment: Garment) {
+  if (window.confirm(`Remove ${garment.name} from your wardrobe? You'd need to upload the photo again.`)) {
+    removeUploadedGarment(garment)
+  }
+}
+
+function Shelf({ title, children }: { title: string; children: ReactNode }) {
+  const headingId = useId()
+  return (
+    <div className="mt-6">
+      <h3 id={headingId} className="text-[11px] font-semibold tracking-[0.18em] text-muted uppercase">
+        {title}
+      </h3>
+      <ul aria-labelledby={headingId} className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2">
+        {children}
+      </ul>
+    </div>
+  )
+}
+
+export function WardrobePanel({ garments, onAddClothes }: WardrobePanelProps) {
   const [filter, setFilter] = useState<Filter>('all')
   const selection = useWardrobeStore((state) => state.selection)
   const toggleGarment = useWardrobeStore((state) => state.toggleGarment)
@@ -20,7 +48,12 @@ export function WardrobePanel({ garments }: { garments: Garment[] }) {
   const categories = GARMENT_CATEGORIES.filter((category) =>
     garments.some((garment) => garment.category === category),
   )
-  const visible = filter === 'all' ? garments : garments.filter((g) => g.category === filter)
+  // Removing the last upload in a category takes its filter away too.
+  const activeFilter = filter !== 'all' && categories.includes(filter) ? filter : 'all'
+  const shown = (garment: Garment) => activeFilter === 'all' || garment.category === activeFilter
+  const uploads = garments.filter(isUpload)
+  const ownShown = uploads.filter(shown)
+  const demosShown = garments.filter((garment) => !isUpload(garment) && shown(garment))
   const filters: { value: Filter; label: string }[] = [
     { value: 'all', label: 'All' },
     ...categories.map((category) => ({
@@ -28,6 +61,17 @@ export function WardrobePanel({ garments }: { garments: Garment[] }) {
       label: GARMENT_CATEGORY_LABELS[category].many,
     })),
   ]
+
+  const card = (garment: Garment) => (
+    <li key={garment.id}>
+      <GarmentCard
+        garment={garment}
+        selected={isSelected(selection, garment)}
+        onToggle={toggleGarment}
+        onRemove={isUpload(garment) ? confirmAndRemove : undefined}
+      />
+    </li>
+  )
 
   return (
     <div className="flex flex-col gap-8 p-4 sm:p-6">
@@ -43,46 +87,51 @@ export function WardrobePanel({ garments }: { garments: Garment[] }) {
           </span>
         </div>
 
-        {garments.length === 0 ? (
+        {garments.length === 0 && !onAddClothes ? (
           <p className="mt-2 text-sm text-muted">Your wardrobe is empty.</p>
         ) : (
           <>
-            <p className="mt-1 text-xs text-muted">Demo pieces. Your own uploads are coming next.</p>
-            <div
-              role="group"
-              aria-label="Filter by category"
-              className="mt-4 flex flex-wrap gap-2"
-            >
-              {filters.map(({ value, label }) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={filter === value}
-                  onClick={() => setFilter(value)}
-                  className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
-                    filter === value
-                      ? 'bg-ink text-cream'
-                      : 'bg-mist text-ink-soft hover:bg-line'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <ul
-              aria-label="Wardrobe items"
-              className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2"
-            >
-              {visible.map((garment) => (
-                <li key={garment.id}>
-                  <GarmentCard
-                    garment={garment}
-                    selected={isSelected(selection, garment)}
-                    onToggle={toggleGarment}
-                  />
-                </li>
-              ))}
-            </ul>
+            {categories.length > 0 && (
+              <div
+                role="group"
+                aria-label="Filter by category"
+                className="mt-4 flex flex-wrap gap-2"
+              >
+                {filters.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={activeFilter === value}
+                    onClick={() => setFilter(value)}
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
+                      activeFilter === value
+                        ? 'bg-ink text-cream'
+                        : 'bg-mist text-ink-soft hover:bg-line'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {(onAddClothes || ownShown.length > 0) && (
+              <Shelf title="Your clothes">
+                {onAddClothes && (
+                  <li>
+                    <AddClothesCard onClick={onAddClothes} />
+                  </li>
+                )}
+                {ownShown.map(card)}
+              </Shelf>
+            )}
+            {onAddClothes && uploads.length === 0 && (
+              <p className="mt-3 text-xs leading-relaxed text-muted">
+                Photograph a shirt or trousers laid flat on a plain background, then try it on.
+              </p>
+            )}
+
+            {demosShown.length > 0 && <Shelf title="Demo pieces">{demosShown.map(card)}</Shelf>}
           </>
         )}
       </section>

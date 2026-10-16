@@ -37,4 +37,28 @@ describe('wardrobe store', () => {
     clearOutfit()
     expect(useWardrobeStore.getState().selection).toEqual({})
   })
+
+  it('keeps uploads newest first and takes a removed one off the mannequin', () => {
+    const { addUpload, removeUpload, toggleGarment } = useWardrobeStore.getState()
+    const photo = (id: string, category: 'shirt' | 'trousers') => ({
+      id,
+      name: id,
+      category,
+      templateId: null,
+      source: { kind: 'photo' as const, url: `blob:${id}` },
+      tags: ['upload'],
+      createdAt: 0,
+      updatedAt: 0,
+    })
+    addUpload(photo('linen-shirt', 'shirt'))
+    addUpload(photo('cord-trousers', 'trousers'))
+    expect(useWardrobeStore.getState().uploads.map((garment) => garment.id)).toEqual(['cord-trousers', 'linen-shirt'])
+
+    toggleGarment({ id: 'linen-shirt', category: 'shirt' })
+    toggleGarment({ id: 'demo-indigo-denim', category: 'trousers' })
+    removeUpload('linen-shirt')
+
+    expect(useWardrobeStore.getState().uploads.map((garment) => garment.id)).toEqual(['cord-trousers'])
+    expect(useWardrobeStore.getState().selection).toEqual({ trousers: 'demo-indigo-denim' })
+  })
 })

@@ -1,10 +1,14 @@
+import { useMemo } from 'react'
 import { DEMO_GARMENTS } from '../features/garments/demo-garments'
 import type { Garment } from '../features/garments/garment.types'
+import { useWardrobeStore } from '../store/wardrobe.store'
 
 /**
- * The garments shown in the wardrobe. Returns the built-in demo set for now;
- * this is where IndexedDB-backed uploads will be merged in.
+ * Everything in the wardrobe: the person's own uploads first, newest first,
+ * then the built-in demo pieces. Uploads last for this visit until saving
+ * to IndexedDB arrives.
  */
 export function useWardrobeGarments(): Garment[] {
-  return DEMO_GARMENTS
+  const uploads = useWardrobeStore((state) => state.uploads)
+  return useMemo(() => [...uploads, ...DEMO_GARMENTS], [uploads])
 }
