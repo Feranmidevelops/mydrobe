@@ -2,7 +2,7 @@
 
 Style your own clothes on an interactive 3D mannequin, right in the browser. Mydrobe is local-first: no account, no backend and no paid AI. Everything runs on the device.
 
-> **Status: Milestones 1 to 4 of the seven-day MVP plan are done.** The 3D fitting room, body presets and garment templates work with a built-in demo wardrobe. You can add your own clothes from a photo, save outfits, and find both again after a reload, all kept in this browser. The photo trial showed which photos look convincing ([write-up](docs/milestone-2-photo-trial.md)), and the upload screen teaches those rules. Responsive polish, end-to-end tests and deployment come next (see [Roadmap](#roadmap)).
+> **Status: Milestones 1 to 5 of the seven-day MVP plan are done.** The 3D fitting room, body presets and garment templates work with a built-in demo wardrobe. You can add your own clothes from a photo, save outfits, and find both again after a reload, all kept in this browser. It works on phones, tablets and desktops, and recovers from the failures you'd meet on a phone. The photo trial showed which photos look convincing ([write-up](docs/milestone-2-photo-trial.md)), and the upload screen teaches those rules. End-to-end tests, performance and deployment come next (see [Roadmap](#roadmap)).
 
 ## What works today
 
@@ -18,8 +18,9 @@ Style your own clothes on an interactive 3D mannequin, right in the browser. Myd
 - **Everything is kept in this browser** with IndexedDB: your clothes, their photos and your outfits survive a reload. Nothing is uploaded anywhere. If the browser won't allow saving (some private modes), the app says so and still works for that visit.
 - Three garment templates: long-sleeve shirt, short-sleeve tee and straight trousers.
 - Items with no 3D template, such as the demo overcoat, stay selectable. The app says why they aren't on the mannequin instead of drawing something wrong.
-- Loading, empty, WebGL-unsupported and viewer-crash states.
-- A responsive layout: the fitting room sits beside the wardrobe on desktop and above it on phones.
+- **Every state has something to say.** Loading screens add a word of reassurance on slow connections. Empty wardrobes and outfit lists explain what to do next. A piece being fitted onto the mannequin says so, and one that can't be is shown in its main colour with a note. If the fitting room can't download there's a Try again, a crashed 3D view has Try again, and if the browser drops the 3D view (phones short of memory can) there's Restart. Browsers without WebGL get a clear explanation, and the wardrobe still works.
+- **A layout for every screen.** On phones and tablets held upright, the mannequin stays pinned to the top half of the screen while the wardrobe scrolls beneath it, so every tap shows on the mannequin. On desktops, and on phones turned sideways, they sit side by side.
+- **Accessible by default.** Everything works from the keyboard, focus is never dropped when something is removed, and people who ask their device for less motion get still spinners and camera moves without the glide.
 
 ## Getting started
 
@@ -143,6 +144,7 @@ Shots are defined in `src/capture/shots.ts`. The capture page isn't part of the 
 - Photos that break the [photo rules](docs/milestone-2-photo-trial.md#the-input-contract-for-uploads) (worn, folded, busy backgrounds) separate poorly. The review step shows this before anything is added. A hanger can show at the collar, and background can peek through a neck opening.
 - The mannequin is a stylised placeholder, not a realistic body scan. Garments are fitted shells with no cloth simulation, folds or drape.
 - The presets are visual only. They don't predict fit or recommend sizes.
+- The failure states were checked with simulated failures (a failed download, a forced WebGL context loss) in desktop Chrome with phone-sized windows, not yet on real low-end phones.
 
 ## Roadmap
 
@@ -152,6 +154,6 @@ From the implementation blueprint's seven-day plan:
 2. **Photo-to-template mapping trial** ✅: template texturing works for photos that follow the [input contract](docs/milestone-2-photo-trial.md#the-input-contract-for-uploads)
 3. **Upload validation, thumbnails and the user's own wardrobe** ✅: the photo rules are shown at upload, then a review step to check the separation before adding
 4. **IndexedDB persistence (Dexie) and outfit save, rename, reopen and delete** ✅: clothes and outfits survive reloads, and deleted pieces show as missing in outfits
-5. Responsive polish across every empty, error and loading state
+5. **Responsive polish across every empty, error and loading state** ✅: the mannequin stays in view on phones, and load failures, crashes and a dropped 3D view all recover
 6. End-to-end tests (Playwright) and performance tuning
 7. Docs, deployment and smoke tests
