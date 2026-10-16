@@ -21,8 +21,8 @@ const TORSO_KEYS: (Ring & { region: TorsoRegion })[] = [
   { y: 1.17, rx: 0.146, rz: 0.106, cz: 0.01, region: 'ribs' },
   { y: 1.25, rx: 0.16, rz: 0.114, cz: 0.016, region: 'chest' },
   { y: 1.32, rx: 0.168, rz: 0.11, cz: 0.012, region: 'chest' },
-  { y: 1.38, rx: 0.165, rz: 0.095, cz: 0, region: 'shoulder' },
-  { y: 1.425, rx: 0.135, rz: 0.075, cz: -0.008, region: 'shoulder' },
+  { y: 1.38, rx: 0.17, rz: 0.095, cz: 0, region: 'shoulder' },
+  { y: 1.425, rx: 0.148, rz: 0.078, cz: -0.008, region: 'shoulder' },
   { y: 1.455, rx: 0.075, rz: 0.058, cz: -0.01, region: 'neck' },
   { y: 1.47, rx: 0.052, rz: 0.05, cz: -0.008, region: 'neck' },
 ]
@@ -151,7 +151,10 @@ const PROPORTIONS: Record<BodyPreset, Proportions> = {
   },
 }
 
-const SHOULDER_JOINT: Vector3Tuple = [0.172, 1.385, -0.005]
+const SHOULDER_JOINT: Vector3Tuple = [0.17, 1.37, -0.005]
+
+/** Shoulder joints are flattened on top so they read as a deltoid, not a ball. */
+export const SHOULDER_SQUASH = 0.82
 const HIP_JOINT: Vector3Tuple = [0.093, 0.87, 0]
 
 export interface Limb {
