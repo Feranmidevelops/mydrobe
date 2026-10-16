@@ -45,6 +45,14 @@ export function ChevronRightIcon(props: IconProps) {
   )
 }
 
+export function PlusIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M8 3v10M3 8h10" />
+    </svg>
+  )
+}
+
 /* Larger outline icons for feature highlights, drawn on a 24-unit grid. */
 const outline = { ...base, viewBox: '0 0 24 24', strokeWidth: 1.4 } as const
 
