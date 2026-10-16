@@ -96,6 +96,23 @@ describe('garmentMask and maskBounds', () => {
     expect(maskBounds(mask, 40, 40)).toEqual({ x: 10, y: 5, width: 20, height: 30 })
   })
 
+  it('follows a backdrop that shades gradually across the photo', () => {
+    // Light grey on the left to white on the right: one colour threshold
+    // would call the darker side garment.
+    const image = blank(100, 100)
+    for (let x = 0; x < 100; x++) paint(image, { x, y: 0, width: 1, height: 100 }, [200 + Math.round(x * 0.55), 200 + Math.round(x * 0.55), 200 + Math.round(x * 0.55)])
+    paint(image, { x: 40, y: 30, width: 20, height: 40 }, [150, 150, 150])
+    expect(maskBounds(garmentMask(image, estimateBackground(image)), 100, 100)).toEqual({ x: 40, y: 30, width: 20, height: 40 })
+  })
+
+  it('counts backdrop-coloured areas the garment encloses as garment', () => {
+    const image = blank(60, 60)
+    paint(image, { x: 10, y: 10, width: 40, height: 40 }, NAVY)
+    paint(image, { x: 20, y: 20, width: 10, height: 10 }, WHITE)
+    const mask = garmentMask(image, WHITE)
+    expect(mask[25 * 60 + 25]).toBe(1)
+  })
+
   it('finds nothing in an empty photo', () => {
     const image = blank(30, 30)
     expect(maskBounds(garmentMask(image, WHITE), 30, 30)).toBeNull()

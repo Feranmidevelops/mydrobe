@@ -78,27 +78,6 @@ export function estimateBackground(image: RgbaImage): Rgb | null {
 
 export const DEFAULT_BACKGROUND_TOLERANCE = 70
 
-/**
- * Marks garment pixels with 1: opaque and clearly different from the
- * background. Transparent pixels always count as background, and in a
- * cut-out (no background colour) every opaque pixel is garment.
- */
-export function garmentMask(
-  image: RgbaImage,
-  background: Rgb | null,
-  tolerance = DEFAULT_BACKGROUND_TOLERANCE,
-): Uint8Array {
-  const mask = new Uint8Array(image.width * image.height)
-  for (let y = 0; y < image.height; y++) {
-    for (let x = 0; x < image.width; x++) {
-      if (alpha(image, x, y) < 128) continue
-      if (!background || colorDistance(pixel(image, x, y), background) > tolerance) {
-        mask[y * image.width + x] = 1
-      }
-    }
-  }
-  return mask
-}
 
 /** Calls `visit` for each of a pixel's four direct neighbours that lie inside the image. */
 function forNeighbours(i: number, width: number, height: number, visit: (j: number) => void) {
@@ -143,6 +122,67 @@ export function largestComponent(mask: Uint8Array, width: number, height: number
   if (best === 0) return result
   for (let i = 0; i < mask.length; i++) if (labels[i] === best) result[i] = 1
   return result
+}
+
+/**
+ * Marks garment pixels with 1. The background is grown inwards from the
+ * photo's edges: it steps across gentle changes (a shadow, a gradient
+ * backdrop) but stops at the sharp change where the garment starts, and it
+ * never strays far from the backdrop's colour. Anything it can't reach, such
+ * as a dark check on a dark backdrop that the garment encloses, counts as
+ * garment. Only the largest patch of garment is kept.
+ *
+ * In a cut-out (no background colour) transparency alone decides.
+ */
+export function garmentMask(
+  image: RgbaImage,
+  background: Rgb | null,
+  tolerance = DEFAULT_BACKGROUND_TOLERANCE,
+): Uint8Array {
+  const { data, width, height } = image
+  const total = width * height
+  const isBackground = new Uint8Array(total)
+  const transparent = (i: number) => data[i * 4 + 3] < 128
+
+  if (!background) {
+    for (let i = 0; i < total; i++) if (transparent(i)) isBackground[i] = 1
+  } else {
+    const step = tolerance / 3
+    const range = tolerance * 2
+    const rgb = (i: number): Rgb => [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]
+    const nearBackdrop = (i: number) => colorDistance(rgb(i), background) <= range
+    const queue = new Int32Array(total)
+    let head = 0
+    let tail = 0
+    const add = (i: number) => {
+      isBackground[i] = 1
+      queue[tail++] = i
+    }
+
+    for (let x = 0; x < width; x++) {
+      for (const i of [x, (height - 1) * width + x]) {
+        if (!isBackground[i] && (transparent(i) || nearBackdrop(i))) add(i)
+      }
+    }
+    for (let y = 0; y < height; y++) {
+      for (const i of [y * width, y * width + width - 1]) {
+        if (!isBackground[i] && (transparent(i) || nearBackdrop(i))) add(i)
+      }
+    }
+
+    while (head < tail) {
+      const from = queue[head++]
+      const here = rgb(from)
+      forNeighbours(from, width, height, (j) => {
+        if (isBackground[j]) return
+        if (transparent(j) || (colorDistance(rgb(j), here) <= step && nearBackdrop(j))) add(j)
+      })
+    }
+  }
+
+  const mask = new Uint8Array(total)
+  for (let i = 0; i < total; i++) mask[i] = isBackground[i] ? 0 : 1
+  return largestComponent(mask, width, height)
 }
 
 /**
