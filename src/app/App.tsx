@@ -1,5 +1,6 @@
 import { AppHeader } from '../components/layout/AppHeader'
 import { BodyPresetControl } from '../components/outfit-builder/BodyPresetControl'
+import { HiddenGarmentsNotice } from '../components/outfit-builder/HiddenGarmentsNotice'
 import { ViewControls } from '../components/outfit-builder/ViewControls'
 import { ViewerStage } from '../components/outfit-builder/ViewerStage'
 import { WardrobePanel } from '../components/wardrobe/WardrobePanel'
@@ -24,10 +25,11 @@ export default function App() {
             <AppHeader />
             {MANNEQUIN_ASSET.kind === 'procedural' && (
               <p
-                className="pointer-events-auto mt-3 inline-block rounded-full whitespace-nowrap bg-surface/80 px-2.5 py-1 text-[11px] text-muted ring-1 ring-line backdrop-blur"
+                className="pointer-events-auto mt-2 inline-block rounded-full whitespace-nowrap bg-surface/80 px-2 py-0.5 text-[10px] sm:mt-3 sm:px-2.5 sm:py-1 sm:text-[11px] text-muted ring-1 ring-line backdrop-blur"
                 title={MANNEQUIN_ASSET.note}
               >
-                {MANNEQUIN_ASSET.label}
+                <span className="sm:hidden">{MANNEQUIN_ASSET.shortLabel}</span>
+                <span className="hidden sm:inline">{MANNEQUIN_ASSET.label}</span>
               </p>
             )}
           </div>
@@ -36,7 +38,8 @@ export default function App() {
           </div>
         </div>
 
-        <div className="absolute inset-x-0 bottom-4 z-10 flex justify-center px-4 sm:bottom-6">
+        <div className="absolute inset-x-0 bottom-4 z-10 flex flex-col items-center gap-2 px-4 sm:bottom-6">
+          <HiddenGarmentsNotice garments={garments} />
           <BodyPresetControl />
         </div>
       </section>
