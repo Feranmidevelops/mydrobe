@@ -167,4 +167,27 @@ describe('WardrobePanel', () => {
     expect(screen.queryByText('Your wardrobe is empty.')).not.toBeInTheDocument()
     expect(card(/add clothes/i, 'Your clothes')).toBeInTheDocument()
   })
+
+  it('says so while saved clothes are loading', () => {
+    useWardrobeStore.setState({ storage: 'loading' })
+    render(<WardrobePanel garments={DEMO_GARMENTS} onAddClothes={() => {}} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading your saved clothes…')
+    expect(screen.queryByText(/laid flat on a plain background/i)).not.toBeInTheDocument()
+  })
+
+  it('explains that everything is kept in this browser only', () => {
+    useWardrobeStore.setState({ storage: 'ready' })
+    render(<WardrobePanel garments={DEMO_GARMENTS} onAddClothes={() => {}} />)
+
+    expect(screen.getByText(/saved in this browser, on this device only/i)).toBeInTheDocument()
+  })
+
+  it('warns when this browser will not let anything be saved', () => {
+    useWardrobeStore.setState({ storage: 'unavailable' })
+    render(<WardrobePanel garments={DEMO_GARMENTS} onAddClothes={() => {}} />)
+
+    expect(screen.getByRole('note')).toHaveTextContent("isn't letting Mydrobe save")
+    expect(screen.queryByText(/saved in this browser/i)).not.toBeInTheDocument()
+  })
 })
