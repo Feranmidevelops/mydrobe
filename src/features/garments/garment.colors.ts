@@ -1,3 +1,4 @@
+import type { GarmentCategory, GarmentTemplateId } from './garment.types'
 import type { Rect, Rgb, RgbaImage } from './photo-mapping'
 
 export function toHex([r, g, b]: Rgb): string {
@@ -100,4 +101,25 @@ export function extractPalette(image: RgbaImage, mask: Uint8Array, rect: Rect, c
     .filter(({ share }) => share >= 0.08)
     .sort((a, b) => b.share - a.share)
     .map(({ centre }) => centre)
+}
+
+const GARMENT_NOUNS: Record<GarmentCategory, string> = {
+  shirt: 'shirt',
+  trousers: 'trousers',
+  outerwear: 'jacket',
+  shoes: 'shoes',
+  accessory: 'accessory',
+  other: 'piece',
+}
+
+/** A starting name for an upload, such as "Navy shirt" or "White tee". */
+export function suggestGarmentName(
+  color: Rgb | undefined,
+  category: GarmentCategory,
+  templateId: GarmentTemplateId | null,
+): string {
+  const noun = templateId === 'shirt-short-sleeve' ? 'tee' : GARMENT_NOUNS[category]
+  if (!color) return noun[0].toUpperCase() + noun.slice(1)
+  const name = colorName(color)
+  return `${name[0].toUpperCase()}${name.slice(1)} ${noun}`
 }

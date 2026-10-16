@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { colorName, extractPalette, toHex } from './garment.colors'
+import { colorName, extractPalette, suggestGarmentName, toHex } from './garment.colors'
 import type { Rgb } from './photo-mapping'
 
 describe('colorName', () => {
@@ -41,5 +41,17 @@ describe('extractPalette', () => {
       [36, 55, 94],
       [240, 240, 240],
     ])
+  })
+})
+
+describe('suggestGarmentName', () => {
+  it('combines the main colour with the kind of garment', () => {
+    expect(suggestGarmentName([36, 55, 94], 'shirt', 'shirt-long-sleeve')).toBe('Navy shirt')
+    expect(suggestGarmentName([205, 208, 214], 'shirt', 'shirt-short-sleeve')).toBe('White tee')
+    expect(suggestGarmentName([200, 181, 147], 'trousers', 'trousers-straight')).toBe('Beige trousers')
+  })
+
+  it('falls back to just the kind of garment without a colour', () => {
+    expect(suggestGarmentName(undefined, 'outerwear', null)).toBe('Jacket')
   })
 })
