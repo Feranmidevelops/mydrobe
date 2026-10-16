@@ -281,18 +281,21 @@ export function GarmentReview({ photo, onChooseAnother, onAdd }: GarmentReviewPr
         </div>
       </div>
 
-      <footer className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-line bg-surface/95 px-5 py-3 backdrop-blur sm:px-6">
+      <footer className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur sm:px-6">
         <button
           type="button"
           onClick={onChooseAnother}
-          className="rounded-full px-4 py-2.5 text-sm font-medium text-ink-soft transition hover:bg-sand hover:text-ink"
+          aria-label="Choose another photo"
+          className="rounded-full px-3 py-2.5 text-sm font-medium whitespace-nowrap text-ink-soft transition hover:bg-sand hover:text-ink sm:px-4"
         >
-          Choose another photo
+          {/* A shorter label keeps both buttons on one line on narrow phones. */}
+          <span className="sm:hidden">Another photo</span>
+          <span className="hidden sm:inline">Choose another photo</span>
         </button>
         <button
           type="submit"
           disabled={!analysis || pending || saving}
-          className="rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-cream transition hover:bg-cocoa disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-full bg-ink px-5 py-2.5 text-sm font-semibold whitespace-nowrap text-cream transition hover:bg-cocoa disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? 'Adding…' : 'Add to wardrobe'}
         </button>
