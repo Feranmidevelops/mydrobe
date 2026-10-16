@@ -13,7 +13,7 @@ export function OutfitSummary({ garments }: { garments: Garment[] }) {
   return (
     <section aria-labelledby="outfit-heading">
       <div className="flex items-baseline justify-between">
-        <h2 id="outfit-heading" className="text-lg font-semibold tracking-tight">
+        <h2 id="outfit-heading" className="text-xl font-bold tracking-tight">
           Current outfit
         </h2>
         {worn.length > 0 && (
@@ -34,9 +34,9 @@ export function OutfitSummary({ garments }: { garments: Garment[] }) {
       ) : (
         <ul className="mt-3 space-y-2">
           {worn.map(({ garment, renderability }) => (
-            <li key={garment.id} className="rounded-xl border border-line bg-white p-2">
+            <li key={garment.id} className="rounded-xl border border-line bg-surface p-2">
               <div className="flex items-center gap-3">
-                <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-canvas">
+                <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-mist">
                   <GarmentThumbnail garment={garment} size={40} />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -49,7 +49,7 @@ export function OutfitSummary({ garments }: { garments: Garment[] }) {
                   type="button"
                   onClick={() => takeOff(garment.category)}
                   aria-label={`Take off ${garment.name}`}
-                  className="grid size-8 place-items-center rounded-full text-muted hover:bg-canvas hover:text-ink"
+                  className="grid size-8 place-items-center rounded-full text-muted hover:bg-sand hover:text-ink"
                 >
                   <CloseIcon className="size-4" />
                 </button>

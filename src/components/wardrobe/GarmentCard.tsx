@@ -9,6 +9,11 @@ interface GarmentCardProps {
   onToggle: (garment: Garment) => void
 }
 
+/** Tops hang from a hanger, like the product cards on the landing page. */
+function hangsOnHanger(garment: Garment) {
+  return garment.category === 'shirt' || garment.category === 'outerwear'
+}
+
 export function GarmentCard({ garment, selected, onToggle }: GarmentCardProps) {
   const renderability = getRenderability(garment)
   const kind = renderability.renderable
@@ -20,20 +25,18 @@ export function GarmentCard({ garment, selected, onToggle }: GarmentCardProps) {
       type="button"
       aria-pressed={selected}
       onClick={() => onToggle(garment)}
-      className={`group flex w-full flex-col rounded-2xl border bg-white p-2 text-left transition ${
-        selected
-          ? 'border-ink shadow-[0_0_0_1px_var(--color-ink)]'
-          : 'border-line hover:border-ink-soft/40 hover:shadow-sm'
-      }`}
+      className="group flex w-full flex-col rounded-xl text-left"
     >
-      <span className="relative grid aspect-square place-items-center overflow-hidden rounded-xl bg-canvas">
-        <GarmentThumbnail
-          garment={garment}
-          size={120}
-          className="transition duration-300 group-hover:scale-[1.04]"
-        />
+      <span
+        className={`relative grid aspect-square place-items-center overflow-hidden rounded-xl bg-mist transition ${
+          selected ? 'ring-2 ring-ink' : 'group-hover:ring-1 group-hover:ring-ink/20'
+        }`}
+      >
+        <span className="w-[82%] transition duration-300 group-hover:scale-[1.04]">
+          <GarmentThumbnail garment={garment} size={160} hanger={hangsOnHanger(garment)} fluid />
+        </span>
         {selected && (
-          <span className="absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-ink text-surface">
+          <span className="absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-ink text-cream">
             <CheckIcon className="size-3.5" />
           </span>
         )}
@@ -43,8 +46,8 @@ export function GarmentCard({ garment, selected, onToggle }: GarmentCardProps) {
           </span>
         )}
       </span>
-      <span className="mt-2.5 px-1 text-sm leading-snug font-medium text-ink">{garment.name}</span>
-      <span className="px-1 pb-1 text-xs text-muted">{kind}</span>
+      <span className="mt-2.5 text-sm leading-snug font-semibold text-ink">{garment.name}</span>
+      <span className="text-xs text-muted">{kind}</span>
     </button>
   )
 }

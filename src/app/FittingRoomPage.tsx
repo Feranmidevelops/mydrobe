@@ -15,7 +15,7 @@ export default function FittingRoomPage() {
     <div className="flex min-h-dvh flex-col lg:h-dvh lg:flex-row">
       <section
         aria-label="Fitting room"
-        className="relative h-[62dvh] min-h-[420px] shrink-0 overflow-hidden bg-stage bg-[radial-gradient(ellipse_at_50%_38%,#f8f5f0_0%,#ebe6dd_68%)] lg:h-auto lg:flex-1"
+        className="relative h-[62dvh] min-h-[420px] shrink-0 overflow-hidden bg-stage bg-[radial-gradient(ellipse_at_50%_36%,#f7f0e8_0%,#e4d6c7_72%)] lg:h-auto lg:flex-1"
       >
         <div className="absolute inset-0">
           <ViewerStage />
@@ -47,7 +47,7 @@ export default function FittingRoomPage() {
 
       <aside
         aria-label="Wardrobe"
-        className="flex-1 border-t border-line bg-surface lg:w-[420px] lg:flex-none lg:overflow-y-auto lg:border-t-0 lg:border-l"
+        className="flex-1 border-t border-line bg-cream lg:w-[420px] lg:flex-none lg:overflow-y-auto lg:border-t-0 lg:border-l"
       >
         <WardrobePanel garments={garments} />
       </aside>

@@ -35,7 +35,7 @@ export function WardrobePanel({ garments }: { garments: Garment[] }) {
 
       <section aria-labelledby="wardrobe-heading">
         <div className="flex items-baseline justify-between">
-          <h2 id="wardrobe-heading" className="text-lg font-semibold tracking-tight">
+          <h2 id="wardrobe-heading" className="text-xl font-bold tracking-tight">
             Wardrobe
           </h2>
           <span className="text-xs text-muted">
@@ -61,8 +61,8 @@ export function WardrobePanel({ garments }: { garments: Garment[] }) {
                   onClick={() => setFilter(value)}
                   className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
                     filter === value
-                      ? 'bg-ink text-surface'
-                      : 'bg-canvas text-ink-soft hover:bg-line'
+                      ? 'bg-ink text-cream'
+                      : 'bg-mist text-ink-soft hover:bg-line'
                   }`}
                 >
                   {label}
