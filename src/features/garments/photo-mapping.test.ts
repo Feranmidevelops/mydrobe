@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   averageColor,
+  backdropVariation,
   coverage,
   cropAndFill,
   erodeMask,
@@ -103,6 +104,27 @@ describe('garmentMask and maskBounds', () => {
     for (let x = 0; x < 100; x++) paint(image, { x, y: 0, width: 1, height: 100 }, [200 + Math.round(x * 0.55), 200 + Math.round(x * 0.55), 200 + Math.round(x * 0.55)])
     paint(image, { x: 40, y: 30, width: 20, height: 40 }, [150, 150, 150])
     expect(maskBounds(garmentMask(image, estimateBackground(image)), 100, 100)).toEqual({ x: 40, y: 30, width: 20, height: 40 })
+  })
+
+  it('gives a busy backdrop more slack than a plain one', () => {
+    const plain = blank(40, 40, [120, 120, 120])
+    const busy = blank(40, 40, [120, 120, 120])
+    for (let x = 0; x < 40; x += 2) paint(busy, { x, y: 0, width: 1, height: 40 }, [170, 170, 170])
+
+    expect(backdropVariation(plain, [120, 120, 120])).toEqual({ spread: 0, roughness: 0 })
+    const variation = backdropVariation(busy, estimateBackground(busy)!)
+    expect(variation.spread).toBeGreaterThan(100)
+    expect(variation.roughness).toBeGreaterThan(100)
+  })
+
+  it('separates a garment from a mottled backdrop', () => {
+    // A backdrop of light and dark speckles, like concrete, around a white garment.
+    const image = blank(80, 80, [60, 60, 60])
+    for (let y = 0; y < 80; y += 3) {
+      for (let x = (y / 3) % 2; x < 80; x += 4) paint(image, { x, y, width: 2, height: 2 }, [130, 130, 130])
+    }
+    paint(image, { x: 25, y: 20, width: 30, height: 40 }, [235, 236, 240])
+    expect(maskBounds(garmentMask(image, estimateBackground(image)), 80, 80)).toEqual({ x: 25, y: 20, width: 30, height: 40 })
   })
 
   it('counts backdrop-coloured areas the garment encloses as garment', () => {

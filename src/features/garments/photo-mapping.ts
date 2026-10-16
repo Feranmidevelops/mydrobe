@@ -124,6 +124,29 @@ export function largestComponent(mask: Uint8Array, width: number, height: number
   return result
 }
 
+/** Percentile of an unsorted list, without mutating it. */
+function percentile(values: number[], fraction: number) {
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] ?? 0
+}
+
+/**
+ * How much the backdrop varies, read along the photo's outermost pixels:
+ * `spread` is how far most edge pixels stray from the backdrop colour, and
+ * `roughness` is the typical change from one edge pixel to the next.
+ */
+export function backdropVariation(image: RgbaImage, background: Rgb) {
+  const { width, height } = image
+  const ring: Rgb[] = []
+  for (let x = 0; x < width; x++) ring.push(pixel(image, x, 0))
+  for (let y = 1; y < height; y++) ring.push(pixel(image, width - 1, y))
+  for (let x = width - 2; x >= 0; x--) ring.push(pixel(image, x, height - 1))
+  for (let y = height - 2; y > 0; y--) ring.push(pixel(image, 0, y))
+  const fromBackdrop = ring.map((color) => colorDistance(color, background))
+  const steps = ring.slice(1).map((color, i) => colorDistance(color, ring[i]))
+  return { spread: percentile(fromBackdrop, 0.9), roughness: percentile(steps, 0.75) }
+}
+
 /**
  * Marks garment pixels with 1. The background is grown inwards from the
  * photo's edges: it steps across gentle changes (a shadow, a gradient
@@ -147,9 +170,12 @@ export function garmentMask(
   if (!background) {
     for (let i = 0; i < total; i++) if (transparent(i)) isBackground[i] = 1
   } else {
-    const step = tolerance / 3
-    const range = tolerance * 2
     const rgb = (i: number): Rgb => [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]
+    // A busy backdrop (concrete, wood grain) needs more slack than a plain
+    // one, so loosen both limits to match how much the edges themselves vary.
+    const { spread, roughness } = backdropVariation(image, background)
+    const step = Math.max(tolerance / 3, roughness * 3)
+    const range = Math.max(tolerance * 2, spread * 1.25)
     const nearBackdrop = (i: number) => colorDistance(rgb(i), background) <= range
     const queue = new Int32Array(total)
     let head = 0
