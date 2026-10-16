@@ -81,14 +81,18 @@ export function UploadDialog({ onClose }: { onClose: () => void }) {
     if (step.kind !== 'review') return
     const { photo } = step
     setAdding(true)
-    const thumbnailUrl = await makeThumbnail(analysis)
-    // Closed while the thumbnail was drawn: the photo has been let go already.
-    if (draftUrl.current !== photo.url) return discardPhoto(thumbnailUrl)
-    draftUrl.current = null
-    const garment = createUploadedGarment(photo, thumbnailUrl, analysis.palette, details)
-    addUpload(garment)
-    if (details.templateId) wear([garment])
-    close()
+    try {
+      const thumbnailUrl = await makeThumbnail(analysis)
+      // Closed while the thumbnail was drawn: the photo has been let go already.
+      if (draftUrl.current !== photo.url) return discardPhoto(thumbnailUrl)
+      draftUrl.current = null
+      const garment = createUploadedGarment(photo, thumbnailUrl, analysis.palette, details)
+      addUpload(garment)
+      if (details.templateId) wear([garment])
+      close()
+    } finally {
+      setAdding(false)
+    }
   }
 
   return (

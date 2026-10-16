@@ -138,4 +138,17 @@ describe('GarmentReview', () => {
     expect(await screen.findByText(/cut off at the edge/)).toBeInTheDocument()
     expect(addButton()).toBeEnabled()
   })
+
+  it('holds both buttons while the piece is being added', async () => {
+    const user = userEvent.setup()
+    vi.mocked(analysePhotoAt).mockResolvedValue(navyAnalysis())
+    const onAdd = vi.fn(() => new Promise<void>(() => {}))
+    render(<GarmentReview photo={photo} onAdd={onAdd} onChooseAnother={() => {}} />)
+    await screen.findByDisplayValue('Navy shirt')
+
+    await user.click(addButton())
+
+    expect(screen.getByRole('button', { name: 'Adding…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Choose another photo' })).toBeDisabled()
+  })
 })

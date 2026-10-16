@@ -285,8 +285,9 @@ export function GarmentReview({ photo, onChooseAnother, onAdd }: GarmentReviewPr
         <button
           type="button"
           onClick={onChooseAnother}
+          disabled={saving}
           aria-label="Choose another photo"
-          className="rounded-full px-3 py-2.5 text-sm font-medium whitespace-nowrap text-ink-soft transition hover:bg-sand hover:text-ink sm:px-4"
+          className="rounded-full px-3 py-2.5 text-sm font-medium whitespace-nowrap text-ink-soft transition hover:bg-sand hover:text-ink disabled:opacity-50 sm:px-4"
         >
           {/* A shorter label keeps both buttons on one line on narrow phones. */}
           <span className="sm:hidden">Another photo</span>
