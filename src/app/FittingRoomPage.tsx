@@ -4,6 +4,7 @@ import { BodyPresetControl } from '../components/outfit-builder/BodyPresetContro
 import { HiddenGarmentsNotice } from '../components/outfit-builder/HiddenGarmentsNotice'
 import { ViewControls } from '../components/outfit-builder/ViewControls'
 import { ViewerStage } from '../components/outfit-builder/ViewerStage'
+import { NoticeToast } from '../components/ui/NoticeToast'
 import { UploadDialog } from '../components/upload/UploadDialog'
 import { WardrobePanel } from '../components/wardrobe/WardrobePanel'
 import { MANNEQUIN_ASSET } from '../features/mannequin/mannequin-asset'
@@ -61,6 +62,7 @@ export default function FittingRoomPage() {
       </aside>
 
       {addingClothes && <UploadDialog onClose={() => setAddingClothes(false)} />}
+      <NoticeToast />
     </div>
   )
 }
