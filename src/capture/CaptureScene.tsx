@@ -8,6 +8,7 @@ import { GarmentMesh } from '../features/mannequin/GarmentMesh'
 import { Mannequin } from '../features/mannequin/Mannequin'
 import { StudioLighting } from '../features/mannequin/StudioLighting'
 import type { CaptureFigure, CaptureShot } from './shots'
+import { StudioBackdrop } from './StudioBackdrop'
 
 function Figure({ figure }: { figure: CaptureFigure }) {
   const shape = useMemo(() => createBodyShape(figure.preset), [figure.preset])
@@ -57,21 +58,21 @@ export function CaptureScene({ shot }: { shot: CaptureShot }) {
       <Canvas
         frameloop="demand"
         dpr={1}
-        gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
+        gl={{ antialias: true, preserveDrawingBuffer: true }}
         camera={{ position: shot.camera.position, fov: shot.camera.fov, near: 0.1, far: 50 }}
       >
         <StudioLighting />
+        <StudioBackdrop color={shot.backdrop} />
         {shot.figures.map((figure, index) => (
           <Figure key={index} figure={figure} />
         ))}
         <ContactShadows
-          frames={1}
-          position={[0, 0.001, 0]}
+          position={[0, -0.001, 0]}
           scale={shot.shadowScale}
           resolution={1024}
-          blur={2.4}
-          far={1.4}
-          opacity={0.5}
+          blur={2.6}
+          far={1.2}
+          opacity={0.6}
           color="#3a2a1e"
         />
         <AimCamera target={shot.camera.target} />

@@ -20,8 +20,12 @@ export interface CaptureShot {
     fov: number
   }
   shadowScale: number
+  /** Colour of the studio floor and back wall. */
+  backdrop: string
   figures: CaptureFigure[]
 }
+
+const STUDIO_BEIGE = '#dccbb8'
 
 /**
  * Still images for the landing page, rendered from the same mannequin and
@@ -33,6 +37,7 @@ export const CAPTURE_SHOTS = {
     height: 1050,
     camera: { position: [0, 1.05, 4.2], target: [0, 0.92, 0], fov: 30 },
     shadowScale: 6,
+    backdrop: STUDIO_BEIGE,
     figures: [
       {
         preset: 'medium',
@@ -73,6 +78,7 @@ function portrait(preset: BodyPreset, wearing: string[]): CaptureShot {
     height: 1066,
     camera: { position: [0, 1, 4], target: [0, 0.9, 0], fov: 30 },
     shadowScale: 2,
+    backdrop: STUDIO_BEIGE,
     figures: [{ preset, wearing, position: [0, 0], turn: 0.35 }],
   }
 }
