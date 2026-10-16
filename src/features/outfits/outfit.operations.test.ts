@@ -6,6 +6,7 @@ import {
   checkOutfit,
   cleanOutfitName,
   createOutfit,
+  describeSlots,
   isWearingOutfit,
   resolveOutfit,
   suggestOutfitName,
@@ -68,6 +69,14 @@ describe('resolveOutfit', () => {
     const resolved = resolveOutfit(outfit, DEMO_GARMENTS)
     expect(resolved.garments.map((piece) => piece.id)).toEqual([shirt.id, coat.id])
     expect(resolved.missing).toEqual(['trousers', 'shoes'])
+  })
+})
+
+describe('describeSlots', () => {
+  it('lists slots the way someone would say them', () => {
+    expect(describeSlots(['shirt'])).toBe('shirt')
+    expect(describeSlots(['shirt', 'trousers'])).toBe('shirt and trousers')
+    expect(describeSlots(['shirt', 'trousers', 'shoes'])).toBe('shirt, trousers and shoes')
   })
 })
 

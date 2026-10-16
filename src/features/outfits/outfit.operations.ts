@@ -1,5 +1,6 @@
 import {
   GARMENT_CATEGORIES,
+  GARMENT_CATEGORY_LABELS,
   type Garment,
   type GarmentCategory,
 } from '../garments/garment.types'
@@ -81,6 +82,13 @@ export function resolveOutfit(outfit: Outfit, garments: Garment[]): ResolvedOutf
     else if (id !== undefined || outfit.missingSlots.includes(category)) missing.push(category)
   }
   return { garments: found, missing }
+}
+
+/** Slots in everyday words: "shirt", "shirt and trousers", "shirt, trousers and shoes". */
+export function describeSlots(slots: GarmentCategory[]): string {
+  const names = slots.map((slot) => GARMENT_CATEGORY_LABELS[slot].one.toLowerCase())
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
 }
 
 /**
