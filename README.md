@@ -2,7 +2,7 @@
 
 Style your own clothes on an interactive 3D mannequin, right in the browser. Mydrobe is local-first: no account, no backend and no paid AI. Everything runs on the device.
 
-> **Status: Milestone 1 of the seven-day MVP plan.** The 3D fitting room, body presets and garment templates work using a built-in demo wardrobe. Photo uploads, IndexedDB persistence and saved outfits come in later milestones (see [Roadmap](#roadmap)).
+> **Status: Milestones 1 and 2 of the seven-day MVP plan are done.** The 3D fitting room, body presets and garment templates work with a built-in demo wardrobe. The photo trial confirmed that real garment photos look convincing when they follow a few simple rules ([write-up](docs/milestone-2-photo-trial.md)). Photo uploads, IndexedDB persistence and saved outfits come next (see [Roadmap](#roadmap)).
 
 ## What works today
 
@@ -113,8 +113,8 @@ Shots are defined in `src/capture/shots.ts`. The capture page isn't part of the 
 From the implementation blueprint's seven-day plan:
 
 1. **3D fitting room, body presets, garment templates** ✅
-2. Photo-to-template mapping trial with real shirts and trousers (the highest-risk assumption)
-3. Upload validation, thumbnails and the user's own wardrobe
+2. **Photo-to-template mapping trial** ✅: template texturing works for photos that follow the [input contract](docs/milestone-2-photo-trial.md#the-input-contract-for-uploads)
+3. Upload validation, thumbnails and the user's own wardrobe, with the contract shown at upload and a confirm-the-crop step
 4. IndexedDB persistence (Dexie) and outfit save, rename, reopen and delete
 5. Responsive polish across every empty, error and loading state
 6. End-to-end tests (Playwright) and performance tuning
