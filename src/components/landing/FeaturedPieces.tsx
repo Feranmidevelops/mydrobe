@@ -30,8 +30,10 @@ export function FeaturedPieces({ garments }: { garments: Garment[] }) {
         <ul className="relative -mx-4 mt-8 flex snap-x snap-mandatory scroll-px-4 gap-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:gap-6 sm:overflow-visible sm:px-0">
           {looks.map(({ piece, partner }) => (
             <li key={piece.id} className="w-[72%] shrink-0 snap-start sm:w-auto">
-              <div className="grid aspect-[4/5] place-items-center rounded-xl bg-mist">
-                <GarmentThumbnail garment={piece} size={210} hanger />
+              <div className="grid aspect-[4/5] place-items-center rounded-xl bg-mist lg:aspect-square">
+                <div className="w-[78%]">
+                  <GarmentThumbnail garment={piece} size={300} hanger fluid />
+                </div>
               </div>
               <h3 className="mt-4 text-base font-semibold text-espresso">{piece.name}</h3>
               <p className="mt-1 text-taupe">Styled with {partner.name.toLowerCase()}</p>
