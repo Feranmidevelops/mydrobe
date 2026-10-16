@@ -1,0 +1,36 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    'Segoe UI Variable Text', 'Segoe UI', ui-sans-serif, system-ui, -apple-system,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-display:
+    'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+
+  --color-canvas: #f3efe8;
+  --color-stage: #ebe6dd;
+  --color-surface: #fbf9f5;
+  --color-ink: #1c1a17;
+  --color-ink-soft: #46423c;
+  --color-muted: #6e675d;
+  --color-line: #e3ddd2;
+  --color-accent: #8f5a3a;
+  --color-accent-soft: #f2e6dc;
+  --color-warn: #7a4f0e;
+  --color-warn-soft: #f9eed6;
+}
+
+@layer base {
+  html,
+  body {
+    background-color: var(--color-canvas);
+  }
+
+  body {
+    @apply font-sans text-ink antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+}
