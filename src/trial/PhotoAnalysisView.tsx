@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GarmentTemplateId } from '../features/garments/garment.types'
 import type { Rect, Rgb, RgbaImage } from '../features/garments/photo-mapping'
-import {
-  analyseGarmentPhoto,
-  loadPhotoPixels,
-  type PhotoAnalysis,
-} from '../features/mannequin/photo-textures'
+import { analyseGarmentPhoto, type PhotoAnalysis } from '../features/garments/photo-analysis'
+import { loadPhotoPixels } from '../lib/image-processing'
 
 const LOW_COVERAGE = 0.75
 

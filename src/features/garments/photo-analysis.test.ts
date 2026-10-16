@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { RgbaImage } from '../garments/photo-mapping'
-import { analyseGarmentPhoto, PhotoMappingError } from './photo-textures'
+import type { RgbaImage } from './photo-mapping'
+import { analyseGarmentPhoto, PhotoMappingError } from './photo-analysis'
 
 function photo(width: number, height: number, garment?: { x: number; y: number; width: number; height: number }) {
   const data = new Uint8ClampedArray(width * height * 4).fill(255)

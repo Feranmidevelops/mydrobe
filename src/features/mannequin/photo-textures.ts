@@ -1,97 +1,14 @@
 import { CanvasTexture, MirroredRepeatWrapping, SRGBColorSpace } from 'three'
 import type { GarmentTemplateId } from '../garments/garment.types'
-import {
-  averageColor,
-  chooseSwatch,
-  coverage,
-  cropAndFill,
-  DEFAULT_BACKGROUND_TOLERANCE,
-  erodeMask,
-  estimateBackground,
-  flattenLighting,
-  frontCrop,
-  garmentMask,
-  maskBounds,
-  type Rect,
-  type Rgb,
-  type RgbaImage,
-} from '../garments/photo-mapping'
-import { loadImage } from '../../lib/load-image'
+import { analyseGarmentPhoto, type PhotoAnalysis } from '../garments/photo-analysis'
+import { DEFAULT_BACKGROUND_TOLERANCE, type RgbaImage } from '../garments/photo-mapping'
+import { loadPhotoPixels } from '../../lib/image-processing'
 import type { GarmentTextures } from './garment-textures'
 import type { FrontPanel } from './geometry/garment-geometry'
 
-/** Photos are scaled down to this many pixels on their long side before analysis. */
-const ANALYSIS_MAX_PX = 1200
 const FRONT_PX_PER_MM = 1.6
 const MAX_TEXTURE_PX = 2048
 const SWATCH_PX = 512
-
-export class PhotoMappingError extends Error {}
-
-/** What the mapping found in a photo, kept so a trial page can show its working. */
-export interface PhotoAnalysis {
-  image: RgbaImage
-  background: Rgb | null
-  bounds: Rect
-  /** Part of the photo projected onto the template's front. */
-  crop: Rect
-  /** Fabric sample tiled over the back and sleeves. */
-  swatch: Rect
-  fabric: Rgb
-  /** Share of the crop that is garment rather than background. */
-  coverage: number
-  front: RgbaImage
-  swatchPixels: RgbaImage
-}
-
-export function analyseGarmentPhoto(
-  image: RgbaImage,
-  templateId: GarmentTemplateId,
-  tolerance = DEFAULT_BACKGROUND_TOLERANCE,
-): PhotoAnalysis {
-  const background = estimateBackground(image)
-  const mask = garmentMask(image, background, tolerance)
-  const bounds = maskBounds(mask, image.width, image.height)
-  if (!bounds) throw new PhotoMappingError("Couldn't find a garment in this photo.")
-
-  const crop = frontCrop(templateId, mask, image.width, bounds)
-  // Sample and show only solid garment pixels, so the soft edge where garment
-  // meets background doesn't end up as a pale outline on the mannequin.
-  const edge = Math.max(1, Math.round(Math.min(image.width, image.height) * 0.004))
-  const solid = erodeMask(mask, image.width, image.height, edge)
-  const swatch = chooseSwatch(templateId, image, solid, crop)
-  const fabric = averageColor(image, solid, swatch)
-  const swatchPixels = flattenLighting(cropAndFill(image, solid, swatch, fabric))
-  return {
-    image,
-    background,
-    bounds,
-    crop,
-    swatch,
-    fabric,
-    coverage: coverage(mask, image.width, crop),
-    // Gaps in the front take the tiled fabric sample, so patterns carry on.
-    front: cropAndFill(image, solid, crop, swatchPixels),
-    swatchPixels,
-  }
-}
-
-/** Loads a photo and reads its pixels, scaled down for quick analysis. */
-export async function loadPhotoPixels(url: string): Promise<RgbaImage> {
-  const image = await loadImage(url).catch(() => {
-    throw new PhotoMappingError("This photo couldn't be loaded.")
-  })
-  const scale = Math.min(1, ANALYSIS_MAX_PX / Math.max(image.naturalWidth, image.naturalHeight))
-  const width = Math.max(1, Math.round(image.naturalWidth * scale))
-  const height = Math.max(1, Math.round(image.naturalHeight * scale))
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) throw new PhotoMappingError('This browser has no 2D canvas to read the photo with.')
-  ctx.drawImage(image, 0, 0, width, height)
-  return { data: ctx.getImageData(0, 0, width, height).data, width, height }
-}
 
 export function pixelsToCanvas(pixels: RgbaImage): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
