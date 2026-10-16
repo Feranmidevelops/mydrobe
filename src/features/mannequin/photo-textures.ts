@@ -2,6 +2,7 @@ import { CanvasTexture, MirroredRepeatWrapping, SRGBColorSpace } from 'three'
 import type { GarmentTemplateId } from '../garments/garment.types'
 import {
   averageColor,
+  chooseSwatch,
   coverage,
   cropAndFill,
   DEFAULT_BACKGROUND_TOLERANCE,
@@ -10,7 +11,6 @@ import {
   frontCrop,
   garmentMask,
   maskBounds,
-  swatchRect,
   type Rect,
   type Rgb,
   type RgbaImage,
@@ -54,11 +54,11 @@ export function analyseGarmentPhoto(
   if (!bounds) throw new PhotoMappingError("Couldn't find a garment in this photo.")
 
   const crop = frontCrop(templateId, mask, image.width, bounds)
-  const swatch = swatchRect(templateId, crop)
   // Sample and show only solid garment pixels, so the soft edge where garment
   // meets background doesn't end up as a pale outline on the mannequin.
   const edge = Math.max(1, Math.round(Math.min(image.width, image.height) * 0.004))
   const solid = erodeMask(mask, image.width, image.height, edge)
+  const swatch = chooseSwatch(templateId, image, solid, crop)
   const fabric = averageColor(image, solid, swatch)
   const swatchPixels = cropAndFill(image, solid, swatch, fabric)
   return {

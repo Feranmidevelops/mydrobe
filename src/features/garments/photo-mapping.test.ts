@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   averageColor,
   backdropVariation,
+  chooseSwatch,
   coverage,
   cropAndFill,
   erodeMask,
@@ -216,6 +217,19 @@ describe('swatchRect', () => {
     const { mask, bounds } = analyse(trousersPhoto())
     const swatch = swatchRect('trousers-straight', bounds)
     expect(coverage(mask, 100, swatch)).toBe(1)
+  })
+})
+
+describe('chooseSwatch', () => {
+  it('samples plain fabric, steering clear of a print', () => {
+    // A navy tee with a big white print low on the left, where a fixed spot would sample.
+    const image = blank(200, 200)
+    paint(image, { x: 50, y: 30, width: 100, height: 150 }, NAVY)
+    paint(image, { x: 55, y: 105, width: 40, height: 45 }, [240, 240, 240])
+    const mask = garmentMask(image, WHITE)
+    const crop = { x: 50, y: 30, width: 100, height: 150 }
+    const swatch = chooseSwatch('shirt-short-sleeve', image, mask, crop)
+    expect(averageColor(image, mask, swatch)).toEqual(NAVY)
   })
 })
 

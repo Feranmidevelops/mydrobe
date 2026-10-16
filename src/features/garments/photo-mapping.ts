@@ -354,6 +354,76 @@ export function swatchRect(templateId: GarmentTemplateId, crop: Rect): Rect {
   return { x, y, width: size, height: size }
 }
 
+/** The colour most of the garment is inside `rect`, so a print, pocket or hand doesn't sway it. */
+export function dominantColor(image: RgbaImage, mask: Uint8Array, rect: Rect): Rgb {
+  const channels: [number[], number[], number[]] = [[], [], []]
+  const stride = Math.max(1, Math.round(Math.sqrt((rect.width * rect.height) / 4000)))
+  for (let y = rect.y; y < rect.y + rect.height; y += stride) {
+    for (let x = rect.x; x < rect.x + rect.width; x += stride) {
+      if (!mask[y * image.width + x]) continue
+      const [r, g, b] = pixel(image, x, y)
+      channels[0].push(r)
+      channels[1].push(g)
+      channels[2].push(b)
+    }
+  }
+  if (channels[0].length === 0) return averageColor(image, mask, rect)
+  return [median(channels[0]), median(channels[1]), median(channels[2])]
+}
+
+/**
+ * Picks the patch of fabric that best represents the garment, to tile over
+ * the back and sleeves. Candidate squares across the crop are scored by how
+ * far their pixels sit from the garment's dominant colour, so the pick steers
+ * clear of prints, pockets, labels and hands. Falls back to a fixed spot when
+ * no candidate is fully garment.
+ */
+export function chooseSwatch(
+  templateId: GarmentTemplateId,
+  image: RgbaImage,
+  mask: Uint8Array,
+  crop: Rect,
+): Rect {
+  const trousers = templateId === 'trousers-straight'
+  const size = Math.max(2, Math.round(Math.min(crop.width, crop.height) * (trousers ? 0.16 : 0.2)))
+  const dominant = dominantColor(image, mask, crop)
+  const stride = Math.max(1, Math.round(size / 24))
+  let best: Rect | null = null
+  let bestScore = Infinity
+
+  for (let fy = 0.2; fy <= 0.85; fy += 0.08) {
+    for (let fx = 0.04; fx <= 0.96; fx += 0.06) {
+      // Shirts keep away from the buttons and any print down the middle.
+      if (!trousers && Math.abs(fx + size / crop.width / 2 - 0.5) < 0.12) continue
+      const rect = {
+        x: Math.round(crop.x + fx * crop.width),
+        y: Math.round(crop.y + fy * crop.height),
+        width: size,
+        height: size,
+      }
+      if (rect.x + size > crop.x + crop.width || rect.y + size > crop.y + crop.height) continue
+      let total = 0
+      let garment = 0
+      let samples = 0
+      for (let y = rect.y; y < rect.y + size; y += stride) {
+        for (let x = rect.x; x < rect.x + size; x += stride) {
+          samples++
+          if (!mask[y * image.width + x]) continue
+          garment++
+          total += colorDistance(pixel(image, x, y), dominant)
+        }
+      }
+      if (garment < samples * 0.97) continue
+      const score = total / garment
+      if (score < bestScore) {
+        bestScore = score
+        best = rect
+      }
+    }
+  }
+  return best ?? swatchRect(templateId, crop)
+}
+
 /** Average colour of the garment pixels inside `rect` (or of all of it, if none are garment). */
 export function averageColor(image: RgbaImage, mask: Uint8Array, rect: Rect): Rgb {
   const sums = { garment: [0, 0, 0, 0], all: [0, 0, 0, 0] }
