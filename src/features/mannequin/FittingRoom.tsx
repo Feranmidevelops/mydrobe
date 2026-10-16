@@ -1,4 +1,4 @@
-import { ContactShadows, Environment, Lightformer } from '@react-three/drei'
+import { ContactShadows } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { useMemo } from 'react'
 import { useWardrobeGarments } from '../../hooks/useWardrobeGarments'
@@ -9,22 +9,7 @@ import { CameraRig } from './CameraRig'
 import { CAMERA_FOV } from './camera-views'
 import { GarmentMesh } from './GarmentMesh'
 import { Mannequin } from './Mannequin'
-
-/** Soft studio light baked into a small environment map; no HDR download needed. */
-function StudioLighting() {
-  return (
-    <>
-      <hemisphereLight args={['#ffffff', '#d8d0c3', 0.55]} />
-      <directionalLight position={[-2.5, 4, 3]} intensity={1.5} />
-      <directionalLight position={[3, 2.5, -3]} intensity={0.7} color="#fff6ea" />
-      <Environment frames={1} resolution={128}>
-        <Lightformer form="rect" intensity={2} position={[0, 4, 1]} rotation-x={Math.PI / 2} scale={[6, 3, 1]} />
-        <Lightformer form="rect" intensity={1.2} position={[-4, 1.5, 2]} rotation-y={Math.PI / 2.5} scale={[3, 4, 1]} />
-        <Lightformer form="rect" intensity={0.8} position={[4, 1.5, -2]} rotation-y={-Math.PI / 1.6} scale={[3, 4, 1]} />
-      </Environment>
-    </>
-  )
-}
+import { StudioLighting } from './StudioLighting'
 
 /**
  * Drei's ContactShadows blurs on a helper plane fixed at y = 0, so its own
