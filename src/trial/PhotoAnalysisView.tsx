@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GarmentTemplateId } from '../features/garments/garment.types'
 import type { Rect, Rgb, RgbaImage } from '../features/garments/photo-mapping'
-import {
-  analyseGarmentPhoto,
-  loadPhotoPixels,
-  type PhotoAnalysis,
-} from '../features/mannequin/photo-textures'
+import { analysePhotoAt } from '../features/garments/analyse-photo'
+import type { PhotoAnalysis } from '../features/garments/photo-analysis'
+import { loadPhotoPixels } from '../lib/image-processing'
 
 const LOW_COVERAGE = 0.75
 
@@ -66,8 +64,7 @@ export function PhotoAnalysisView({ url, templateId, tolerance }: PhotoAnalysisV
 
   useEffect(() => {
     let cancelled = false
-    loadPhotoPixels(url)
-      .then((pixels) => analyseGarmentPhoto(pixels, templateId, tolerance))
+    analysePhotoAt(url, loadPhotoPixels, templateId, tolerance)
       .then((analysis) => {
         if (!cancelled) setResult({ key, analysis })
       })
