@@ -175,3 +175,53 @@ export function swatchRect(templateId: GarmentTemplateId, crop: Rect): Rect {
   const y = Math.min(crop.y + Math.round(crop.height * top), crop.y + crop.height - size)
   return { x, y, width: size, height: size }
 }
+
+/** Average colour of the garment pixels inside `rect` (or of all of it, if none are garment). */
+export function averageColor(image: RgbaImage, mask: Uint8Array, rect: Rect): Rgb {
+  const sums = { garment: [0, 0, 0, 0], all: [0, 0, 0, 0] }
+  for (let y = rect.y; y < rect.y + rect.height; y++) {
+    for (let x = rect.x; x < rect.x + rect.width; x++) {
+      const [r, g, b] = pixel(image, x, y)
+      const target = mask[y * image.width + x] ? [sums.garment, sums.all] : [sums.all]
+      for (const sum of target) {
+        sum[0] += r
+        sum[1] += g
+        sum[2] += b
+        sum[3]++
+      }
+    }
+  }
+  const use = sums.garment[3] > 0 ? sums.garment : sums.all
+  const count = Math.max(1, use[3])
+  return [Math.round(use[0] / count), Math.round(use[1] / count), Math.round(use[2] / count)]
+}
+
+/** Share of `rect` covered by garment pixels; low values mean the garment wasn't found cleanly. */
+export function coverage(mask: Uint8Array, width: number, rect: Rect): number {
+  let garment = 0
+  for (let y = rect.y; y < rect.y + rect.height; y++) {
+    for (let x = rect.x; x < rect.x + rect.width; x++) garment += mask[y * width + x]
+  }
+  return garment / Math.max(1, rect.width * rect.height)
+}
+
+/**
+ * Copies `rect` out of the photo, painting any background inside it with
+ * `fill` so gaps (a shirt's neck opening, the space between trouser legs)
+ * don't end up on the mannequin as background.
+ */
+export function cropAndFill(image: RgbaImage, mask: Uint8Array, rect: Rect, fill: Rgb): RgbaImage {
+  const data = new Uint8ClampedArray(rect.width * rect.height * 4)
+  for (let y = 0; y < rect.height; y++) {
+    for (let x = 0; x < rect.width; x++) {
+      const source = (rect.y + y) * image.width + rect.x + x
+      const target = (y * rect.width + x) * 4
+      const isGarment = mask[source] === 1
+      data[target] = isGarment ? image.data[source * 4] : fill[0]
+      data[target + 1] = isGarment ? image.data[source * 4 + 1] : fill[1]
+      data[target + 2] = isGarment ? image.data[source * 4 + 2] : fill[2]
+      data[target + 3] = 255
+    }
+  }
+  return { data, width: rect.width, height: rect.height }
+}

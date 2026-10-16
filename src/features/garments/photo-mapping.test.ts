@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  averageColor,
+  coverage,
+  cropAndFill,
   estimateBackground,
   frontCrop,
   garmentMask,
@@ -26,6 +29,11 @@ function paint(image: RgbaImage, rect: Rect, color: Rgb) {
       image.data.set([...color, 255], (y * image.width + x) * 4)
     }
   }
+}
+
+function colorAt(image: RgbaImage, x: number, y: number): Rgb {
+  const i = (y * image.width + x) * 4
+  return [image.data[i], image.data[i + 1], image.data[i + 2]]
 }
 
 /** A flat-lay shirt: a body, wide sleeves across the shoulders, cuffs hanging beside the hem. */
@@ -112,5 +120,29 @@ describe('swatchRect', () => {
     expect(swatch.x).toBeGreaterThanOrEqual(crop.x)
     expect(swatch.y + swatch.height).toBeLessThanOrEqual(crop.y + crop.height)
     expect(swatch.x + swatch.width).toBeLessThanOrEqual(crop.x + crop.width / 2)
+  })
+
+  it('samples the left leg of a pair of trousers', () => {
+    const { mask, bounds } = analyse(trousersPhoto())
+    const swatch = swatchRect('trousers-straight', bounds)
+    expect(coverage(mask, 100, swatch)).toBe(1)
+  })
+})
+
+describe('filling the background inside the crop', () => {
+  it('paints the gap between trouser legs with the fabric colour', () => {
+    const image = trousersPhoto()
+    const { mask, bounds } = analyse(image)
+    const fabric = averageColor(image, mask, bounds)
+    const filled = cropAndFill(image, mask, bounds, fabric)
+
+    expect(fabric).toEqual(NAVY)
+    expect(colorAt(filled, 25 - bounds.x + 25, 60 - bounds.y)).toEqual(NAVY)
+    expect(colorAt(filled, 0, 0)).toEqual(NAVY)
+  })
+
+  it('reports how much of the crop is garment', () => {
+    const { mask, bounds } = analyse(trousersPhoto())
+    expect(coverage(mask, 100, bounds)).toBeCloseTo((40 * 15 + 2 * 17 * 65) / (40 * 80), 5)
   })
 })
