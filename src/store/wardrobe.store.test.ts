@@ -119,6 +119,16 @@ describe('wardrobe store', () => {
     })
   })
 
+  it('tracks which photo garments are still being fitted, or could not be', () => {
+    const { setFitting } = useWardrobeStore.getState()
+    setFitting('navy-shirt', 'loading')
+    setFitting('cord-trousers', 'failed')
+    expect(useWardrobeStore.getState().fitting).toEqual({ 'navy-shirt': 'loading', 'cord-trousers': 'failed' })
+
+    setFitting('navy-shirt', null)
+    expect(useWardrobeStore.getState().fitting).toEqual({ 'cord-trousers': 'failed' })
+  })
+
   it('shows one notice at a time and only clears the one it was asked to', () => {
     const { showNotice, dismissNotice } = useWardrobeStore.getState()
     showNotice('success', 'Navy shirt added to your wardrobe')
