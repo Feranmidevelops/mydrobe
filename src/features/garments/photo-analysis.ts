@@ -1,3 +1,4 @@
+import { extractPalette } from './garment.colors'
 import type { GarmentTemplateId } from './garment.types'
 import {
   averageColor,
@@ -35,6 +36,8 @@ export interface PhotoAnalysis {
   fabric: Rgb
   /** Share of the crop that is garment rather than background. */
   coverage: number
+  /** The garment's main colours, most common first. */
+  palette: Rgb[]
   front: RgbaImage
   swatchPixels: RgbaImage
 }
@@ -65,6 +68,7 @@ export function analyseGarmentPhoto(
     swatch,
     fabric,
     coverage: coverage(mask, image.width, crop),
+    palette: extractPalette(image, solid, bounds),
     // Gaps in the front take the tiled fabric sample, so patterns carry on.
     front: cropAndFill(image, solid, crop, swatchPixels),
     swatchPixels,

@@ -22,6 +22,7 @@ describe('analyseGarmentPhoto', () => {
     expect(analysis.crop).toEqual({ x: 20, y: 10, width: 40, height: 80 })
     expect(analysis.fabric).toEqual([150, 40, 40])
     expect(analysis.coverage).toBe(1)
+    expect(analysis.palette).toEqual([[150, 40, 40]])
     expect(analysis.front.width).toBe(40)
     expect(analysis.swatchPixels.width).toBe(analysis.swatch.width)
   })
