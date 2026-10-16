@@ -21,10 +21,10 @@ export default function FittingRoomPage() {
   }, [])
 
   return (
-    <div className="flex min-h-dvh flex-col lg:h-dvh lg:flex-row">
+    <div className="flex min-h-dvh flex-col split:h-dvh split:flex-row">
       <section
         aria-label="Fitting room"
-        className="relative h-[62dvh] min-h-[420px] shrink-0 overflow-hidden bg-stage bg-[radial-gradient(ellipse_at_50%_36%,#f7f0e8_0%,#e4d6c7_72%)] lg:h-auto lg:flex-1"
+        className="relative h-[62dvh] min-h-[420px] shrink-0 overflow-hidden bg-stage bg-[radial-gradient(ellipse_at_50%_36%,#f7f0e8_0%,#e4d6c7_72%)] split:h-auto split:min-h-0 split:flex-1"
       >
         <div className="absolute inset-0">
           <ViewerStage />
@@ -56,7 +56,7 @@ export default function FittingRoomPage() {
 
       <aside
         aria-label="Wardrobe"
-        className="flex-1 border-t border-line bg-cream lg:w-[420px] lg:flex-none lg:overflow-y-auto lg:border-t-0 lg:border-l"
+        className="flex-1 border-t border-line bg-cream split:w-[min(420px,50vw)] split:flex-none split:overflow-y-auto split:border-t-0 split:border-l"
       >
         <WardrobePanel garments={garments} onAddClothes={() => setAddingClothes(true)} />
       </aside>

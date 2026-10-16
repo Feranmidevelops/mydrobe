@@ -30,6 +30,16 @@
   --color-warn-soft: #f9eed6;
 }
 
+/*
+ * Fitting room side by side: wide screens, and phones turned sideways, where
+ * stacking would leave the mannequin a sliver of the screen.
+ */
+@custom-variant split {
+  @media (min-width: 64rem), (orientation: landscape) and (max-height: 32rem) {
+    @slot;
+  }
+}
+
 @layer base {
   html,
   body {
