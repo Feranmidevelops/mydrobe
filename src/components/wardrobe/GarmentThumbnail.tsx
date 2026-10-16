@@ -39,7 +39,7 @@ export function GarmentThumbnail({
     }
 
     let cancelled = false
-    loadImage(source.url)
+    loadImage(source.thumbnailUrl ?? source.url)
       .then((image) => {
         if (!cancelled) drawPhotoThumbnail(ctx, image, pixels)
       })

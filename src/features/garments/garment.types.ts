@@ -41,6 +41,8 @@ export type GarmentSource =
   | {
       kind: 'photo'
       url: string
+      /** A cut-out of just the garment, for wardrobe cards. */
+      thumbnailUrl?: string
       /** How different from the background a pixel must be to count as garment. */
       backgroundTolerance?: number
     }
@@ -53,6 +55,8 @@ export interface Garment {
   templateId: GarmentTemplateId | null
   source: GarmentSource
   tags: string[]
+  /** Main colours as CSS hex, most common first; known for uploaded photos. */
+  palette?: string[]
   createdAt: number
   updatedAt: number
 }
