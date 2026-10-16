@@ -196,6 +196,18 @@ describe('WardrobePanel', () => {
     expect(shelf('Demo pieces').getAllByRole('listitem')).toHaveLength(8)
   })
 
+  it('moves focus to the Outfits tab once an outfit is deleted', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    useWardrobeStore.setState({ outfits: [createOutfit('Office', { shirt: 'demo-oxford-stripe' }, 'medium')] })
+    render(<WardrobePanel garments={DEMO_GARMENTS} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Outfits 1' }))
+    await user.click(screen.getByRole('button', { name: 'Delete Office' }))
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Outfits 0' })).toHaveFocus())
+  })
+
   it('warns when a piece being removed is part of a saved outfit', async () => {
     const user = userEvent.setup()
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)

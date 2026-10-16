@@ -17,8 +17,15 @@ import { GarmentThumbnail } from '../wardrobe/GarmentThumbnail'
 const iconButton =
   'grid size-8 place-items-center rounded-full text-muted transition hover:bg-sand hover:text-ink'
 
+interface OutfitCardProps {
+  outfit: Outfit
+  garments: Garment[]
+  /** Called once the outfit is deleted, so focus can move on from the card that's gone. */
+  onDeleted?: () => void
+}
+
 /** A saved outfit: its pieces at a glance, with ways to wear, rename or delete it. */
-export function OutfitCard({ outfit, garments }: { outfit: Outfit; garments: Garment[] }) {
+export function OutfitCard({ outfit, garments, onDeleted }: OutfitCardProps) {
   const nameId = useId()
   const inputId = useId()
   const errorId = useId()
@@ -58,8 +65,9 @@ export function OutfitCard({ outfit, garments }: { outfit: Outfit; garments: Gar
     }
   }
 
-  const confirmDelete = () => {
-    if (window.confirm(`Delete “${outfit.name}”? Its clothes stay in your wardrobe.`)) void deleteOutfit(outfit)
+  const confirmDelete = async () => {
+    if (!window.confirm(`Delete “${outfit.name}”? Its clothes stay in your wardrobe.`)) return
+    if (await deleteOutfit(outfit)) onDeleted?.()
   }
 
   return (
