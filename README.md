@@ -2,7 +2,7 @@
 
 Style your own clothes on an interactive 3D mannequin, right in the browser. Mydrobe is local-first: no account, no backend and no paid AI. Everything runs on the device.
 
-> **Status: Milestones 1 to 3 of the seven-day MVP plan are done.** The 3D fitting room, body presets and garment templates work with a built-in demo wardrobe, and you can add your own clothes from a photo. The photo trial showed which photos look convincing ([write-up](docs/milestone-2-photo-trial.md)), and the upload screen teaches those rules. IndexedDB persistence and saved outfits come next (see [Roadmap](#roadmap)).
+> **Status: Milestones 1 to 4 of the seven-day MVP plan are done.** The 3D fitting room, body presets and garment templates work with a built-in demo wardrobe. You can add your own clothes from a photo, save outfits, and find both again after a reload, all kept in this browser. The photo trial showed which photos look convincing ([write-up](docs/milestone-2-photo-trial.md)), and the upload screen teaches those rules. Responsive polish, end-to-end tests and deployment come next (see [Roadmap](#roadmap)).
 
 ## What works today
 
@@ -14,6 +14,8 @@ Style your own clothes on an interactive 3D mannequin, right in the browser. Myd
   - check how it came out: the background is faded so you can see what counts as garment, and you choose a name (suggested from the main colour), what it is, the sleeve length and how much background to remove
   - add it, and it appears under *Your clothes* with a cut-out thumbnail and goes straight onto the mannequin. It can be removed again.
 - A demo wardrobe of 8 pieces next to your own, with category filters across both. Pick one item per category to dress the mannequin.
+- **Saved outfits.** *Save outfit* names what's on the mannequin and remembers its body shape. The *Outfits* tab lists them to wear again, rename or delete. If a piece in an outfit is later removed, the outfit says which one is gone instead of breaking.
+- **Everything is kept in this browser** with IndexedDB: your clothes, their photos and your outfits survive a reload. Nothing is uploaded anywhere. If the browser won't allow saving (some private modes), the app says so and still works for that visit.
 - Three garment templates: long-sleeve shirt, short-sleeve tee and straight trousers.
 - Items with no 3D template, such as the demo overcoat, stay selectable. The app says why they aren't on the mannequin instead of drawing something wrong.
 - Loading, empty, WebGL-unsupported and viewer-crash states.
@@ -41,7 +43,7 @@ No environment variables or secrets are needed.
 
 ## How it's built
 
-React 19, TypeScript and Vite, styled with Tailwind CSS v4. Type is set in Helvetica Neue on Apple devices and in the bundled Inter everywhere else. The 3D view uses Three.js with React Three Fiber and Drei. Zustand holds the state that the wardrobe panel and the viewer share. Vitest and Testing Library run the tests.
+React 19, TypeScript and Vite, styled with Tailwind CSS v4. Type is set in Helvetica Neue on Apple devices and in the bundled Inter everywhere else. The 3D view uses Three.js with React Three Fiber and Drei. Zustand holds the state that the wardrobe panel and the viewer share, and Dexie keeps clothes and outfits in IndexedDB. Vitest and Testing Library run the tests, against an in-memory IndexedDB (fake-indexeddb) rather than mocks.
 
 ```
 src/
@@ -52,15 +54,17 @@ src/
 │   ├── landing/          Landing page sections
 │   ├── layout/           Fitting room header
 │   ├── outfit-builder/   Viewer stage, view controls, body presets, notices
+│   ├── outfits/          Save outfit form, saved outfits list and cards
 │   ├── upload/           Upload dialog: photo picker, review step, preview
-│   ├── wardrobe/         Wardrobe panel, garment cards, thumbnails
-│   └── ui/               Icons, error boundary
+│   ├── wardrobe/         Wardrobe panel and tabs, shelves, garment cards, thumbnails
+│   └── ui/               Icons, notices, error boundary
 ├── features/
-│   ├── garments/         Garment types, templates, demo wardrobe, upload checks, photo analysis
-│   ├── outfits/          Outfit selection rules, featured looks
+│   ├── garments/         Garment types, templates, demo wardrobe, upload checks, photo analysis, storage
+│   ├── outfits/          Outfit rules, storage and service; selection rules; featured looks
+│   ├── storage/          Restoring the saved wardrobe on start, save-failure messages
 │   └── mannequin/        Body presets, geometry, fitting room, camera, textures
 ├── hooks/                useWardrobeGarments: your uploads, then the demo pieces
-├── lib/                  Procedural fabric drawing, image loading and processing
+├── lib/                  The on-device database (Dexie), fabric drawing, image loading and processing
 └── store/                Shared UI state
 ```
 
@@ -88,6 +92,21 @@ A photo of a shirt can't become a true 3D shirt by itself. Mydrobe maps images o
 3. **Analysed** (`photo-analysis.ts`, in a web worker): finds the background from the edges inward, keeps the largest garment shape, and picks the front crop, a fabric sample and the main colours. Results are cached, so the 3D view reuses the review step's analysis.
 4. **Reviewed** (`components/upload/`): the person sees the separation, names the piece and says what it is. Gentle notes flag a garment cut off at the edge, a tiny one, or background likely to show on the mannequin.
 5. **Added**: a cut-out thumbnail is made, and the piece joins the wardrobe store and goes onto the mannequin. Photos that aren't added, or are removed later, are freed.
+
+### Saving on this device
+
+Persistence uses IndexedDB through Dexie (`src/lib/db.ts`), keeping UI state (Zustand) separate from what's stored:
+
+| Table | Holds |
+| ----- | ----- |
+| `garments` | Each upload's details: name, category, template, colours, background setting, and the checked MIME type and size of the original file. It points at its images by key. |
+| `images` | The prepared photo and cut-out thumbnail as bytes plus their type. Bytes rather than Blobs, because stored Blobs have been known to turn unreadable in some Safari versions. |
+| `outfits` | Name, body preset, one garment id per slot, and slots whose garment has since been removed. Outfits never copy photos. |
+
+- A garment and its images are saved and deleted together in one transaction. Deleting a garment also marks its slot as missing in any saved outfit, in the same transaction, so no outfit points at something that isn't there.
+- New uploads are saved first and only then added to the wardrobe, so a failed save (a full device, say) gets a clear message and can simply be tried again.
+- The saved wardrobe is read once when the fitting room opens. Photos get object URLs, which are released when a piece is removed.
+- Data stays in this browser on this device. Clearing browsing data deletes it, and the app says so.
 
 ## Landing page images
 
@@ -118,7 +137,8 @@ Shots are defined in `src/capture/shots.ts`. The capture page isn't part of the 
 
 ## Known limitations
 
-- Nothing is saved yet. Uploads and outfits reset when the page reloads.
+- Saved clothes and outfits live in this browser only: they don't sync between devices or browsers, and clearing browsing data deletes them. Two open tabs don't see each other's changes until reloaded.
+- What's on the mannequin isn't remembered between visits; save it as an outfit to keep it.
 - Only shirts and trousers can be worn on the mannequin. Other uploads (outerwear, shoes, accessories) are kept in the wardrobe in 2D.
 - Photos that break the [photo rules](docs/milestone-2-photo-trial.md#the-input-contract-for-uploads) (worn, folded, busy backgrounds) separate poorly. The review step shows this before anything is added. A hanger can show at the collar, and background can peek through a neck opening.
 - The mannequin is a stylised placeholder, not a realistic body scan. Garments are fitted shells with no cloth simulation, folds or drape.
@@ -131,7 +151,7 @@ From the implementation blueprint's seven-day plan:
 1. **3D fitting room, body presets, garment templates** ✅
 2. **Photo-to-template mapping trial** ✅: template texturing works for photos that follow the [input contract](docs/milestone-2-photo-trial.md#the-input-contract-for-uploads)
 3. **Upload validation, thumbnails and the user's own wardrobe** ✅: the photo rules are shown at upload, then a review step to check the separation before adding
-4. IndexedDB persistence (Dexie) and outfit save, rename, reopen and delete
+4. **IndexedDB persistence (Dexie) and outfit save, rename, reopen and delete** ✅: clothes and outfits survive reloads, and deleted pieces show as missing in outfits
 5. Responsive polish across every empty, error and loading state
 6. End-to-end tests (Playwright) and performance tuning
 7. Docs, deployment and smoke tests
