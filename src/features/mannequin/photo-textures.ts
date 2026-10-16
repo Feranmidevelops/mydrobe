@@ -1,6 +1,7 @@
 import { CanvasTexture, MirroredRepeatWrapping, SRGBColorSpace } from 'three'
 import type { GarmentTemplateId } from '../garments/garment.types'
-import { analyseGarmentPhoto, type PhotoAnalysis } from '../garments/photo-analysis'
+import { analysePhoto } from '../garments/analyse-photo'
+import type { PhotoAnalysis } from '../garments/photo-analysis'
 import { DEFAULT_BACKGROUND_TOLERANCE, type RgbaImage } from '../garments/photo-mapping'
 import { loadPhotoPixels } from '../../lib/image-processing'
 import type { GarmentTextures } from './garment-textures'
@@ -67,6 +68,6 @@ export async function createPhotoGarmentTextures(
   panel: FrontPanel,
   tolerance: number = DEFAULT_BACKGROUND_TOLERANCE,
 ) {
-  const analysis = analyseGarmentPhoto(await loadPhotoPixels(url), templateId, tolerance)
+  const analysis = await analysePhoto(await loadPhotoPixels(url), templateId, tolerance)
   return { analysis, textures: photoTextures(analysis, panel) }
 }
