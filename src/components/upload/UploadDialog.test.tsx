@@ -10,6 +10,7 @@ import {
   type PreparedPhoto,
 } from '../../features/garments/garment.service'
 import type { PhotoAnalysis } from '../../features/garments/photo-analysis'
+import { db } from '../../lib/db'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { UploadDialog } from './UploadDialog'
 
@@ -67,15 +68,16 @@ async function chooseAndReview(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('UploadDialog', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     useWardrobeStore.setState(initialState, true)
+    await Promise.all(db.tables.map((table) => table.clear()))
     vi.mocked(preparePhoto).mockReset().mockResolvedValue(prepared)
     vi.mocked(analysePhotoAt).mockReset().mockResolvedValue(navyAnalysis())
-    vi.mocked(makeThumbnail).mockReset().mockResolvedValue('blob:navy-shirt-thumbnail')
+    vi.mocked(makeThumbnail).mockReset().mockResolvedValue(new Blob(['thumbnail'], { type: 'image/webp' }))
     vi.mocked(forgetPhoto).mockReset()
   })
 
-  it('adds a shirt from a photo and puts it straight on the mannequin', async () => {
+  it('adds a shirt from a photo, saves it and puts it straight on the mannequin', async () => {
     const user = userEvent.setup()
     render(<Harness />)
     expect(screen.getByRole('dialog', { name: 'Add clothes' })).toHaveTextContent('Step 1 of 2')
@@ -93,13 +95,32 @@ describe('UploadDialog', () => {
       source: {
         kind: 'photo',
         url: 'blob:navy-shirt',
-        thumbnailUrl: 'blob:navy-shirt-thumbnail',
+        thumbnailUrl: expect.stringMatching(/^blob:/),
         backgroundTolerance: 70,
       },
       palette: ['#24375e'],
     })
     expect(useWardrobeStore.getState().selection).toEqual({ shirt: garment.id })
+    expect(await db.garments.get(garment.id)).toMatchObject({ name: 'Navy shirt', mimeType: 'image/jpeg' })
     expect(forgetPhoto).not.toHaveBeenCalled()
+  })
+
+  it('explains when the piece could not be saved, and lets you try again', async () => {
+    const user = userEvent.setup()
+    const full = Object.assign(new Error('Quota exceeded'), { name: 'QuotaExceededError' })
+    const saving = vi.spyOn(db, 'transaction').mockImplementationOnce(() => Promise.reject(full) as never)
+    render(<Harness />)
+    await chooseAndReview(user)
+
+    await user.click(screen.getByRole('button', { name: 'Add to wardrobe' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/enough space/)
+    expect(useWardrobeStore.getState().uploads).toEqual([])
+    expect(forgetPhoto).not.toHaveBeenCalledWith('blob:navy-shirt')
+
+    await user.click(screen.getByRole('button', { name: 'Add to wardrobe' }))
+    expect(await screen.findByText('Dialog closed')).toBeInTheDocument()
+    expect(useWardrobeStore.getState().uploads).toHaveLength(1)
+    saving.mockRestore()
   })
 
   it('keeps a piece without a 3D template off the mannequin', async () => {

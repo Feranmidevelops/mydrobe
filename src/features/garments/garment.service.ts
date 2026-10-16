@@ -2,6 +2,8 @@ import { cutOutThumbnail, decodeImage, downscaleImage } from '../../lib/image-pr
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { forgetPhoto } from './analyse-photo'
 import { toHex } from './garment.colors'
+import { saveGarment, type GarmentFiles } from './garment.repository'
+import { getRenderability } from './garment.templates'
 import type { Garment, GarmentCategory, GarmentTemplateId } from './garment.types'
 import {
   checkImageSize,
@@ -98,14 +100,46 @@ export function createUploadedGarment(
   }
 }
 
-/** An object URL for the garment's cut-out thumbnail, or undefined when one can't be drawn. */
+/** The garment's cut-out thumbnail, or undefined when one can't be drawn. */
 export async function makeThumbnail(analysis: Pick<PhotoAnalysis, 'image' | 'mask' | 'bounds'>) {
   try {
-    return URL.createObjectURL(await cutOutThumbnail(analysis))
+    return await cutOutThumbnail(analysis)
   } catch {
     // Wardrobe cards fall back to the full photo.
     return undefined
   }
+}
+
+/** Saving on this device failed; the message says what to do about it. */
+export class StorageError extends Error {}
+
+function isOutOfSpace(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  // Dexie reports a full disk directly, or as the reason a transaction gave up.
+  return error.name === 'QuotaExceededError' || isOutOfSpace((error as Error & { inner?: unknown }).inner)
+}
+
+/**
+ * Saves a reviewed upload on this device, then adds it to the wardrobe and
+ * puts it on the mannequin when it can be worn. The wardrobe only changes
+ * once the save has worked, so a failed save can simply be tried again.
+ */
+export async function addUploadedGarment(garment: Garment, files: GarmentFiles) {
+  if (useWardrobeStore.getState().storage !== 'unavailable') {
+    try {
+      await saveGarment(garment, files)
+    } catch (error) {
+      throw new StorageError(
+        isOutOfSpace(error)
+          ? "There isn't enough space on this device to save it. Remove pieces you don't need or free up some space, then try again."
+          : "Couldn't save it on this device. Please try again.",
+      )
+    }
+  }
+  const { addUpload, wear, showNotice } = useWardrobeStore.getState()
+  addUpload(garment)
+  if (getRenderability(garment).renderable) wear([garment])
+  showNotice('success', `${garment.name} added to your wardrobe`)
 }
 
 /** Lets go of a photo nothing will show again: its object URL and any remembered analyses. */

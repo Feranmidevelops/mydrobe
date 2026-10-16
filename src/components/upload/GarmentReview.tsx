@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { analysePhotoAt } from '../../features/garments/analyse-photo'
 import { suggestGarmentName } from '../../features/garments/garment.colors'
-import type { GarmentDetails, PreparedPhoto } from '../../features/garments/garment.service'
+import { StorageError, type GarmentDetails, type PreparedPhoto } from '../../features/garments/garment.service'
 import { getRenderability } from '../../features/garments/garment.templates'
 import {
   GARMENT_CATEGORIES,
@@ -158,9 +158,9 @@ export function GarmentReview({ photo, onChooseAnother, onAdd }: GarmentReviewPr
         },
         analysis,
       )
-    } catch {
+    } catch (error) {
       setSaving(false)
-      setSaveError("Couldn't add this piece. Please try again.")
+      setSaveError(error instanceof StorageError ? error.message : "Couldn't add this piece. Please try again.")
     }
   }
 
