@@ -61,4 +61,35 @@ describe('wardrobe store', () => {
     expect(useWardrobeStore.getState().uploads.map((garment) => garment.id)).toEqual(['cord-trousers'])
     expect(useWardrobeStore.getState().selection).toEqual({ trousers: 'demo-indigo-denim' })
   })
+
+  it('puts uploads read from the device after ones added during this visit, without doubling up', () => {
+    const { addUpload, restoreUploads } = useWardrobeStore.getState()
+    const photo = (id: string) => ({
+      id,
+      name: id,
+      category: 'shirt' as const,
+      templateId: null,
+      source: { kind: 'photo' as const, url: `blob:${id}` },
+      tags: ['upload'],
+      createdAt: 0,
+      updatedAt: 0,
+    })
+    addUpload(photo('just-added'))
+    restoreUploads([photo('just-added'), photo('saved-earlier')])
+
+    expect(useWardrobeStore.getState().uploads.map((garment) => garment.id)).toEqual(['just-added', 'saved-earlier'])
+  })
+
+  it('shows one notice at a time and only clears the one it was asked to', () => {
+    const { showNotice, dismissNotice } = useWardrobeStore.getState()
+    showNotice('success', 'Navy shirt added to your wardrobe')
+    const first = useWardrobeStore.getState().notice!
+    showNotice('error', "Couldn't save it on this device")
+    const second = useWardrobeStore.getState().notice!
+
+    dismissNotice(first.id)
+    expect(useWardrobeStore.getState().notice).toEqual(second)
+    dismissNotice(second.id)
+    expect(useWardrobeStore.getState().notice).toBeNull()
+  })
 })
