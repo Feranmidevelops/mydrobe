@@ -22,6 +22,17 @@ export function toggleInSelection(
   return { ...selection, [garment.category]: garment.id }
 }
 
+/** Puts on several garments at once, each replacing whatever was in its category. */
+export function wearInSelection(
+  selection: GarmentSelection,
+  garments: Pick<Garment, 'id' | 'category'>[],
+): GarmentSelection {
+  return garments.reduce<GarmentSelection>(
+    (next, garment) => ({ ...next, [garment.category]: garment.id }),
+    selection,
+  )
+}
+
 export function removeFromSelection(
   selection: GarmentSelection,
   category: GarmentCategory,

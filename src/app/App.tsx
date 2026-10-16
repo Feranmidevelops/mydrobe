@@ -1,6 +1,10 @@
-import { useEffect } from 'react'
-import FittingRoomPage from './FittingRoomPage'
+import { lazy, Suspense, useEffect } from 'react'
+import { PageLoading } from '../components/ui/PageLoading'
+import LandingPage from './LandingPage'
+import { loadFittingRoomPage } from './pages'
 import { ROUTES, useRoute, type Route } from './router'
+
+const FittingRoomPage = lazy(loadFittingRoomPage)
 
 const PAGE_TITLES: Record<Route, string> = {
   [ROUTES.home]: 'Mydrobe · Virtual wardrobe',
@@ -14,6 +18,13 @@ export default function App() {
     document.title = PAGE_TITLES[route]
   }, [route])
 
-  // Both routes show the fitting room until the landing page takes over "/".
-  return <FittingRoomPage />
+  if (route === ROUTES.fittingRoom) {
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <FittingRoomPage />
+      </Suspense>
+    )
+  }
+
+  return <LandingPage />
 }

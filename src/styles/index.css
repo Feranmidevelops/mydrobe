@@ -19,6 +19,15 @@
   --color-accent-soft: #f2e6dc;
   --color-warn: #7a4f0e;
   --color-warn-soft: #f9eed6;
+
+  /* Landing page: warm browns and creams. */
+  --color-espresso: #4a2d1f;
+  --color-cocoa: #5b3a28;
+  --color-tan: #835d3e;
+  --color-cream: #f6f1ec;
+  --color-sand: #eee6dd;
+  --color-mist: #e8e3dd;
+  --color-taupe: #6f6257;
 }
 
 @layer base {
@@ -29,6 +38,12 @@
 
   body {
     @apply font-sans text-ink antialiased;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
   }
 
   :focus-visible {

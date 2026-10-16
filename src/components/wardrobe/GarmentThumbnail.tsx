@@ -10,10 +10,24 @@ interface GarmentThumbnailProps {
   garment: Garment
   /** Rendered size in CSS pixels. */
   size: number
+  /** Hang the garment from a hanger hook, like a shop product shot. */
+  hanger?: boolean
+  /** Fill the container's width; `size` then only sets the drawing resolution. */
+  fluid?: boolean
   className?: string
 }
 
-export function GarmentThumbnail({ garment, size, className }: GarmentThumbnailProps) {
+/** A wire hook, drawn in the 100 × 100 box above where the collar ends up. */
+const HANGER_HOOK =
+  'M50 22 V12.5 C50 10 52.6 9 52.6 6.6 C52.6 4.6 51.4 3.3 49.6 3.3 C47.9 3.3 46.8 4.5 46.8 6'
+
+export function GarmentThumbnail({
+  garment,
+  size,
+  hanger = false,
+  fluid = false,
+  className,
+}: GarmentThumbnailProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -30,6 +44,18 @@ export function GarmentThumbnail({ garment, size, className }: GarmentThumbnailP
 
     ctx.setTransform(pixels / 100, 0, 0, pixels / 100, 0, 0)
     ctx.clearRect(0, 0, 100, 100)
+
+    if (hanger) {
+      ctx.save()
+      ctx.strokeStyle = 'rgba(74, 45, 31, 0.75)'
+      ctx.lineWidth = 1.3
+      ctx.lineCap = 'round'
+      ctx.stroke(new Path2D(HANGER_HOOK))
+      ctx.restore()
+      // Shrink the garment and drop it below the hook.
+      ctx.translate(8, 13)
+      ctx.scale(0.84, 0.84)
+    }
 
     ctx.save()
     ctx.shadowColor = 'rgba(28, 26, 23, 0.16)'
@@ -67,14 +93,14 @@ export function GarmentThumbnail({ garment, size, className }: GarmentThumbnailP
       ctx.fill()
       ctx.stroke()
     }
-  }, [garment, size])
+  }, [garment, size, hanger])
 
   return (
     <canvas
       ref={canvasRef}
       aria-hidden="true"
       className={className}
-      style={{ width: size, height: size }}
+      style={fluid ? { width: '100%', aspectRatio: '1 / 1' } : { width: size, height: size }}
     />
   )
 }
