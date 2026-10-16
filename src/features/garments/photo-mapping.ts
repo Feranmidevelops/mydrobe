@@ -100,6 +100,51 @@ export function garmentMask(
   return mask
 }
 
+/** Calls `visit` for each of a pixel's four direct neighbours that lie inside the image. */
+function forNeighbours(i: number, width: number, height: number, visit: (j: number) => void) {
+  const x = i % width
+  if (x > 0) visit(i - 1)
+  if (x < width - 1) visit(i + 1)
+  if (i >= width) visit(i - width)
+  if (i < width * (height - 1)) visit(i + width)
+}
+
+/**
+ * Keeps only the biggest connected patch of garment pixels, dropping props
+ * laid beside the garment and specks of busy background.
+ */
+export function largestComponent(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const labels = new Int32Array(mask.length)
+  const queue = new Int32Array(mask.length)
+  let label = 0
+  let best = 0
+  let bestSize = 0
+  for (let start = 0; start < mask.length; start++) {
+    if (!mask[start] || labels[start]) continue
+    label++
+    let head = 0
+    let tail = 0
+    labels[start] = label
+    queue[tail++] = start
+    while (head < tail) {
+      forNeighbours(queue[head++], width, height, (j) => {
+        if (mask[j] && !labels[j]) {
+          labels[j] = label
+          queue[tail++] = j
+        }
+      })
+    }
+    if (tail > bestSize) {
+      bestSize = tail
+      best = label
+    }
+  }
+  const result = new Uint8Array(mask.length)
+  if (best === 0) return result
+  for (let i = 0; i < mask.length; i++) if (labels[i] === best) result[i] = 1
+  return result
+}
+
 /**
  * The box around the garment. Rows and columns with only a sprinkle of
  * garment pixels (sensor noise, a stray thread) don't widen it.

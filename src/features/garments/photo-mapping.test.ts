@@ -7,6 +7,7 @@ import {
   estimateBackground,
   frontCrop,
   garmentMask,
+  largestComponent,
   maskBounds,
   swatchRect,
   torsoRect,
@@ -98,6 +99,20 @@ describe('garmentMask and maskBounds', () => {
   it('finds nothing in an empty photo', () => {
     const image = blank(30, 30)
     expect(maskBounds(garmentMask(image, WHITE), 30, 30)).toBeNull()
+  })
+})
+
+describe('largestComponent', () => {
+  it('drops props lying apart from the garment', () => {
+    const image = shirtPhoto()
+    paint(image, { x: 92, y: 2, width: 6, height: 6 }, NAVY)
+    const mask = largestComponent(garmentMask(image, WHITE), 100, 100)
+    expect(maskBounds(mask, 100, 100)).toEqual({ x: 10, y: 20, width: 80, height: 70 })
+    expect(mask[3 * 100 + 94]).toBe(0)
+  })
+
+  it('returns an empty mask when there is no garment', () => {
+    expect(largestComponent(new Uint8Array(16), 4, 4).every((value) => value === 0)).toBe(true)
   })
 })
 
