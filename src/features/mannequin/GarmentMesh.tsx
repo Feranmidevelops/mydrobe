@@ -2,12 +2,10 @@ import { useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import { DoubleSide } from 'three'
 import type { Garment, GarmentTemplateId } from '../garments/garment.types'
-import { fabricBaseColor } from '../../lib/fabric'
 import type { BodyShape } from './body-shape'
 import { buildGarmentGeometry } from './geometry/garment-geometry'
+import { placeholderColor } from './placeholder-color'
 import { useGarmentTextures } from './useGarmentTextures'
-
-const PHOTO_PLACEHOLDER_COLOR = '#cdbfb1'
 
 interface GarmentMeshProps {
   garment: Garment
@@ -18,7 +16,6 @@ interface GarmentMeshProps {
 /** A garment template fitted to the current body preset and dressed in the garment's fabric. */
 export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
   const geometry = useMemo(() => buildGarmentGeometry(templateId, shape), [templateId, shape])
-  const { source } = garment
   const textures = useGarmentTextures(garment, templateId, geometry.panel, shape)
   const invalidate = useThree((state) => state.invalidate)
 
@@ -36,12 +33,9 @@ export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
     [geometry],
   )
 
-  // Until textures exist (no 2D canvas, or a photo still loading), show a flat colour.
-  const fallbackColor = textures
-    ? undefined
-    : source.kind === 'demo'
-      ? fabricBaseColor(source.fabric)
-      : PHOTO_PLACEHOLDER_COLOR
+  // Until textures exist (no 2D canvas, a photo still loading or one that
+  // couldn't be mapped), show the garment's main colour.
+  const fallbackColor = textures ? undefined : placeholderColor(garment)
 
   // three.js only compiles texture support into a material when it first has
   // a map, so remount the materials once a photo's textures arrive.
