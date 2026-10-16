@@ -139,7 +139,7 @@ export async function createPhotoGarmentTextures(
   url: string,
   templateId: GarmentTemplateId,
   panel: FrontPanel,
-  tolerance = DEFAULT_BACKGROUND_TOLERANCE,
+  tolerance: number = DEFAULT_BACKGROUND_TOLERANCE,
 ) {
   const analysis = analyseGarmentPhoto(await loadPhotoPixels(url), templateId, tolerance)
   return { analysis, textures: photoTextures(analysis, panel) }
