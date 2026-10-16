@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { BodyPresetControl } from '../components/outfit-builder/BodyPresetControl'
+import { FittingStatus } from '../components/outfit-builder/FittingStatus'
 import { HiddenGarmentsNotice } from '../components/outfit-builder/HiddenGarmentsNotice'
 import { ViewControls } from '../components/outfit-builder/ViewControls'
 import { ViewerStage } from '../components/outfit-builder/ViewerStage'
@@ -51,6 +52,7 @@ export default function FittingRoomPage() {
 
         <div className="absolute inset-x-0 bottom-4 z-10 flex flex-col items-center gap-2 px-4 sm:bottom-6">
           <HiddenGarmentsNotice garments={garments} />
+          <FittingStatus garments={garments} />
           <BodyPresetControl />
         </div>
       </section>
