@@ -3,6 +3,7 @@ import {
   averageColor,
   coverage,
   cropAndFill,
+  erodeMask,
   estimateBackground,
   frontCrop,
   garmentMask,
@@ -97,6 +98,22 @@ describe('garmentMask and maskBounds', () => {
   it('finds nothing in an empty photo', () => {
     const image = blank(30, 30)
     expect(maskBounds(garmentMask(image, WHITE), 30, 30)).toBeNull()
+  })
+})
+
+describe('erodeMask', () => {
+  it('shaves the given number of pixels off every side', () => {
+    const image = blank(20, 20)
+    paint(image, { x: 4, y: 5, width: 10, height: 8 }, NAVY)
+    const eroded = erodeMask(garmentMask(image, WHITE), 20, 20, 2)
+    expect(maskBounds(eroded, 20, 20)).toEqual({ x: 6, y: 7, width: 6, height: 4 })
+  })
+
+  it('removes specks smaller than the radius and treats the image edge as background', () => {
+    const image = blank(10, 10)
+    paint(image, { x: 0, y: 0, width: 10, height: 1 }, NAVY)
+    paint(image, { x: 5, y: 5, width: 1, height: 1 }, NAVY)
+    expect(maskBounds(erodeMask(garmentMask(image, WHITE), 10, 10, 1), 10, 10)).toBeNull()
   })
 })
 

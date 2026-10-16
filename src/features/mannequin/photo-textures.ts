@@ -5,6 +5,7 @@ import {
   coverage,
   cropAndFill,
   DEFAULT_BACKGROUND_TOLERANCE,
+  erodeMask,
   estimateBackground,
   frontCrop,
   garmentMask,
@@ -54,7 +55,11 @@ export function analyseGarmentPhoto(
 
   const crop = frontCrop(templateId, mask, image.width, bounds)
   const swatch = swatchRect(templateId, crop)
-  const fabric = averageColor(image, mask, swatch)
+  // Sample and show only solid garment pixels, so the soft edge where garment
+  // meets background doesn't end up as a pale outline on the mannequin.
+  const edge = Math.max(1, Math.round(Math.min(image.width, image.height) * 0.004))
+  const solid = erodeMask(mask, image.width, image.height, edge)
+  const fabric = averageColor(image, solid, swatch)
   return {
     image,
     background,
@@ -63,8 +68,8 @@ export function analyseGarmentPhoto(
     swatch,
     fabric,
     coverage: coverage(mask, image.width, crop),
-    front: cropAndFill(image, mask, crop, fabric),
-    swatchPixels: cropAndFill(image, mask, swatch, fabric),
+    front: cropAndFill(image, solid, crop, fabric),
+    swatchPixels: cropAndFill(image, solid, swatch, fabric),
   }
 }
 

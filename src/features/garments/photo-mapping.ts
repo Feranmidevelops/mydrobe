@@ -124,6 +124,33 @@ export function maskBounds(mask: Uint8Array, width: number, height: number): Rec
   return { x, y, width: columns[columns.length - 1] - x + 1, height: rows[rows.length - 1] - y + 1 }
 }
 
+/**
+ * Shrinks the garment region by `radius` pixels on every side. Edge pixels
+ * blend garment and background, so they're left out of anything sampled or
+ * shown, and get filled like the rest of the background.
+ */
+export function erodeMask(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  if (radius <= 0) return mask.slice()
+  const span = radius * 2 + 1
+
+  // A pixel survives a pass if every pixel within `radius` along that axis is garment.
+  function pass(source: Uint8Array, length: number, lines: number, index: (line: number, i: number) => number) {
+    const result = new Uint8Array(source.length)
+    const ones = new Int32Array(length + 1)
+    for (let line = 0; line < lines; line++) {
+      for (let i = 0; i < length; i++) ones[i + 1] = ones[i] + source[index(line, i)]
+      for (let i = 0; i < length; i++) {
+        const inside = ones[Math.min(i + radius + 1, length)] - ones[Math.max(i - radius, 0)]
+        if (inside === span) result[index(line, i)] = 1
+      }
+    }
+    return result
+  }
+
+  const rows = pass(mask, width, height, (y, x) => y * width + x)
+  return pass(rows, height, width, (x, y) => y * width + x)
+}
+
 /** The unbroken run of garment pixels on a row that contains, or is nearest to, `centre`. */
 function runNear(mask: Uint8Array, width: number, row: number, centre: number) {
   const at = (x: number) => mask[row * width + x] === 1
