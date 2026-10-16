@@ -1,4 +1,4 @@
-import { decodeImage, downscaleImage } from '../../lib/image-processing'
+import { cutOutThumbnail, decodeImage, downscaleImage } from '../../lib/image-processing'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { forgetPhoto } from './analyse-photo'
 import { toHex } from './garment.colors'
@@ -10,6 +10,7 @@ import {
   sniffImageFormat,
   type ImageFormat,
 } from './garment.validation'
+import type { PhotoAnalysis } from './photo-analysis'
 import type { Rgb } from './photo-mapping'
 
 /** A problem with an upload, worded to show to the person who chose the file. */
@@ -97,15 +98,27 @@ export function createUploadedGarment(
   }
 }
 
-function releaseUrl(url: string | undefined) {
-  if (url && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url)
+/** An object URL for the garment's cut-out thumbnail, or undefined when one can't be drawn. */
+export async function makeThumbnail(analysis: Pick<PhotoAnalysis, 'image' | 'mask' | 'bounds'>) {
+  try {
+    return URL.createObjectURL(await cutOutThumbnail(analysis))
+  } catch {
+    // Wardrobe cards fall back to the full photo.
+    return undefined
+  }
+}
+
+/** Lets go of a photo nothing will show again: its object URL and any remembered analyses. */
+export function discardPhoto(url: string | undefined) {
+  if (!url) return
+  forgetPhoto(url)
+  if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url)
 }
 
 /** Takes an upload out of the wardrobe (and off the mannequin) and frees its photos. */
 export function removeUploadedGarment(garment: Garment) {
   useWardrobeStore.getState().removeUpload(garment.id)
   if (garment.source.kind !== 'photo') return
-  forgetPhoto(garment.source.url)
-  releaseUrl(garment.source.url)
-  releaseUrl(garment.source.thumbnailUrl)
+  discardPhoto(garment.source.url)
+  discardPhoto(garment.source.thumbnailUrl)
 }
