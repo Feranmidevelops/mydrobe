@@ -14,7 +14,14 @@ import { GarmentCard } from './GarmentCard'
 type Filter = GarmentCategory | 'all'
 
 function confirmAndRemove(garment: Garment) {
-  if (window.confirm(`Remove ${garment.name} from your wardrobe? You'd need to upload the photo again.`)) {
+  const usedIn = useWardrobeStore
+    .getState()
+    .outfits.filter((outfit) => outfit.garmentIds[garment.category] === garment.id).length
+  const outfitNote =
+    usedIn === 0
+      ? ''
+      : ` It's in ${usedIn === 1 ? 'a saved outfit' : `${usedIn} saved outfits`}, which will show it as missing.`
+  if (window.confirm(`Remove ${garment.name} from your wardrobe? You'd need to upload the photo again.${outfitNote}`)) {
     void removeUploadedGarment(garment)
   }
 }

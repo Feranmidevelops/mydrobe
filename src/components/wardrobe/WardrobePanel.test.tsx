@@ -185,6 +185,17 @@ describe('WardrobePanel', () => {
     expect(shelf('Demo pieces').getAllByRole('listitem')).toHaveLength(8)
   })
 
+  it('warns when a piece being removed is part of a saved outfit', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    useWardrobeStore.setState({ outfits: [createOutfit('Look 1', { shirt: navyShirt.id }, 'medium')] })
+    render(<WardrobePanel garments={[navyShirt, ...DEMO_GARMENTS]} />)
+
+    await user.click(screen.getByRole('button', { name: 'Remove Navy shirt from your wardrobe' }))
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("It's in a saved outfit, which will show it as missing."))
+  })
+
   it('says so while saved clothes are loading', () => {
     useWardrobeStore.setState({ storage: 'loading' })
     render(<WardrobePanel garments={DEMO_GARMENTS} onAddClothes={() => {}} />)
