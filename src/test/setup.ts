@@ -10,3 +10,6 @@ afterEach(() => {
 // error for every getContext call. Returning null mirrors a browser without
 // support, which is exactly the path the UI must handle anyway.
 vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => null)
+
+// jsdom doesn't implement scrolling; page changes scroll to the top.
+window.scrollTo = vi.fn() as typeof window.scrollTo
