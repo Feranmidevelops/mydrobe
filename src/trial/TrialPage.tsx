@@ -29,6 +29,19 @@ function trialGarment(sample: TrialSample, templateId: GarmentTemplateId, tolera
   }
 }
 
+/** Saves the 3D view as a PNG, named after the sample and template. */
+function downloadSnapshot(sample: TrialSample, templateId: GarmentTemplateId) {
+  const canvas = document.querySelector<HTMLCanvasElement>('[data-trial-scene] canvas')
+  canvas?.toBlob((blob) => {
+    if (!blob) return
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `trial-${sample.name.replace(/\.[^.]+$/, '')}-${templateId}.png`.replace(/[^\w.-]+/g, '-')
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }, 'image/png')
+}
+
 function SampleList({
   title,
   samples,
@@ -149,6 +162,13 @@ export function TrialPage() {
                 className="mt-2 block w-48 accent-[var(--color-espresso)]"
               />
             </label>
+            <button
+              type="button"
+              onClick={() => downloadSnapshot(sample, templateId)}
+              className="ml-auto rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-cream"
+            >
+              Download snapshot
+            </button>
             <div className="flex gap-1" role="group" aria-label="Body preset">
               {BODY_PRESETS.map((value) => (
                 <button

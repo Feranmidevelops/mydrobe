@@ -19,7 +19,14 @@ export function TrialScene({ garment, templateId, preset }: TrialSceneProps) {
   const shape = useMemo(() => createBodyShape(preset), [preset])
 
   return (
-    <Canvas frameloop="demand" dpr={[1, 2]} camera={{ position: [0, 1, 4.4], fov: 30, near: 0.1, far: 40 }}>
+    <Canvas
+      frameloop="demand"
+      dpr={[1, 2]}
+      // Keeps the last frame readable so the page can save a snapshot of it.
+      gl={{ preserveDrawingBuffer: true }}
+      camera={{ position: [0, 1, 4.4], fov: 30, near: 0.1, far: 40 }}
+      data-trial-scene=""
+    >
       <StudioLighting />
       {TRIAL_VIEWS.map((view) => (
         <group key={view.label} position={[view.x, 0, 0]} rotation-y={view.turn}>
