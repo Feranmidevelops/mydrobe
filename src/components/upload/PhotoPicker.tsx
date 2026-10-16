@@ -1,4 +1,4 @@
-import { useId, useState, type DragEvent } from 'react'
+import { useEffect, useId, useRef, useState, type DragEvent } from 'react'
 import { PhotoIcon } from '../ui/icons'
 
 /** The photo contract from the Milestone 2 trial: photos like this map onto the mannequin well. */
@@ -17,12 +17,19 @@ interface PhotoPickerProps {
   /** True while a chosen photo is being checked. */
   busy: boolean
   error?: string
+  /** Move focus to "Choose a photo", e.g. when coming back from a later step. */
+  autoFocus?: boolean
 }
 
 /** The first upload step: how to take a photo that works, and a place to drop or choose one. */
-export function PhotoPicker({ onPhoto, busy, error }: PhotoPickerProps) {
+export function PhotoPicker({ onPhoto, busy, error, autoFocus = false }: PhotoPickerProps) {
   const rulesId = useId()
+  const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
+
+  useEffect(() => {
+    if (autoFocus && !busy) inputRef.current?.focus()
+  }, [autoFocus, busy])
 
   const drop = (event: DragEvent) => {
     event.preventDefault()
@@ -83,6 +90,7 @@ export function PhotoPicker({ onPhoto, busy, error }: PhotoPickerProps) {
             <label className="mt-3 cursor-pointer rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-cream transition hover:bg-cocoa has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ink">
               Choose a photo
               <input
+                ref={inputRef}
                 type="file"
                 accept={ACCEPT}
                 className="sr-only"

@@ -42,4 +42,9 @@ describe('PhotoPicker', () => {
     rerender(<PhotoPicker onPhoto={() => {}} busy={false} error="That photo is over 15 MB." />)
     expect(screen.getByRole('alert')).toHaveTextContent('That photo is over 15 MB.')
   })
+
+  it('can take focus, for when someone comes back to choose another photo', () => {
+    render(<PhotoPicker onPhoto={() => {}} busy={false} autoFocus />)
+    expect(screen.getByLabelText('Choose a photo')).toHaveFocus()
+  })
 })
