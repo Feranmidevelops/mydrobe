@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { AppHeader } from '../components/layout/AppHeader'
 import { BodyPresetControl } from '../components/outfit-builder/BodyPresetControl'
 import { HiddenGarmentsNotice } from '../components/outfit-builder/HiddenGarmentsNotice'
 import { ViewControls } from '../components/outfit-builder/ViewControls'
 import { ViewerStage } from '../components/outfit-builder/ViewerStage'
+import { UploadDialog } from '../components/upload/UploadDialog'
 import { WardrobePanel } from '../components/wardrobe/WardrobePanel'
 import { MANNEQUIN_ASSET } from '../features/mannequin/mannequin-asset'
 import { useWardrobeGarments } from '../hooks/useWardrobeGarments'
@@ -10,6 +12,7 @@ import { useWardrobeGarments } from '../hooks/useWardrobeGarments'
 /** The fitting room: the 3D stage with its controls, next to the wardrobe. */
 export default function FittingRoomPage() {
   const garments = useWardrobeGarments()
+  const [addingClothes, setAddingClothes] = useState(false)
 
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh lg:flex-row">
@@ -49,8 +52,10 @@ export default function FittingRoomPage() {
         aria-label="Wardrobe"
         className="flex-1 border-t border-line bg-cream lg:w-[420px] lg:flex-none lg:overflow-y-auto lg:border-t-0 lg:border-l"
       >
-        <WardrobePanel garments={garments} />
+        <WardrobePanel garments={garments} onAddClothes={() => setAddingClothes(true)} />
       </aside>
+
+      {addingClothes && <UploadDialog onClose={() => setAddingClothes(false)} />}
     </div>
   )
 }
