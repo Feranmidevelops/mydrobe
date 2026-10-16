@@ -53,6 +53,16 @@ export function PlusIcon(props: IconProps) {
   )
 }
 
+export function TrashIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M2.75 4.5h10.5" />
+      <path d="M6.25 4.5V3a.75.75 0 0 1 .75-.75h2a.75.75 0 0 1 .75.75v1.5" />
+      <path d="M4.25 4.5l.55 8.05a1 1 0 0 0 1 .95h4.4a1 1 0 0 0 1-.95l.55-8.05" />
+    </svg>
+  )
+}
+
 /* Larger outline icons for feature highlights, drawn on a 24-unit grid. */
 const outline = { ...base, viewBox: '0 0 24 24', strokeWidth: 1.4 } as const
 
