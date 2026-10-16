@@ -60,6 +60,21 @@
     @apply outline-2 outline-offset-2 outline-accent;
   }
 
+  /*
+   * On phones the fitting room's stage stays pinned to the top while the
+   * wardrobe scrolls under it, so anything scrolled into view (a focused card,
+   * say) has to stop below the stage rather than behind it.
+   */
+  html:has([data-pinned-stage]) {
+    scroll-padding-top: calc(max(50svh, 280px) + 0.75rem);
+  }
+
+  @media (min-width: 64rem), (orientation: landscape) and (max-height: 32rem) {
+    html:has([data-pinned-stage]) {
+      scroll-padding-top: 0;
+    }
+  }
+
   /* Keep the page still behind an open modal, such as the upload dialog. */
   html:has(dialog:modal) {
     overflow: hidden;
