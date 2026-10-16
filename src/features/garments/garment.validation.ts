@@ -25,3 +25,36 @@ export function sniffImageFormat(bytes: Uint8Array): ImageFormat {
 export async function readFileStart(file: Blob, length = 16): Promise<Uint8Array> {
   return new Uint8Array(await file.slice(0, length).arrayBuffer())
 }
+
+export const UPLOAD_LIMITS = {
+  maxBytes: 15 * 1024 * 1024,
+  /** Below this on the shortest side there isn't enough detail to map. */
+  minSide: 300,
+  maxSide: 10_000,
+} as const
+
+export const SUPPORTED_FORMATS: ImageFormat[] = ['jpeg', 'png', 'webp']
+
+/** Checks a file before decoding it. Returns a message to show, or null when it's fine. */
+export function checkUploadFile(file: { size: number }, format: ImageFormat): string | null {
+  if (format === 'heic') {
+    return "iPhone HEIC photos aren't supported yet. Set the camera to “Most Compatible”, or share the photo as a JPEG."
+  }
+  if (!SUPPORTED_FORMATS.includes(format)) {
+    return "That file isn't a photo we can use. Choose a JPEG, PNG or WebP image."
+  }
+  if (file.size > UPLOAD_LIMITS.maxBytes) return 'That photo is over 15 MB. Try a smaller copy of it.'
+  if (file.size === 0) return 'That file is empty.'
+  return null
+}
+
+/** Checks a decoded photo's size. Returns a message to show, or null when it's fine. */
+export function checkImageSize(width: number, height: number): string | null {
+  if (Math.min(width, height) < UPLOAD_LIMITS.minSide) {
+    return `That photo is too small to use. It needs to be at least ${UPLOAD_LIMITS.minSide} pixels on its shortest side.`
+  }
+  if (Math.max(width, height) > UPLOAD_LIMITS.maxSide) {
+    return 'That photo is unusually large. Try one under 10,000 pixels across.'
+  }
+  return null
+}
