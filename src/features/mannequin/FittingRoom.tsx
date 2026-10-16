@@ -23,7 +23,7 @@ function Plinth() {
   return (
     <mesh position={[0, -0.018, 0]}>
       <cylinderGeometry args={[0.62, 0.64, 0.03, 96]} />
-      <meshStandardMaterial color="#e2dacd" roughness={0.85} />
+      <meshStandardMaterial color="#efe5da" roughness={0.85} />
     </mesh>
   )
 }
@@ -62,7 +62,7 @@ export default function FittingRoom() {
         blur={2.2}
         far={1.2}
         opacity={0.55}
-        color="#3a332a"
+        color="#3a2a1e"
       />
       <CameraRig />
     </Canvas>
