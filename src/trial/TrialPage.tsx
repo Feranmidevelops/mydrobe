@@ -3,6 +3,7 @@ import { GARMENT_TEMPLATES } from '../features/garments/garment.templates'
 import type { Garment, GarmentTemplateId } from '../features/garments/garment.types'
 import { DEFAULT_BACKGROUND_TOLERANCE } from '../features/garments/photo-mapping'
 import { BODY_PRESET_LABELS, BODY_PRESETS, type BodyPreset } from '../features/mannequin/viewer.types'
+import { PhotoAnalysisView } from './PhotoAnalysisView'
 import { baselineSamples, photoSamples, type TrialSample } from './samples'
 import { TrialScene } from './TrialScene'
 import { TRIAL_VIEWS } from './trial-views'
@@ -165,13 +166,18 @@ export function TrialPage() {
             </div>
           </div>
 
-          <div className="relative min-h-0 flex-1 bg-[radial-gradient(ellipse_at_50%_36%,#f7f0e8_0%,#e4d6c7_72%)]">
-            <TrialScene garment={garment} templateId={templateId} preset={preset} />
-            <ul className="pointer-events-none absolute inset-x-0 bottom-3 grid grid-cols-3 text-center text-xs font-medium tracking-[0.14em] text-muted uppercase">
-              {TRIAL_VIEWS.map((view) => (
-                <li key={view.label}>{view.label}</li>
-              ))}
-            </ul>
+          <div className="flex min-h-0 flex-1">
+            <div className="relative min-w-0 flex-1 bg-[radial-gradient(ellipse_at_50%_36%,#f7f0e8_0%,#e4d6c7_72%)]">
+              <TrialScene garment={garment} templateId={templateId} preset={preset} />
+              <ul className="pointer-events-none absolute inset-x-0 bottom-3 grid grid-cols-3 text-center text-xs font-medium tracking-[0.14em] text-muted uppercase">
+                {TRIAL_VIEWS.map((view) => (
+                  <li key={view.label}>{view.label}</li>
+                ))}
+              </ul>
+            </div>
+            <aside className="w-64 shrink-0 overflow-y-auto border-l border-line p-4">
+              <PhotoAnalysisView url={sample.url} templateId={templateId} tolerance={tolerance} />
+            </aside>
           </div>
         </main>
       ) : (
