@@ -7,6 +7,7 @@ import {
   cropAndFill,
   erodeMask,
   estimateBackground,
+  flattenLighting,
   frontCrop,
   garmentMask,
   largestComponent,
@@ -230,6 +231,16 @@ describe('chooseSwatch', () => {
     const crop = { x: 50, y: 30, width: 100, height: 150 }
     const swatch = chooseSwatch('shirt-short-sleeve', image, mask, crop)
     expect(averageColor(image, mask, swatch)).toEqual(NAVY)
+  })
+})
+
+describe('flattenLighting', () => {
+  it('evens out a shadow falling across the sample', () => {
+    const image = blank(40, 40)
+    for (let x = 0; x < 40; x++) paint(image, { x, y: 0, width: 1, height: 40 }, [100 + x * 3, 60 + x * 2, 40 + x])
+    const flat = flattenLighting(image)
+    const spread = (pixels: RgbaImage) => colorAt(pixels, 30, 20)[0] - colorAt(pixels, 10, 20)[0]
+    expect(Math.abs(spread(flat))).toBeLessThan(spread(image) / 3)
   })
 })
 

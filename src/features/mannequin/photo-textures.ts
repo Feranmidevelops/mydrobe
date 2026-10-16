@@ -8,6 +8,7 @@ import {
   DEFAULT_BACKGROUND_TOLERANCE,
   erodeMask,
   estimateBackground,
+  flattenLighting,
   frontCrop,
   garmentMask,
   maskBounds,
@@ -60,7 +61,7 @@ export function analyseGarmentPhoto(
   const solid = erodeMask(mask, image.width, image.height, edge)
   const swatch = chooseSwatch(templateId, image, solid, crop)
   const fabric = averageColor(image, solid, swatch)
-  const swatchPixels = cropAndFill(image, solid, swatch, fabric)
+  const swatchPixels = flattenLighting(cropAndFill(image, solid, swatch, fabric))
   return {
     image,
     background,
