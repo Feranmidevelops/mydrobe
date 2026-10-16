@@ -29,6 +29,9 @@ function speckle(
   }
 }
 
+const DENIM_STEP_MM = 1.1
+const TWILL_STEP_MM = 0.9
+
 function diagonalLines(
   ctx: CanvasRenderingContext2D,
   widthMm: number,
@@ -96,7 +99,7 @@ export function drawFabric(
       ctx.fillStyle = fabric.color
       ctx.fillRect(0, 0, widthMm, heightMm)
       diagonalLines(ctx, widthMm, heightMm, {
-        stepMm: 1.1,
+        stepMm: DENIM_STEP_MM,
         lineMm: 0.4,
         color: 'rgba(255,255,255,0.13)',
       })
@@ -106,10 +109,34 @@ export function drawFabric(
     case 'twill': {
       ctx.fillStyle = fabric.color
       ctx.fillRect(0, 0, widthMm, heightMm)
-      diagonalLines(ctx, widthMm, heightMm, { stepMm: 0.9, lineMm: 0.35, color: 'rgba(0,0,0,0.09)' })
+      diagonalLines(ctx, widthMm, heightMm, {
+        stepMm: TWILL_STEP_MM,
+        lineMm: 0.35,
+        color: 'rgba(0,0,0,0.09)',
+      })
       speckle(ctx, widthMm, heightMm, { mm2PerSpeck: 24, size: [0.3, 0.6], alpha: 0.04 })
       return
     }
+  }
+}
+
+/**
+ * Size of a square swatch that tiles without a visible seam: a whole number of
+ * stripe or check repeats, and for twills a whole number of diagonal steps in
+ * both directions (the lines rise 2 mm per 1 mm across).
+ */
+export function fabricTileMm(fabric: FabricPattern): number {
+  const repeatsOf = (step: number, near: number) => step * Math.max(1, Math.round(near / step))
+  switch (fabric.kind) {
+    case 'stripes':
+    case 'check':
+      return repeatsOf(fabric.periodMm, 120)
+    case 'denim':
+      return repeatsOf(DENIM_STEP_MM * 2, 110)
+    case 'twill':
+      return repeatsOf(TWILL_STEP_MM * 2, 108)
+    case 'solid':
+      return 120
   }
 }
 

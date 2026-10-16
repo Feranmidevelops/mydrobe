@@ -1,6 +1,6 @@
 import { BufferGeometry, Matrix4, Quaternion, SphereGeometry, Vector3, type Vector3Tuple } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { limbPoint, limbTransform, SIDES, type BodyShape } from '../body-shape'
+import { limbPoint, limbTransform, SHOULDER_SQUASH, SIDES, type BodyShape } from '../body-shape'
 import { buildLoft } from './loft'
 
 function ellipsoid(matrix: Matrix4, widthSegments = 32, heightSegments = 20): BufferGeometry {
@@ -24,7 +24,13 @@ export function buildMannequinGeometry(shape: BodyShape): BufferGeometry {
     const [jx, jy, jz] = shape.arm.joint
     parts.push(
       buildLoft(shape.arm.rings, { radialSegments: 24, capStart: true, transform: arm }),
-      ellipsoid(placed(new Vector3(jx * side, jy, jz), [shape.shoulderRadius, shape.shoulderRadius, shape.shoulderRadius])),
+      ellipsoid(
+        placed(new Vector3(jx * side, jy, jz), [
+          shape.shoulderRadius,
+          shape.shoulderRadius * SHOULDER_SQUASH,
+          shape.shoulderRadius,
+        ]),
+      ),
       ellipsoid(
         arm.clone().multiply(new Matrix4().compose(
           new Vector3(0, -shape.hand.d, 0),

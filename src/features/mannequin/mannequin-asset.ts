@@ -6,5 +6,6 @@
 export const MANNEQUIN_ASSET = {
   kind: 'procedural',
   label: 'Procedural mannequin · placeholder',
+  shortLabel: 'Placeholder model',
   note: 'Generated in code until a licensed 3D mannequin model is added.',
 } as const
