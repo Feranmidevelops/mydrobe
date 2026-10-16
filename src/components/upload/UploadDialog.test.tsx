@@ -172,6 +172,21 @@ describe('UploadDialog', () => {
     expect(useWardrobeStore.getState().uploads).toEqual([])
   })
 
+  it('closes even when the browser holds back its close event', async () => {
+    const user = userEvent.setup()
+    const silentClose = vi
+      .spyOn(HTMLDialogElement.prototype, 'close')
+      .mockImplementation(function (this: HTMLDialogElement) {
+        this.open = false
+      })
+    render(<Harness />)
+
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+
+    expect(await screen.findByText('Dialog closed')).toBeInTheDocument()
+    silentClose.mockRestore()
+  })
+
   it('drops a photo that finishes preparing after the dialog has closed', async () => {
     const user = userEvent.setup()
     let finish: (photo: PreparedPhoto) => void = () => {}
