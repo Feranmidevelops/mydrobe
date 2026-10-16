@@ -37,7 +37,7 @@ export function GarmentCard({ garment, selected, onToggle, onRemove }: GarmentCa
             selected ? 'ring-2 ring-ink' : 'group-hover:ring-1 group-hover:ring-ink/20'
           }`}
         >
-          <span className="w-[82%] transition duration-300 group-hover:scale-[1.04]">
+          <span className="w-[82%] transition duration-300 motion-safe:group-hover:scale-[1.04]">
             <GarmentThumbnail garment={garment} size={160} hanger={hangsOnHanger(garment)} fluid />
           </span>
           {selected && (

@@ -1,6 +1,7 @@
 import { CameraControls, CameraControlsImpl } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
+import { prefersReducedMotion } from '../../lib/motion'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { HOME_POLAR, homePose, nearestAngle, VIEW_AZIMUTH } from './camera-views'
 
@@ -25,12 +26,14 @@ export function CameraRig() {
   useEffect(() => {
     const controls = controlsRef.current
     if (!controls || !viewRequest) return
+    // Glide to the new view, or jump straight there for people who prefer less motion.
+    const animate = !prefersReducedMotion()
     if (viewRequest.view === 'reset') {
-      void controls.reset(true)
+      void controls.reset(animate)
       return
     }
     const azimuth = nearestAngle(controls.azimuthAngle, VIEW_AZIMUTH[viewRequest.view])
-    void controls.rotateTo(azimuth, HOME_POLAR, true)
+    void controls.rotateTo(azimuth, HOME_POLAR, animate)
   }, [viewRequest])
 
   return (

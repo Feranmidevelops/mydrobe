@@ -42,7 +42,7 @@ export function BodyShapes() {
                   width={800}
                   height={1066}
                   loading="lazy"
-                  className="aspect-[3/4] w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                  className="aspect-[3/4] w-full object-cover transition duration-500 motion-safe:group-hover:scale-[1.03]"
                 />
                 <span className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-gradient-to-t from-espresso/75 to-transparent p-4 pt-20 text-left text-white">
                   <span>

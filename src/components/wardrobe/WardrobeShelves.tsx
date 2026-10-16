@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useRef, useState, type ReactNode } from 'react'
 import { isUpload, removeUploadedGarment } from '../../features/garments/garment.service'
 import {
   GARMENT_CATEGORIES,
@@ -13,7 +13,8 @@ import { GarmentCard } from './GarmentCard'
 
 type Filter = GarmentCategory | 'all'
 
-function confirmAndRemove(garment: Garment) {
+/** Asks before removing an upload, mentioning any saved outfits it's in. Resolves to whether it went. */
+async function confirmAndRemove(garment: Garment): Promise<boolean> {
   const usedIn = useWardrobeStore
     .getState()
     .outfits.filter((outfit) => outfit.garmentIds[garment.category] === garment.id).length
@@ -21,9 +22,10 @@ function confirmAndRemove(garment: Garment) {
     usedIn === 0
       ? ''
       : ` It's in ${usedIn === 1 ? 'a saved outfit' : `${usedIn} saved outfits`}, which will show it as missing.`
-  if (window.confirm(`Remove ${garment.name} from your wardrobe? You'd need to upload the photo again.${outfitNote}`)) {
-    void removeUploadedGarment(garment)
+  if (!window.confirm(`Remove ${garment.name} from your wardrobe? You'd need to upload the photo again.${outfitNote}`)) {
+    return false
   }
+  return removeUploadedGarment(garment)
 }
 
 function Shelf({ title, children }: { title: string; children: ReactNode }) {
@@ -49,6 +51,7 @@ interface WardrobeShelvesProps {
 /** The wardrobe itself: category filters, the person's own clothes, then the demo pieces. */
 export function WardrobeShelves({ garments, onAddClothes }: WardrobeShelvesProps) {
   const [filter, setFilter] = useState<Filter>('all')
+  const addCardRef = useRef<HTMLButtonElement>(null)
   const selection = useWardrobeStore((state) => state.selection)
   const toggleGarment = useWardrobeStore((state) => state.toggleGarment)
   const storage = useWardrobeStore((state) => state.storage)
@@ -70,13 +73,18 @@ export function WardrobeShelves({ garments, onAddClothes }: WardrobeShelvesProps
     })),
   ]
 
+  const removeGarment = async (garment: Garment) => {
+    // Its card is about to go, so put focus somewhere sensible rather than drop it.
+    if (await confirmAndRemove(garment)) addCardRef.current?.focus()
+  }
+
   const card = (garment: Garment) => (
     <li key={garment.id}>
       <GarmentCard
         garment={garment}
         selected={isSelected(selection, garment)}
         onToggle={toggleGarment}
-        onRemove={isUpload(garment) ? confirmAndRemove : undefined}
+        onRemove={isUpload(garment) ? removeGarment : undefined}
       />
     </li>
   )
@@ -116,7 +124,7 @@ export function WardrobeShelves({ garments, onAddClothes }: WardrobeShelvesProps
         <Shelf title="Your clothes">
           {onAddClothes && (
             <li>
-              <AddClothesCard onClick={onAddClothes} />
+              <AddClothesCard ref={addCardRef} onClick={onAddClothes} />
             </li>
           )}
           {ownShown.map(card)}

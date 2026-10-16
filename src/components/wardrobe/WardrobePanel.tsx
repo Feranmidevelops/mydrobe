@@ -77,7 +77,7 @@ export function WardrobePanel({ garments, onAddClothes }: WardrobePanelProps) {
           <WardrobeShelves garments={garments} onAddClothes={onAddClothes} />
         </div>
         <div role="tabpanel" id={panelId('outfits')} aria-labelledby={tabId('outfits')} hidden={tab !== 'outfits'}>
-          <SavedOutfits garments={garments} />
+          <SavedOutfits garments={garments} onOutfitDeleted={() => document.getElementById(tabId('outfits'))?.focus()} />
         </div>
       </div>
 

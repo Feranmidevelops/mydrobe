@@ -130,6 +130,17 @@ describe('WardrobePanel', () => {
     expect(useWardrobeStore.getState().selection).toEqual({})
   })
 
+  it('moves focus to Add clothes once a piece is removed, rather than losing it', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    useWardrobeStore.getState().addUpload(navyShirt)
+    render(<WardrobePanel garments={[navyShirt, ...DEMO_GARMENTS]} onAddClothes={() => {}} />)
+
+    await user.click(screen.getByRole('button', { name: 'Remove Navy shirt from your wardrobe' }))
+
+    await waitFor(() => expect(card(/add clothes/i, 'Your clothes')).toHaveFocus())
+  })
+
   it('keeps the piece when removing is cancelled', async () => {
     const user = userEvent.setup()
     vi.spyOn(window, 'confirm').mockReturnValue(false)
@@ -183,6 +194,18 @@ describe('WardrobePanel', () => {
     expect(wardrobeTab).toHaveAttribute('aria-selected', 'true')
     expect(wardrobeTab).toHaveFocus()
     expect(shelf('Demo pieces').getAllByRole('listitem')).toHaveLength(8)
+  })
+
+  it('moves focus to the Outfits tab once an outfit is deleted', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    useWardrobeStore.setState({ outfits: [createOutfit('Office', { shirt: 'demo-oxford-stripe' }, 'medium')] })
+    render(<WardrobePanel garments={DEMO_GARMENTS} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Outfits 1' }))
+    await user.click(screen.getByRole('button', { name: 'Delete Office' }))
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Outfits 0' })).toHaveFocus())
   })
 
   it('warns when a piece being removed is part of a saved outfit', async () => {

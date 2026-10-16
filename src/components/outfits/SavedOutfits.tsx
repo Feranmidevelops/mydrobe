@@ -3,8 +3,14 @@ import { useWardrobeStore } from '../../store/wardrobe.store'
 import { HangerIcon } from '../ui/icons'
 import { OutfitCard } from './OutfitCard'
 
+interface SavedOutfitsProps {
+  garments: Garment[]
+  /** Called once an outfit is deleted, so focus can move on from its card. */
+  onOutfitDeleted?: () => void
+}
+
 /** The outfits saved on this device, newest first. */
-export function SavedOutfits({ garments }: { garments: Garment[] }) {
+export function SavedOutfits({ garments, onOutfitDeleted }: SavedOutfitsProps) {
   const outfits = useWardrobeStore((state) => state.outfits)
   const storage = useWardrobeStore((state) => state.storage)
 
@@ -31,7 +37,7 @@ export function SavedOutfits({ garments }: { garments: Garment[] }) {
     <ul aria-label="Saved outfits" className="mt-4 space-y-3">
       {outfits.map((outfit) => (
         <li key={outfit.id}>
-          <OutfitCard outfit={outfit} garments={garments} />
+          <OutfitCard outfit={outfit} garments={garments} onDeleted={onOutfitDeleted} />
         </li>
       ))}
     </ul>
