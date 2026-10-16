@@ -1,11 +1,12 @@
 @import 'tailwindcss';
 
 @theme {
-  --font-sans:
-    'Segoe UI Variable Text', 'Segoe UI', ui-sans-serif, system-ui, -apple-system,
-    'Helvetica Neue', Arial, sans-serif;
-  --font-display:
-    'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+  /*
+   * Helvetica Neue where the device ships it (macOS, iOS); everywhere else the
+   * bundled Inter, a free Helvetica-style grotesque. Bare "Helvetica" comes
+   * after Inter because Windows silently substitutes Arial for it.
+   */
+  --font-sans: 'Helvetica Neue', 'Inter Variable', Helvetica, Arial, sans-serif;
 
   --color-canvas: #f3efe8;
   --color-stage: #ebe6dd;
