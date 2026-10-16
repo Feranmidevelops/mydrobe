@@ -1,5 +1,5 @@
 import { CanvasTexture, RepeatWrapping, SRGBColorSpace, type Texture } from 'three'
-import type { FabricPattern, Garment, GarmentTemplateId } from '../garments/garment.types'
+import type { FabricPattern, GarmentTemplateId } from '../garments/garment.types'
 import { drawFabric, fabricTileMm } from '../../lib/fabric'
 import { limbPoint, SIDES, type BodyShape } from './body-shape'
 import type { FrontPanel } from './geometry/garment-geometry'
@@ -176,12 +176,11 @@ function drawTrousersFront(
  * null when the browser offers no 2D canvas.
  */
 export function createDemoGarmentTextures(
-  garment: Garment,
+  fabric: FabricPattern,
   templateId: GarmentTemplateId,
   panel: FrontPanel,
   shape: BodyShape,
 ): GarmentTextures | null {
-  const fabric = garment.source.fabric
   const widthMm = (panel.maxX - panel.minX) * 1000
   const heightMm = (panel.maxY - panel.minY) * 1000
   const pxPerMm = Math.min(FRONT_PX_PER_MM, MAX_TEXTURE_PX / widthMm, MAX_TEXTURE_PX / heightMm)
