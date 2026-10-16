@@ -1,6 +1,7 @@
 import { db } from '../../lib/db'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { loadGarments } from '../garments/garment.repository'
+import { listOutfits } from '../outfits/outfit.repository'
 
 /**
  * Reads what's saved on this device into the wardrobe, once per visit. If the
@@ -8,12 +9,14 @@ import { loadGarments } from '../garments/garment.repository'
  * still works, just for this visit.
  */
 export async function restoreSavedWardrobe() {
-  const { storage, setStorage, restoreUploads } = useWardrobeStore.getState()
+  const { storage, setStorage, restoreUploads, restoreOutfits } = useWardrobeStore.getState()
   if (storage !== 'idle') return
   setStorage('loading')
   try {
     await db.open()
-    restoreUploads(await loadGarments())
+    const [uploads, outfits] = await Promise.all([loadGarments(), listOutfits()])
+    restoreUploads(uploads)
+    restoreOutfits(outfits)
     setStorage('ready')
   } catch (error) {
     console.warn('Saving on this device is unavailable:', error)

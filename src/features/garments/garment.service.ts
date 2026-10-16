@@ -1,5 +1,7 @@
+import { db } from '../../lib/db'
 import { cutOutThumbnail, decodeImage, downscaleImage } from '../../lib/image-processing'
 import { useWardrobeStore } from '../../store/wardrobe.store'
+import { removeGarmentFromOutfits } from '../outfits/outfit.repository'
 import { toStorageError } from '../storage/storage-error'
 import { forgetPhoto } from './analyse-photo'
 import { toHex } from './garment.colors'
@@ -146,7 +148,11 @@ export async function removeUploadedGarment(garment: Garment) {
   const { storage, showNotice } = useWardrobeStore.getState()
   if (storage !== 'unavailable') {
     try {
-      await deleteGarment(garment.id)
+      // Saved outfits are updated in the same go, so none is left pointing at a garment that's gone.
+      await db.transaction('rw', db.garments, db.images, db.outfits, async () => {
+        await deleteGarment(garment.id)
+        await removeGarmentFromOutfits(garment)
+      })
     } catch {
       showNotice('error', `Couldn't remove ${garment.name} from this device. Please try again.`)
       return false
