@@ -20,6 +20,15 @@ export function CheckIcon(props: IconProps) {
   )
 }
 
+export function ResetIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M2.75 8a5.25 5.25 0 1 0 1.6-3.77" />
+      <path d="M2.5 2.5v3h3" />
+    </svg>
+  )
+}
+
 export function CloseIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>

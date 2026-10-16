@@ -1,6 +1,9 @@
 import { AppHeader } from '../components/layout/AppHeader'
 import { BodyPresetControl } from '../components/outfit-builder/BodyPresetControl'
+import { ViewControls } from '../components/outfit-builder/ViewControls'
+import { ViewerStage } from '../components/outfit-builder/ViewerStage'
 import { WardrobePanel } from '../components/wardrobe/WardrobePanel'
+import { MANNEQUIN_ASSET } from '../features/mannequin/mannequin-asset'
 import { useWardrobeGarments } from '../hooks/useWardrobeGarments'
 
 export default function App() {
@@ -10,9 +13,29 @@ export default function App() {
     <div className="flex min-h-dvh flex-col lg:h-dvh lg:flex-row">
       <section
         aria-label="Fitting room"
-        className="relative h-[62dvh] shrink-0 overflow-hidden bg-stage lg:h-auto lg:flex-1"
+        className="relative h-[62dvh] min-h-[420px] shrink-0 overflow-hidden bg-stage bg-[radial-gradient(ellipse_at_50%_38%,#f8f5f0_0%,#ebe6dd_68%)] lg:h-auto lg:flex-1"
       >
-        <AppHeader />
+        <div className="absolute inset-0">
+          <ViewerStage />
+        </div>
+
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-4 sm:p-6">
+          <div>
+            <AppHeader />
+            {MANNEQUIN_ASSET.kind === 'procedural' && (
+              <p
+                className="pointer-events-auto mt-3 inline-block rounded-full whitespace-nowrap bg-surface/80 px-2.5 py-1 text-[11px] text-muted ring-1 ring-line backdrop-blur"
+                title={MANNEQUIN_ASSET.note}
+              >
+                {MANNEQUIN_ASSET.label}
+              </p>
+            )}
+          </div>
+          <div className="pointer-events-auto">
+            <ViewControls />
+          </div>
+        </div>
+
         <div className="absolute inset-x-0 bottom-4 z-10 flex justify-center px-4 sm:bottom-6">
           <BodyPresetControl />
         </div>
