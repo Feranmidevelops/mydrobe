@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { analysePhotoAt } from '../../features/garments/analyse-photo'
 import { suggestGarmentName } from '../../features/garments/garment.colors'
-import { StorageError, type GarmentDetails, type PreparedPhoto } from '../../features/garments/garment.service'
+import type { GarmentDetails, PreparedPhoto } from '../../features/garments/garment.service'
 import { getRenderability } from '../../features/garments/garment.templates'
 import {
   GARMENT_CATEGORIES,
@@ -16,6 +16,7 @@ import {
   templateFor,
   type Sleeves,
 } from '../../features/garments/upload-review'
+import { StorageError } from '../../features/storage/storage-error'
 import { loadPhotoPixels } from '../../lib/image-processing'
 import { SeparationPreview } from './SeparationPreview'
 

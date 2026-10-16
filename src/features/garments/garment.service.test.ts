@@ -11,9 +11,9 @@ import {
   makeThumbnail,
   preparePhoto,
   removeUploadedGarment,
-  StorageError,
   UploadError,
 } from './garment.service'
+import { StorageError } from '../storage/storage-error'
 
 const file = (bytes: number[], name: string, size?: number) => {
   const content = new Uint8Array(size ?? bytes.length)

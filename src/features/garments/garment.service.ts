@@ -1,5 +1,6 @@
 import { cutOutThumbnail, decodeImage, downscaleImage } from '../../lib/image-processing'
 import { useWardrobeStore } from '../../store/wardrobe.store'
+import { toStorageError } from '../storage/storage-error'
 import { forgetPhoto } from './analyse-photo'
 import { toHex } from './garment.colors'
 import { deleteGarment, saveGarment, type GarmentFiles } from './garment.repository'
@@ -110,15 +111,6 @@ export async function makeThumbnail(analysis: Pick<PhotoAnalysis, 'image' | 'mas
   }
 }
 
-/** Saving on this device failed; the message says what to do about it. */
-export class StorageError extends Error {}
-
-function isOutOfSpace(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  // Dexie reports a full disk directly, or as the reason a transaction gave up.
-  return error.name === 'QuotaExceededError' || isOutOfSpace((error as Error & { inner?: unknown }).inner)
-}
-
 /**
  * Saves a reviewed upload on this device, then adds it to the wardrobe and
  * puts it on the mannequin when it can be worn. The wardrobe only changes
@@ -129,11 +121,7 @@ export async function addUploadedGarment(garment: Garment, files: GarmentFiles) 
     try {
       await saveGarment(garment, files)
     } catch (error) {
-      throw new StorageError(
-        isOutOfSpace(error)
-          ? "There isn't enough space on this device to save it. Remove pieces you don't need or free up some space, then try again."
-          : "Couldn't save it on this device. Please try again.",
-      )
+      throw toStorageError(error)
     }
   }
   const { addUpload, wear, showNotice } = useWardrobeStore.getState()
