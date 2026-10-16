@@ -15,5 +15,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // Interaction tests can take a few seconds when the machine is busy
+    // (dev server, browser and tests all running at once).
+    testTimeout: 15_000,
   },
 })

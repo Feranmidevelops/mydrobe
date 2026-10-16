@@ -1,3 +1,4 @@
+import { useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import { DoubleSide } from 'three'
 import type { Garment, GarmentTemplateId } from '../garments/garment.types'
@@ -19,6 +20,13 @@ export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
   const geometry = useMemo(() => buildGarmentGeometry(templateId, shape), [templateId, shape])
   const { source } = garment
   const textures = useGarmentTextures(garment, templateId, geometry.panel, shape)
+  const invalidate = useThree((state) => state.invalidate)
+
+  // The view only redraws on demand, and a photo's textures can arrive after
+  // the last frame, so ask for a new one whenever they change.
+  useEffect(() => {
+    invalidate()
+  }, [textures, invalidate])
 
   useEffect(
     () => () => {

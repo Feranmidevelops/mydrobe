@@ -124,6 +124,33 @@ export function maskBounds(mask: Uint8Array, width: number, height: number): Rec
   return { x, y, width: columns[columns.length - 1] - x + 1, height: rows[rows.length - 1] - y + 1 }
 }
 
+/**
+ * Shrinks the garment region by `radius` pixels on every side. Edge pixels
+ * blend garment and background, so they're left out of anything sampled or
+ * shown, and get filled like the rest of the background.
+ */
+export function erodeMask(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  if (radius <= 0) return mask.slice()
+  const span = radius * 2 + 1
+
+  // A pixel survives a pass if every pixel within `radius` along that axis is garment.
+  function pass(source: Uint8Array, length: number, lines: number, index: (line: number, i: number) => number) {
+    const result = new Uint8Array(source.length)
+    const ones = new Int32Array(length + 1)
+    for (let line = 0; line < lines; line++) {
+      for (let i = 0; i < length; i++) ones[i + 1] = ones[i] + source[index(line, i)]
+      for (let i = 0; i < length; i++) {
+        const inside = ones[Math.min(i + radius + 1, length)] - ones[Math.max(i - radius, 0)]
+        if (inside === span) result[index(line, i)] = 1
+      }
+    }
+    return result
+  }
+
+  const rows = pass(mask, width, height, (y, x) => y * width + x)
+  return pass(rows, height, width, (x, y) => y * width + x)
+}
+
 /** The unbroken run of garment pixels on a row that contains, or is nearest to, `centre`. */
 function runNear(mask: Uint8Array, width: number, row: number, centre: number) {
   const at = (x: number) => mask[row * width + x] === 1
@@ -205,21 +232,38 @@ export function coverage(mask: Uint8Array, width: number, rect: Rect): number {
   return garment / Math.max(1, rect.width * rect.height)
 }
 
+/** Mirrors `i` back and forth across `length`, so a tile repeats without hard seams. */
+function mirrored(i: number, length: number) {
+  const period = length * 2
+  const wrapped = ((i % period) + period) % period
+  return wrapped < length ? wrapped : period - 1 - wrapped
+}
+
 /**
- * Copies `rect` out of the photo, painting any background inside it with
- * `fill` so gaps (a shirt's neck opening, the space between trouser legs)
- * don't end up on the mannequin as background.
+ * Copies `rect` out of the photo, painting any background inside it so gaps
+ * (a shirt's neck opening, the space between trouser legs) don't end up on
+ * the mannequin. `fill` is either a flat colour or a fabric sample, which is
+ * tiled so a pattern carries on through the gap.
  */
-export function cropAndFill(image: RgbaImage, mask: Uint8Array, rect: Rect, fill: Rgb): RgbaImage {
+export function cropAndFill(
+  image: RgbaImage,
+  mask: Uint8Array,
+  rect: Rect,
+  fill: Rgb | RgbaImage,
+): RgbaImage {
   const data = new Uint8ClampedArray(rect.width * rect.height * 4)
   for (let y = 0; y < rect.height; y++) {
     for (let x = 0; x < rect.width; x++) {
       const source = (rect.y + y) * image.width + rect.x + x
       const target = (y * rect.width + x) * 4
-      const isGarment = mask[source] === 1
-      data[target] = isGarment ? image.data[source * 4] : fill[0]
-      data[target + 1] = isGarment ? image.data[source * 4 + 1] : fill[1]
-      data[target + 2] = isGarment ? image.data[source * 4 + 2] : fill[2]
+      if (mask[source] === 1) {
+        data.set(image.data.subarray(source * 4, source * 4 + 3), target)
+      } else if (Array.isArray(fill)) {
+        data.set(fill, target)
+      } else {
+        const tile = (mirrored(y, fill.height) * fill.width + mirrored(x, fill.width)) * 4
+        data.set(fill.data.subarray(tile, tile + 3), target)
+      }
       data[target + 3] = 255
     }
   }

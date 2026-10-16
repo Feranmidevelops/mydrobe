@@ -38,7 +38,12 @@ export type FabricPattern =
  */
 export type GarmentSource =
   | { kind: 'demo'; fabric: FabricPattern }
-  | { kind: 'photo'; url: string }
+  | {
+      kind: 'photo'
+      url: string
+      /** How different from the background a pixel must be to count as garment. */
+      backgroundTolerance?: number
+    }
 
 export interface Garment {
   id: string

@@ -3,6 +3,7 @@ import {
   averageColor,
   coverage,
   cropAndFill,
+  erodeMask,
   estimateBackground,
   frontCrop,
   garmentMask,
@@ -100,6 +101,22 @@ describe('garmentMask and maskBounds', () => {
   })
 })
 
+describe('erodeMask', () => {
+  it('shaves the given number of pixels off every side', () => {
+    const image = blank(20, 20)
+    paint(image, { x: 4, y: 5, width: 10, height: 8 }, NAVY)
+    const eroded = erodeMask(garmentMask(image, WHITE), 20, 20, 2)
+    expect(maskBounds(eroded, 20, 20)).toEqual({ x: 6, y: 7, width: 6, height: 4 })
+  })
+
+  it('removes specks smaller than the radius and treats the image edge as background', () => {
+    const image = blank(10, 10)
+    paint(image, { x: 0, y: 0, width: 10, height: 1 }, NAVY)
+    paint(image, { x: 5, y: 5, width: 1, height: 1 }, NAVY)
+    expect(maskBounds(erodeMask(garmentMask(image, WHITE), 10, 10, 1), 10, 10)).toBeNull()
+  })
+})
+
 describe('front crop', () => {
   it('keeps only the body of a top, leaving the sleeves out', () => {
     const { mask, bounds } = analyse(shirtPhoto())
@@ -139,6 +156,24 @@ describe('filling the background inside the crop', () => {
     expect(fabric).toEqual(NAVY)
     expect(colorAt(filled, 25 - bounds.x + 25, 60 - bounds.y)).toEqual(NAVY)
     expect(colorAt(filled, 0, 0)).toEqual(NAVY)
+  })
+
+  it('can carry a fabric pattern through the gap instead of a flat colour', () => {
+    const image = trousersPhoto()
+    const { mask, bounds } = analyse(image)
+    const swatch = blank(2, 1)
+    paint(swatch, { x: 1, y: 0, width: 1, height: 1 }, [200, 40, 40])
+    const filled = cropAndFill(image, mask, bounds, swatch)
+
+    // Columns in the gap alternate between the swatch's two pixels, mirrored.
+    const gapRow = 60 - bounds.y
+    const gapColumns = [47, 48, 49, 50].map((x) => colorAt(filled, x - bounds.x, gapRow))
+    expect(gapColumns).toEqual([
+      [200, 40, 40],
+      [200, 40, 40],
+      WHITE,
+      WHITE,
+    ])
   })
 
   it('reports how much of the crop is garment', () => {

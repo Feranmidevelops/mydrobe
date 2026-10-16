@@ -36,7 +36,10 @@ export function useGarmentTextures(
   )
 
   const request = useMemo(
-    () => (source.kind === 'photo' ? { url: source.url, templateId, panel } : null),
+    () =>
+      source.kind === 'photo'
+        ? { url: source.url, tolerance: source.backgroundTolerance, templateId, panel }
+        : null,
     [source, templateId, panel],
   )
   const [loaded, setLoaded] = useState<{ request: object; textures: GarmentTextures } | null>(null)
@@ -45,7 +48,7 @@ export function useGarmentTextures(
     if (!request) return
     let cancelled = false
     let created: GarmentTextures | null = null
-    createPhotoGarmentTextures(request.url, request.templateId, request.panel)
+    createPhotoGarmentTextures(request.url, request.templateId, request.panel, request.tolerance)
       .then(({ textures }) => {
         if (cancelled) {
           disposeTextures(textures)

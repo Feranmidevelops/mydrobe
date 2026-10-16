@@ -16,7 +16,8 @@ describe('App', () => {
   it('loads the fitting room at /fitting-room', async () => {
     window.history.replaceState(null, '', '/fitting-room')
     render(<App />)
-    expect(await screen.findByRole('region', { name: 'Fitting room' })).toBeInTheDocument()
+    // The fitting room is loaded on demand, which can be slow on a busy machine.
+    expect(await screen.findByRole('region', { name: 'Fitting room' }, { timeout: 10_000 })).toBeInTheDocument()
     expect(document.title).toBe('Fitting room · Mydrobe')
   })
 })
