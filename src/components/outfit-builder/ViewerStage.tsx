@@ -42,6 +42,7 @@ export function ViewerStage() {
 
   return (
     <ErrorBoundary
+      label="3D viewer"
       fallback={
         <ViewerMessage title="The 3D viewer stopped">
           Something went wrong while drawing the mannequin. Reload the page to try again; your
