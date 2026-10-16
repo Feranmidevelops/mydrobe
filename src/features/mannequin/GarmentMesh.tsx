@@ -4,7 +4,7 @@ import type { Garment, GarmentTemplateId } from '../garments/garment.types'
 import { fabricBaseColor } from '../../lib/fabric'
 import type { BodyShape } from './body-shape'
 import { buildGarmentGeometry } from './geometry/garment-geometry'
-import { createDemoGarmentTextures } from './garment-textures'
+import { useGarmentTextures } from './useGarmentTextures'
 
 const PHOTO_PLACEHOLDER_COLOR = '#cdbfb1'
 
@@ -18,13 +18,7 @@ interface GarmentMeshProps {
 export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
   const geometry = useMemo(() => buildGarmentGeometry(templateId, shape), [templateId, shape])
   const { source } = garment
-  const textures = useMemo(
-    () =>
-      source.kind === 'demo'
-        ? createDemoGarmentTextures(source.fabric, templateId, geometry.panel, shape)
-        : null,
-    [source, templateId, geometry.panel, shape],
-  )
+  const textures = useGarmentTextures(garment, templateId, geometry.panel, shape)
 
   useEffect(
     () => () => {
@@ -32,13 +26,6 @@ export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
       geometry.rest.dispose()
     },
     [geometry],
-  )
-  useEffect(
-    () => () => {
-      textures?.front.dispose()
-      textures?.swatch.dispose()
-    },
-    [textures],
   )
 
   // Until textures exist (no 2D canvas, or a photo still loading), show a flat colour.
@@ -48,10 +35,15 @@ export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
       ? fabricBaseColor(source.fabric)
       : PHOTO_PLACEHOLDER_COLOR
 
+  // three.js only compiles texture support into a material when it first has
+  // a map, so remount the materials once a photo's textures arrive.
+  const materialKey = textures ? 'textured' : 'flat'
+
   return (
     <group>
       <mesh geometry={geometry.front}>
         <meshStandardMaterial
+          key={materialKey}
           map={textures?.front ?? null}
           color={fallbackColor}
           roughness={0.88}
@@ -60,6 +52,7 @@ export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
       </mesh>
       <mesh geometry={geometry.rest}>
         <meshStandardMaterial
+          key={materialKey}
           map={textures?.swatch ?? null}
           color={fallbackColor}
           roughness={0.88}
