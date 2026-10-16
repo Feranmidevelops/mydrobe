@@ -47,7 +47,7 @@ export default function FittingRoomPage() {
 
       <aside
         aria-label="Wardrobe"
-        className="flex-1 border-t border-line bg-surface lg:w-[420px] lg:flex-none lg:overflow-y-auto lg:border-t-0 lg:border-l"
+        className="flex-1 border-t border-line bg-cream lg:w-[420px] lg:flex-none lg:overflow-y-auto lg:border-t-0 lg:border-l"
       >
         <WardrobePanel garments={garments} />
       </aside>
