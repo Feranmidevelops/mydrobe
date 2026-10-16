@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GarmentTemplateId } from '../features/garments/garment.types'
 import type { Rect, Rgb, RgbaImage } from '../features/garments/photo-mapping'
-import { analysePhoto } from '../features/garments/analyse-photo'
+import { analysePhotoAt } from '../features/garments/analyse-photo'
 import type { PhotoAnalysis } from '../features/garments/photo-analysis'
 import { loadPhotoPixels } from '../lib/image-processing'
 
@@ -64,8 +64,7 @@ export function PhotoAnalysisView({ url, templateId, tolerance }: PhotoAnalysisV
 
   useEffect(() => {
     let cancelled = false
-    loadPhotoPixels(url)
-      .then((pixels) => analysePhoto(pixels, templateId, tolerance))
+    analysePhotoAt(url, loadPhotoPixels, templateId, tolerance)
       .then((analysis) => {
         if (!cancelled) setResult({ key, analysis })
       })

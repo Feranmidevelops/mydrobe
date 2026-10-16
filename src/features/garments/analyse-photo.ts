@@ -50,6 +50,40 @@ function analysisWorker(): Worker | null {
 }
 
 /**
+ * Recent analyses, keyed by photo, template and tolerance. Switching body
+ * shape rebuilds a garment's textures but never needs a fresh analysis.
+ */
+const MAX_REMEMBERED = 8
+const remembered = new Map<string, Promise<PhotoAnalysis>>()
+
+/** Loads and analyses the photo at `url`, reusing a recent result when there is one. */
+export function analysePhotoAt(
+  url: string,
+  load: (url: string) => Promise<RgbaImage>,
+  templateId: GarmentTemplateId,
+  tolerance: number = DEFAULT_BACKGROUND_TOLERANCE,
+): Promise<PhotoAnalysis> {
+  const key = `${templateId}|${tolerance}|${url}`
+  const existing = remembered.get(key)
+  if (existing) {
+    // Refresh its place so the most recently used analyses are kept longest.
+    remembered.delete(key)
+    remembered.set(key, existing)
+    return existing
+  }
+  const analysis = load(url).then((image) => analysePhoto(image, templateId, tolerance))
+  analysis.catch(() => remembered.delete(key))
+  remembered.set(key, analysis)
+  while (remembered.size > MAX_REMEMBERED) remembered.delete(remembered.keys().next().value!)
+  return analysis
+}
+
+/** Drops remembered analyses of a photo, e.g. once it's removed from the wardrobe. */
+export function forgetPhoto(url: string) {
+  for (const key of [...remembered.keys()]) if (key.endsWith(`|${url}`)) remembered.delete(key)
+}
+
+/**
  * Runs the photo mapping off the main thread when possible, so the page stays
  * responsive on slower phones. The image's pixel buffer is handed to the
  * worker, so callers mustn't use `image` afterwards; the analysis returns it.

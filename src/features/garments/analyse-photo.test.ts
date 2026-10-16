@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { analysePhoto } from './analyse-photo'
+import { describe, expect, it, vi } from 'vitest'
+import { analysePhoto, analysePhotoAt, forgetPhoto } from './analyse-photo'
 import { PhotoMappingError } from './photo-analysis'
 
 function photo(withGarment: boolean) {
@@ -22,5 +22,27 @@ describe('analysePhoto', () => {
 
   it('rejects with a mapping error when there is no garment', async () => {
     await expect(analysePhoto(photo(false), 'trousers-straight')).rejects.toBeInstanceOf(PhotoMappingError)
+  })
+})
+
+describe('analysePhotoAt', () => {
+  it('reuses a recent analysis of the same photo, template and tolerance', async () => {
+    const load = vi.fn(async () => photo(true))
+    const first = analysePhotoAt('blob:shirt', load, 'shirt-short-sleeve')
+    const again = analysePhotoAt('blob:shirt', load, 'shirt-short-sleeve')
+    expect(again).toBe(first)
+    await first
+    expect(load).toHaveBeenCalledTimes(1)
+
+    await analysePhotoAt('blob:shirt', load, 'shirt-long-sleeve')
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('analyses again once the photo has been forgotten', async () => {
+    const load = vi.fn(async () => photo(true))
+    await analysePhotoAt('blob:jeans', load, 'trousers-straight')
+    forgetPhoto('blob:jeans')
+    await analysePhotoAt('blob:jeans', load, 'trousers-straight')
+    expect(load).toHaveBeenCalledTimes(2)
   })
 })
