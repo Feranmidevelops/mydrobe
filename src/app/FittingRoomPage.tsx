@@ -16,6 +16,12 @@ import { useWardrobeGarments } from '../hooks/useWardrobeGarments'
 export default function FittingRoomPage() {
   const garments = useWardrobeGarments()
   const [addingClothes, setAddingClothes] = useState(false)
+  // A fresh dialog each time, so one that closed without telling the page can't block the next.
+  const [uploadCount, setUploadCount] = useState(0)
+  const openUpload = () => {
+    setUploadCount((count) => count + 1)
+    setAddingClothes(true)
+  }
 
   useEffect(() => {
     void restoreSavedWardrobe()
@@ -61,10 +67,10 @@ export default function FittingRoomPage() {
         aria-label="Wardrobe"
         className="flex-1 bg-cream split:w-[min(420px,50vw)] split:flex-none split:overflow-y-auto split:border-l split:border-line"
       >
-        <WardrobePanel garments={garments} onAddClothes={() => setAddingClothes(true)} />
+        <WardrobePanel garments={garments} onAddClothes={openUpload} />
       </aside>
 
-      {addingClothes && <UploadDialog onClose={() => setAddingClothes(false)} />}
+      {addingClothes && <UploadDialog key={uploadCount} onClose={() => setAddingClothes(false)} />}
       <NoticeToast />
     </div>
   )

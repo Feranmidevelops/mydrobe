@@ -30,6 +30,18 @@ describe('FittingRoomPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('opens the upload dialog again after it was closed', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+
+    for (let round = 0; round < 2; round++) {
+      await user.click(screen.getByRole('button', { name: /add clothes/i }))
+      expect(screen.getByRole('dialog', { name: 'Add clothes' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Close' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    }
+  })
+
   it('brings back the clothes saved on this device', async () => {
     await saveGarment(
       {

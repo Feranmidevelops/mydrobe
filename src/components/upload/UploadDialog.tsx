@@ -48,7 +48,12 @@ export function UploadDialog({ onClose }: { onClose: () => void }) {
     [],
   )
 
-  const close = () => dialogRef.current?.close()
+  // Tells the page straight away instead of waiting for the dialog's close
+  // event, which some browsers hold back while their window isn't focused.
+  const close = () => {
+    dialogRef.current?.close()
+    onClose()
+  }
 
   const choosePhoto = async (file: File) => {
     const id = ++attempt.current
@@ -109,9 +114,12 @@ export function UploadDialog({ onClose }: { onClose: () => void }) {
     <dialog
       ref={dialogRef}
       aria-labelledby={headingId}
+      // Any other way the browser closes it still reaches the page.
       onClose={onClose}
       onCancel={(event) => {
-        if (adding) event.preventDefault()
+        // Esc closes through the same path as the Close button, but not mid-add.
+        event.preventDefault()
+        if (!adding) close()
       }}
       onClick={(event) => {
         // A click on the backdrop lands on the dialog itself. Only close that
