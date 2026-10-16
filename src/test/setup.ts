@@ -13,3 +13,16 @@ vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => nul
 
 // jsdom doesn't implement scrolling; page changes scroll to the top.
 window.scrollTo = vi.fn() as typeof window.scrollTo
+
+// jsdom has no modal dialogs yet. These stand-ins open and close a <dialog>
+// the way browsers do, including the close event React listens for.
+if (typeof HTMLDialogElement.prototype.showModal !== 'function') {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.open = true
+  }
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    if (!this.open) return
+    this.open = false
+    this.dispatchEvent(new Event('close'))
+  }
+}

@@ -1,8 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useWardrobeStore } from '../../store/wardrobe.store'
+import { analysePhotoAt } from './analyse-photo'
 import {
   createUploadedGarment,
+  discardPhoto,
   isUpload,
+  makeThumbnail,
   preparePhoto,
   removeUploadedGarment,
   UploadError,
@@ -64,5 +67,27 @@ describe('uploaded garments', () => {
 
     expect(useWardrobeStore.getState().uploads).toEqual([])
     expect(useWardrobeStore.getState().selection).toEqual({})
+  })
+})
+
+describe('photo housekeeping', () => {
+  it('forgets what was worked out about a discarded photo', () => {
+    const load = vi.fn(() => new Promise<never>(() => {}))
+    void analysePhotoAt('blob:discarded', load, 'trousers-straight', 70)
+    void analysePhotoAt('blob:discarded', load, 'trousers-straight', 70)
+    expect(load).toHaveBeenCalledTimes(1)
+
+    discardPhoto('blob:discarded')
+    void analysePhotoAt('blob:discarded', load, 'trousers-straight', 70)
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('carries on without a thumbnail when one cannot be drawn', async () => {
+    const analysis = {
+      image: { data: new Uint8ClampedArray(16), width: 2, height: 2 },
+      mask: new Uint8Array(4).fill(1),
+      bounds: { x: 0, y: 0, width: 2, height: 2 },
+    }
+    await expect(makeThumbnail(analysis)).resolves.toBeUndefined()
   })
 })

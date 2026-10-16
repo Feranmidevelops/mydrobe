@@ -112,3 +112,13 @@ export function HangerIcon(props: IconProps) {
     </svg>
   )
 }
+
+export function PhotoIcon(props: IconProps) {
+  return (
+    <svg {...outline} {...props}>
+      <rect x="3.5" y="5" width="17" height="14" rx="2" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="M20.5 15.5l-4.5-4.5-8 8" />
+    </svg>
+  )
+}
