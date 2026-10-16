@@ -8,19 +8,7 @@
    */
   --font-sans: 'Helvetica Neue', 'Inter Variable', Helvetica, Arial, sans-serif;
 
-  --color-canvas: #f3efe8;
-  --color-stage: #ebe6dd;
-  --color-surface: #fbf9f5;
-  --color-ink: #1c1a17;
-  --color-ink-soft: #46423c;
-  --color-muted: #6e675d;
-  --color-line: #e3ddd2;
-  --color-accent: #8f5a3a;
-  --color-accent-soft: #f2e6dc;
-  --color-warn: #7a4f0e;
-  --color-warn-soft: #f9eed6;
-
-  /* Landing page: warm browns and creams. */
+  /* Brand palette: warm browns and creams, shared by every page. */
   --color-espresso: #4a2d1f;
   --color-cocoa: #5b3a28;
   --color-tan: #835d3e;
@@ -28,6 +16,18 @@
   --color-sand: #eee6dd;
   --color-mist: #e8e3dd;
   --color-taupe: #6f6257;
+
+  /* Roles the fitting room uses, drawn from the brand palette. */
+  --color-ink: var(--color-espresso);
+  --color-ink-soft: #6a4b3a;
+  --color-muted: var(--color-taupe);
+  --color-canvas: var(--color-cream);
+  --color-stage: #e9ddd0;
+  --color-surface: #fbf8f4;
+  --color-line: #e5d9cc;
+  --color-accent: var(--color-tan);
+  --color-warn: #7a4f0e;
+  --color-warn-soft: #f9eed6;
 }
 
 @layer base {
