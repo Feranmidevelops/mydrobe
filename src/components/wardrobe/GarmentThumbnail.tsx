@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Garment } from '../../features/garments/garment.types'
 import { loadImage } from '../../lib/load-image'
 import { drawFlatLay, drawPhotoThumbnail } from './flat-lay'
@@ -22,6 +22,9 @@ export function GarmentThumbnail({
   className,
 }: GarmentThumbnailProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const photoUrl = garment.source.kind === 'photo' ? (garment.source.thumbnailUrl ?? garment.source.url) : null
+  /** The photo last drawn; until the current one is, the canvas stays see-through. */
+  const [drawnUrl, setDrawnUrl] = useState<string | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -39,9 +42,12 @@ export function GarmentThumbnail({
     }
 
     let cancelled = false
-    loadImage(source.thumbnailUrl ?? source.url)
+    const url = source.thumbnailUrl ?? source.url
+    loadImage(url)
       .then((image) => {
-        if (!cancelled) drawPhotoThumbnail(ctx, image, pixels)
+        if (cancelled) return
+        drawPhotoThumbnail(ctx, image, pixels)
+        setDrawnUrl(url)
       })
       .catch(() => {
         // A photo that fails to load leaves the thumbnail blank.
@@ -55,7 +61,8 @@ export function GarmentThumbnail({
     <canvas
       ref={canvasRef}
       aria-hidden="true"
-      className={className}
+      // Photos fade in once drawn rather than popping in after a blank moment.
+      className={`transition-opacity duration-300 ${photoUrl !== null && drawnUrl !== photoUrl ? 'opacity-0' : 'opacity-100'} ${className ?? ''}`}
       style={fluid ? { width: '100%', aspectRatio: '1 / 1' } : { width: size, height: size }}
     />
   )
