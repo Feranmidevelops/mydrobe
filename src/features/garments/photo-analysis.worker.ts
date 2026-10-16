@@ -12,6 +12,7 @@ scope.onmessage = ({ data }) => {
     const analysis = analyseGarmentPhoto(data.image, data.templateId, data.tolerance)
     scope.postMessage({ id: data.id, analysis }, [
       analysis.image.data.buffer,
+      analysis.mask.buffer,
       analysis.front.data.buffer,
       analysis.swatchPixels.data.buffer,
     ])

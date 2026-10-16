@@ -27,6 +27,8 @@ export class PhotoMappingError extends Error {}
 /** What the mapping found in a photo, kept so a trial page can show its working. */
 export interface PhotoAnalysis {
   image: RgbaImage
+  /** 1 where the photo shows garment, 0 for background; one byte per pixel of `image`. */
+  mask: Uint8Array
   background: Rgb | null
   bounds: Rect
   /** Part of the photo projected onto the template's front. */
@@ -62,6 +64,7 @@ export function analyseGarmentPhoto(
   const swatchPixels = flattenLighting(cropAndFill(image, solid, swatch, fabric))
   return {
     image,
+    mask,
     background,
     bounds,
     crop,
