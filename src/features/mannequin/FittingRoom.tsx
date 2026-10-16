@@ -26,9 +26,17 @@ function StudioLighting() {
   )
 }
 
+/**
+ * Drei's ContactShadows blurs on a helper plane fixed at y = 0, so its own
+ * plane must sit slightly below 0: above it, the blur plane falls behind the
+ * shadow camera and the shadow comes out empty.
+ */
+const CONTACT_SHADOW_Y = -0.001
+
+/** The plinth's top sits just under the contact shadow; see CONTACT_SHADOW_Y. */
 function Plinth() {
   return (
-    <mesh position={[0, -0.015, 0]}>
+    <mesh position={[0, -0.018, 0]}>
       <cylinderGeometry args={[0.62, 0.64, 0.03, 96]} />
       <meshStandardMaterial color="#e2dacd" roughness={0.85} />
     </mesh>
@@ -63,7 +71,7 @@ export default function FittingRoom() {
       <ContactShadows
         key={[preset, ...worn.map(({ garment }) => garment.id)].join()}
         frames={1}
-        position={[0, 0.001, 0]}
+        position={[0, CONTACT_SHADOW_Y, 0]}
         scale={1.6}
         resolution={512}
         blur={2.2}
