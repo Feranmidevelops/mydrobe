@@ -5,6 +5,7 @@ import type { BodyPreset } from '../features/mannequin/viewer.types'
 import {
   removeFromSelection,
   toggleInSelection,
+  wearInSelection,
   type GarmentSelection,
 } from '../features/outfits/outfit.selection'
 
@@ -20,6 +21,8 @@ interface WardrobeState {
   viewRequest: ViewRequest | null
   setBodyPreset: (preset: BodyPreset) => void
   toggleGarment: (garment: Pick<Garment, 'id' | 'category'>) => void
+  /** Puts garments on without toggling, e.g. when opening a suggested look. */
+  wear: (garments: Pick<Garment, 'id' | 'category'>[]) => void
   takeOff: (category: GarmentCategory) => void
   clearOutfit: () => void
   requestView: (view: ViewRequest['view']) => void
@@ -37,6 +40,7 @@ export const useWardrobeStore = create<WardrobeState>()((set) => ({
   setBodyPreset: (bodyPreset) => set({ bodyPreset }),
   toggleGarment: (garment) =>
     set((state) => ({ selection: toggleInSelection(state.selection, garment) })),
+  wear: (garments) => set((state) => ({ selection: wearInSelection(state.selection, garments) })),
   takeOff: (category) =>
     set((state) => ({ selection: removeFromSelection(state.selection, category) })),
   clearOutfit: () => set({ selection: {} }),

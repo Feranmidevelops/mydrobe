@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEMO_GARMENTS } from '../garments/demo-garments'
-import { resolveSelection, toggleInSelection } from './outfit.selection'
+import { resolveSelection, toggleInSelection, wearInSelection } from './outfit.selection'
 
 const oxford = { id: 'demo-oxford-stripe', category: 'shirt' } as const
 const gingham = { id: 'demo-gingham', category: 'shirt' } as const
@@ -26,6 +26,20 @@ describe('toggleInSelection', () => {
     const before = { shirt: oxford.id }
     toggleInSelection(before, gingham)
     expect(before).toEqual({ shirt: oxford.id })
+  })
+})
+
+describe('wearInSelection', () => {
+  it('puts on a whole look, replacing items in the same categories', () => {
+    expect(wearInSelection({ shirt: gingham.id, outerwear: 'demo-camel-overcoat' }, [oxford, denim])).toEqual({
+      shirt: oxford.id,
+      trousers: denim.id,
+      outerwear: 'demo-camel-overcoat',
+    })
+  })
+
+  it('keeps a garment on when it is worn again', () => {
+    expect(wearInSelection({ shirt: oxford.id }, [oxford])).toEqual({ shirt: oxford.id })
   })
 })
 
