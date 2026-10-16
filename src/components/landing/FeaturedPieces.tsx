@@ -22,8 +22,12 @@ export function FeaturedPieces({ garments }: { garments: Garment[] }) {
           Fresh in the wardrobe
         </h2>
 
-        {/* A swipeable row on phones, a three-column grid from tablets up. */}
-        <ul className="-mx-4 mt-8 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:gap-6 sm:overflow-visible sm:px-0">
+        {/*
+          A swipeable row on phones, a three-column grid from tablets up.
+          `relative` keeps the visually hidden link text inside the row;
+          otherwise it escapes the scroll area and widens the page.
+        */}
+        <ul className="relative -mx-4 mt-8 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:gap-6 sm:overflow-visible sm:px-0">
           {looks.map(({ piece, partner }) => (
             <li key={piece.id} className="w-[72%] shrink-0 snap-start sm:w-auto">
               <div className="grid aspect-[4/5] place-items-center rounded-xl bg-mist">
