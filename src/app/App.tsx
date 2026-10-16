@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react'
+import { ErrorBoundary } from '../components/ui/ErrorBoundary'
+import { PageLoadError } from '../components/ui/PageLoadError'
 import { PageLoading } from '../components/ui/PageLoading'
 import LandingPage from './LandingPage'
 import { loadFittingRoomPage } from './pages'
@@ -20,9 +22,11 @@ export default function App() {
 
   if (route === ROUTES.fittingRoom) {
     return (
-      <Suspense fallback={<PageLoading />}>
-        <FittingRoomPage />
-      </Suspense>
+      <ErrorBoundary label="Fitting room" fallback={<PageLoadError />}>
+        <Suspense fallback={<PageLoading />}>
+          <FittingRoomPage />
+        </Suspense>
+      </ErrorBoundary>
     )
   }
 

@@ -28,7 +28,12 @@ function Plinth() {
   )
 }
 
-export default function FittingRoom() {
+interface FittingRoomProps {
+  /** Called if the browser takes the 3D context away, as phones short of memory can. */
+  onContextLost?: () => void
+}
+
+export default function FittingRoom({ onContextLost }: FittingRoomProps) {
   const preset = useWardrobeStore((state) => state.bodyPreset)
   const selection = useWardrobeStore((state) => state.selection)
   const garments = useWardrobeGarments()
@@ -44,6 +49,13 @@ export default function FittingRoom() {
       camera={{ position: [0, 1.2, 4.5], fov: CAMERA_FOV, near: 0.1, far: 40 }}
       gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
       aria-label="3D mannequin. Drag to rotate, scroll or pinch to zoom."
+      onCreated={({ gl }) => {
+        gl.domElement.addEventListener('webglcontextlost', (event) => {
+          // Let the page offer a restart rather than leave a frozen picture.
+          event.preventDefault()
+          onContextLost?.()
+        })
+      }}
     >
       <StudioLighting />
       <group scale={shape.scale}>
