@@ -1,8 +1,8 @@
 export function AppHeader() {
   return (
-    <header className="pointer-events-none absolute top-0 left-0 z-10 p-4 sm:p-6">
+    <header className="pointer-events-none">
       <p className="font-display text-2xl leading-none tracking-tight text-ink">Mydrobe</p>
-      <p className="mt-1 text-xs tracking-[0.18em] text-muted uppercase">Virtual wardrobe</p>
+      <p className="mt-1 text-[11px] tracking-[0.18em] whitespace-nowrap text-muted uppercase">Virtual wardrobe</p>
     </header>
   )
 }
