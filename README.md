@@ -6,6 +6,7 @@ Style your own clothes on an interactive 3D mannequin, right in the browser. Myd
 
 ## What works today
 
+- A **landing page** at `/` in a warm, shop-style look: hero, featured looks, why Mydrobe and body shapes. Every section leads into the fitting room at `/fitting-room`. *Try the look* opens it already wearing that outfit.
 - A genuine 3D mannequin (WebGL, not a rotating image). Drag to rotate a full 360°, scroll or pinch to zoom, and use the Front / Side / Back / Reset buttons.
 - **Small, Medium and Large** body presets. These are visual silhouettes, not size advice. Switching presets keeps the outfit on and refits the garments.
 - A demo wardrobe of 8 pieces with category filters. Pick one item per category to dress the mannequin.
@@ -36,19 +37,22 @@ No environment variables or secrets are needed.
 
 ## How it's built
 
-React 19, TypeScript and Vite, styled with Tailwind CSS v4. The 3D view uses Three.js with React Three Fiber and Drei. Zustand holds the state that the wardrobe panel and the viewer share. Vitest and Testing Library run the tests.
+React 19, TypeScript and Vite, styled with Tailwind CSS v4. Type is set in Helvetica Neue on Apple devices and in the bundled Inter everywhere else. The 3D view uses Three.js with React Three Fiber and Drei. Zustand holds the state that the wardrobe panel and the viewer share. Vitest and Testing Library run the tests.
 
 ```
 src/
-├── app/                  App layout
+├── app/                  Pages (landing, fitting room) and the tiny router
+├── assets/landing/       Rendered images for the landing page
+├── capture/              Dev-only page that renders those images
 ├── components/
-│   ├── layout/           Header
+│   ├── landing/          Landing page sections
+│   ├── layout/           Fitting room header
 │   ├── outfit-builder/   Viewer stage, view controls, body presets, notices
 │   ├── wardrobe/         Wardrobe panel, garment cards, thumbnails
 │   └── ui/               Icons, error boundary
 ├── features/
 │   ├── garments/         Garment types, 3D template registry, demo wardrobe
-│   ├── outfits/          Outfit selection rules
+│   ├── outfits/          Outfit selection rules, featured looks
 │   └── mannequin/        Body presets, geometry, fitting room, camera, textures
 ├── hooks/                useWardrobeGarments (where uploads will plug in)
 ├── lib/                  Procedural fabric drawing
@@ -57,7 +61,8 @@ src/
 
 A few decisions worth knowing:
 
-- **The 3D viewer is lazy-loaded.** The app shell is about 76 kB gzipped and becomes usable first. The Three.js chunk (about 280 kB gzipped) loads after it.
+- **Two pages, no routing library.** A small router in `src/app/router.ts` keeps the path in the address bar. Static hosting needs the usual single-page-app fallback (serve `index.html` for unknown paths).
+- **The 3D viewer is lazy-loaded.** The landing page ships in the main bundle, about 77 kB gzipped. The fitting room and the Three.js chunk (about 280 kB gzipped) only load when someone heads in, and start downloading when a fitting room link is hovered.
 - **Rendering is on demand.** The canvas only redraws while the camera moves or the scene changes. Camera movement never goes through React state, so rotating doesn't re-render the UI.
 - **Single draw calls.** The mannequin is merged into one mesh. Each garment is two meshes: front panel and fabric.
 
@@ -68,6 +73,16 @@ A photo of a shirt can't become a true 3D shirt by itself. Mydrobe maps images o
 - **Front panel:** the garment's front-facing image is projected straight onto the front of the template, the same way the photo was taken. Uploaded photos will use this path.
 - **Back, sleeves and collar:** a seamless fabric swatch tiled at real-world scale. The app doesn't make up a back view that a single front photo can't show.
 - Templates are generated from the same body cross-sections as the mannequin, plus some ease. That's how they refit every preset, and why untucked shirts always hang outside the trousers.
+
+## Landing page images
+
+The landing page photos are renders of our own mannequin and garment templates, so there are no stock-photo licences to track. To refresh them, for example after the mannequin changes:
+
+1. `npm run dev`
+2. Open `http://localhost:5173/capture.html?shot=hero-lineup` (other shots: `body-small`, `body-medium`, `body-large`).
+3. Wait for the figures to appear, press **Download**, and save the file over the one in `src/assets/landing/`.
+
+Shots are defined in `src/capture/shots.ts`. The capture page isn't part of the production build.
 
 ## Mannequin asset
 
@@ -83,6 +98,8 @@ A photo of a shirt can't become a true 3D shirt by itself. Mydrobe maps images o
 | Asset | Source | Licence |
 | ----- | ------ | ------- |
 | Procedural mannequin | Generated in this repo | Same as the project |
+| Landing page renders | Rendered from this repo's scene | Same as the project |
+| Inter typeface | [rsms/inter](https://github.com/rsms/inter) via `@fontsource-variable/inter` | SIL Open Font License 1.1 |
 
 ## Known limitations
 
