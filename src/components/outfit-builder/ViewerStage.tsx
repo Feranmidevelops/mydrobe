@@ -9,7 +9,7 @@ function ViewerMessage({ title, children }: { title: string; children: string })
   return (
     <div role="status" className="grid h-full place-items-center p-8 text-center">
       <div className="max-w-sm">
-        <p className="font-display text-xl text-ink">{title}</p>
+        <p className="text-lg font-semibold tracking-tight text-ink">{title}</p>
         <p className="mt-2 text-sm text-muted">{children}</p>
       </div>
     </div>
