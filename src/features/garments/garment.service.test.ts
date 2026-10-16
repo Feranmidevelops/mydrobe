@@ -11,9 +11,11 @@ import {
   makeThumbnail,
   preparePhoto,
   removeUploadedGarment,
-  StorageError,
   UploadError,
 } from './garment.service'
+import { createOutfit } from '../outfits/outfit.operations'
+import { listOutfits, putOutfit } from '../outfits/outfit.repository'
+import { StorageError } from '../storage/storage-error'
 
 const file = (bytes: number[], name: string, size?: number) => {
   const content = new Uint8Array(size ?? bytes.length)
@@ -77,6 +79,17 @@ describe('uploaded garments', () => {
       selection: {},
       notice: { kind: 'success', message: 'Navy shirt removed from your wardrobe' },
     })
+  })
+
+  it('marks a removed upload as missing in the outfits saved on the device', async () => {
+    const garment = createUploadedGarment({ url: 'blob:photo' }, undefined, [], details)
+    await addUploadedGarment(garment, { photo: new Blob(['photo']), mimeType: 'image/jpeg', fileSize: 1000 })
+    await putOutfit(createOutfit('Look 1', { shirt: garment.id, trousers: 'demo-indigo-denim' }, 'medium'))
+
+    await removeUploadedGarment(garment)
+
+    const [outfit] = await listOutfits()
+    expect(outfit).toMatchObject({ garmentIds: { trousers: 'demo-indigo-denim' }, missingSlots: ['shirt'] })
   })
 
   it('keeps a piece the device would not delete, and says so', async () => {

@@ -1,6 +1,7 @@
 import { GARMENT_CATEGORY_LABELS, type Garment } from '../../features/garments/garment.types'
 import { resolveSelection } from '../../features/outfits/outfit.selection'
 import { useWardrobeStore } from '../../store/wardrobe.store'
+import { SaveOutfit } from '../outfits/SaveOutfit'
 import { CloseIcon } from '../ui/icons'
 import { GarmentThumbnail } from './GarmentThumbnail'
 
@@ -32,36 +33,39 @@ export function OutfitSummary({ garments }: { garments: Garment[] }) {
           Pick a shirt and trousers from your wardrobe to dress the mannequin.
         </p>
       ) : (
-        <ul className="mt-3 space-y-2">
-          {worn.map(({ garment, renderability }) => (
-            <li key={garment.id} className="rounded-xl border border-line bg-surface p-2">
-              <div className="flex items-center gap-3">
-                <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-mist">
-                  <GarmentThumbnail garment={garment} size={40} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{garment.name}</span>
-                  <span className="block text-xs text-muted">
-                    {GARMENT_CATEGORY_LABELS[garment.category].one}
+        <>
+          <ul className="mt-3 space-y-2">
+            {worn.map(({ garment, renderability }) => (
+              <li key={garment.id} className="rounded-xl border border-line bg-surface p-2">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-mist">
+                    <GarmentThumbnail garment={garment} size={40} />
                   </span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => takeOff(garment.category)}
-                  aria-label={`Take off ${garment.name}`}
-                  className="grid size-8 place-items-center rounded-full text-muted hover:bg-sand hover:text-ink"
-                >
-                  <CloseIcon className="size-4" />
-                </button>
-              </div>
-              {!renderability.renderable && (
-                <p role="note" className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn">
-                  Not shown on the mannequin. {renderability.reason}
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{garment.name}</span>
+                    <span className="block text-xs text-muted">
+                      {GARMENT_CATEGORY_LABELS[garment.category].one}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => takeOff(garment.category)}
+                    aria-label={`Take off ${garment.name}`}
+                    className="grid size-8 place-items-center rounded-full text-muted hover:bg-sand hover:text-ink"
+                  >
+                    <CloseIcon className="size-4" />
+                  </button>
+                </div>
+                {!renderability.renderable && (
+                  <p role="note" className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn">
+                    Not shown on the mannequin. {renderability.reason}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+          <SaveOutfit garments={garments} />
+        </>
       )}
     </section>
   )

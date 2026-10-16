@@ -55,6 +55,15 @@ export function AlertIcon(props: IconProps) {
   )
 }
 
+export function PencilIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M10.5 3.25l2.25 2.25L6 12.25H3.75V10z" />
+      <path d="M9.25 4.5l2.25 2.25" />
+    </svg>
+  )
+}
+
 export function PlusIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>

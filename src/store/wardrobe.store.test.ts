@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { createOutfit } from '../features/outfits/outfit.operations'
 import { useWardrobeStore } from './wardrobe.store'
 
 const initialState = useWardrobeStore.getState()
@@ -78,6 +79,44 @@ describe('wardrobe store', () => {
     restoreUploads([photo('just-added'), photo('saved-earlier')])
 
     expect(useWardrobeStore.getState().uploads.map((garment) => garment.id)).toEqual(['just-added', 'saved-earlier'])
+  })
+
+  it('keeps saved outfits newest first and lets them be renamed, reopened and deleted', () => {
+    const { addOutfit, replaceOutfit, removeOutfit, dress } = useWardrobeStore.getState()
+    const older = createOutfit('Look 1', { shirt: 'demo-oxford-stripe' }, 'small', 1000)
+    const newer = createOutfit('Look 2', { trousers: 'demo-indigo-denim' }, 'large', 2000)
+    addOutfit(older)
+    addOutfit(newer)
+    replaceOutfit({ ...older, name: 'Office' })
+    expect(useWardrobeStore.getState().outfits.map((outfit) => outfit.name)).toEqual(['Look 2', 'Office'])
+
+    dress(older.garmentIds, older.bodyPreset)
+    expect(useWardrobeStore.getState()).toMatchObject({ selection: older.garmentIds, bodyPreset: 'small' })
+
+    removeOutfit(newer.id)
+    expect(useWardrobeStore.getState().outfits.map((outfit) => outfit.name)).toEqual(['Office'])
+  })
+
+  it('marks a removed upload as missing in the saved outfits that used it', () => {
+    const { addUpload, addOutfit, removeUpload } = useWardrobeStore.getState()
+    addUpload({
+      id: 'linen-shirt',
+      name: 'Linen shirt',
+      category: 'shirt',
+      templateId: null,
+      source: { kind: 'photo', url: 'blob:linen-shirt' },
+      tags: ['upload'],
+      createdAt: 0,
+      updatedAt: 0,
+    })
+    addOutfit(createOutfit('Look 1', { shirt: 'linen-shirt', trousers: 'demo-indigo-denim' }, 'medium'))
+
+    removeUpload('linen-shirt')
+
+    expect(useWardrobeStore.getState().outfits[0]).toMatchObject({
+      garmentIds: { trousers: 'demo-indigo-denim' },
+      missingSlots: ['shirt'],
+    })
   })
 
   it('shows one notice at a time and only clears the one it was asked to', () => {
