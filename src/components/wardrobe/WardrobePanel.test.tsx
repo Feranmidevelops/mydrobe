@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEMO_GARMENTS } from '../../features/garments/demo-garments'
 import type { Garment } from '../../features/garments/garment.types'
+import { createOutfit } from '../../features/outfits/outfit.operations'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { WardrobePanel } from './WardrobePanel'
 
@@ -39,7 +40,7 @@ describe('WardrobePanel', () => {
   it('prompts for a selection when nothing is worn', () => {
     render(<WardrobePanel garments={DEMO_GARMENTS} />)
     expect(screen.getByText(/pick a shirt and trousers/i)).toBeInTheDocument()
-    expect(screen.getByText('8 items')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Wardrobe 8' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('selects a shirt and trousers and lists them in the outfit', async () => {
@@ -92,7 +93,7 @@ describe('WardrobePanel', () => {
     expect(shelf('Your clothes').getAllByRole('listitem')).toHaveLength(1)
     expect(card(/^navy shirt/i, 'Your clothes')).toBeInTheDocument()
     expect(shelf('Demo pieces').getAllByRole('listitem')).toHaveLength(8)
-    expect(screen.getByText('9 items')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Wardrobe 9' })).toBeInTheDocument()
   })
 
   it('offers a way to add clothes, with a tip before the first upload', async () => {
@@ -166,6 +167,22 @@ describe('WardrobePanel', () => {
     render(<WardrobePanel garments={[]} onAddClothes={() => {}} />)
     expect(screen.queryByText('Your wardrobe is empty.')).not.toBeInTheDocument()
     expect(card(/add clothes/i, 'Your clothes')).toBeInTheDocument()
+  })
+
+  it('switches between the wardrobe and saved outfits, with the arrow keys too', async () => {
+    const user = userEvent.setup()
+    useWardrobeStore.setState({ outfits: [createOutfit('Office', { shirt: 'demo-oxford-stripe' }, 'medium')] })
+    render(<WardrobePanel garments={DEMO_GARMENTS} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Outfits 1' }))
+    expect(screen.getByRole('article', { name: 'Office' })).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Demo pieces' })).not.toBeInTheDocument()
+
+    await user.keyboard('{ArrowLeft}')
+    const wardrobeTab = screen.getByRole('tab', { name: 'Wardrobe 8' })
+    expect(wardrobeTab).toHaveAttribute('aria-selected', 'true')
+    expect(wardrobeTab).toHaveFocus()
+    expect(shelf('Demo pieces').getAllByRole('listitem')).toHaveLength(8)
   })
 
   it('says so while saved clothes are loading', () => {

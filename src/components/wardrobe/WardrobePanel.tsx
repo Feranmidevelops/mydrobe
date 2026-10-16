@@ -1,19 +1,15 @@
-import { useId, useState, type ReactNode } from 'react'
-import { isUpload, removeUploadedGarment } from '../../features/garments/garment.service'
-import {
-  GARMENT_CATEGORIES,
-  GARMENT_CATEGORY_LABELS,
-  type Garment,
-  type GarmentCategory,
-} from '../../features/garments/garment.types'
-import { isSelected } from '../../features/outfits/outfit.selection'
+import { useId, useState, type KeyboardEvent } from 'react'
+import type { Garment } from '../../features/garments/garment.types'
 import { useWardrobeStore } from '../../store/wardrobe.store'
+import { SavedOutfits } from '../outfits/SavedOutfits'
 import { LockIcon } from '../ui/icons'
-import { AddClothesCard } from './AddClothesCard'
-import { GarmentCard } from './GarmentCard'
 import { OutfitSummary } from './OutfitSummary'
+import { WardrobeShelves } from './WardrobeShelves'
 
-type Filter = GarmentCategory | 'all'
+type Tab = 'wardrobe' | 'outfits'
+
+const TABS: Tab[] = ['wardrobe', 'outfits']
+const TAB_LABELS: Record<Tab, string> = { wardrobe: 'Wardrobe', outfits: 'Outfits' }
 
 interface WardrobePanelProps {
   garments: Garment[]
@@ -21,135 +17,69 @@ interface WardrobePanelProps {
   onAddClothes?: () => void
 }
 
-function confirmAndRemove(garment: Garment) {
-  if (window.confirm(`Remove ${garment.name} from your wardrobe? You'd need to upload the photo again.`)) {
-    void removeUploadedGarment(garment)
-  }
-}
-
-function Shelf({ title, children }: { title: string; children: ReactNode }) {
-  const headingId = useId()
-  return (
-    <div className="mt-6">
-      <h3 id={headingId} className="text-[11px] font-semibold tracking-[0.18em] text-muted uppercase">
-        {title}
-      </h3>
-      <ul aria-labelledby={headingId} className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2">
-        {children}
-      </ul>
-    </div>
-  )
-}
-
+/** The side panel: what's on the mannequin, then the wardrobe and the saved outfits as tabs. */
 export function WardrobePanel({ garments, onAddClothes }: WardrobePanelProps) {
-  const [filter, setFilter] = useState<Filter>('all')
-  const selection = useWardrobeStore((state) => state.selection)
-  const toggleGarment = useWardrobeStore((state) => state.toggleGarment)
+  const baseId = useId()
+  const [tab, setTab] = useState<Tab>('wardrobe')
+  const outfitCount = useWardrobeStore((state) => state.outfits.length)
   const storage = useWardrobeStore((state) => state.storage)
+  const counts: Record<Tab, number> = { wardrobe: garments.length, outfits: outfitCount }
+  const tabId = (value: Tab) => `${baseId}-${value}-tab`
+  const panelId = (value: Tab) => `${baseId}-${value}-panel`
 
-  const categories = GARMENT_CATEGORIES.filter((category) =>
-    garments.some((garment) => garment.category === category),
-  )
-  // Removing the last upload in a category takes its filter away too.
-  const activeFilter = filter !== 'all' && categories.includes(filter) ? filter : 'all'
-  const shown = (garment: Garment) => activeFilter === 'all' || garment.category === activeFilter
-  const uploads = garments.filter(isUpload)
-  const ownShown = uploads.filter(shown)
-  const demosShown = garments.filter((garment) => !isUpload(garment) && shown(garment))
-  const filters: { value: Filter; label: string }[] = [
-    { value: 'all', label: 'All' },
-    ...categories.map((category) => ({
-      value: category,
-      label: GARMENT_CATEGORY_LABELS[category].many,
-    })),
-  ]
-
-  const card = (garment: Garment) => (
-    <li key={garment.id}>
-      <GarmentCard
-        garment={garment}
-        selected={isSelected(selection, garment)}
-        onToggle={toggleGarment}
-        onRemove={isUpload(garment) ? confirmAndRemove : undefined}
-      />
-    </li>
-  )
+  // Arrow keys move between tabs, as they do in any tab list.
+  const moveBetweenTabs = (event: KeyboardEvent) => {
+    const index = TABS.indexOf(tab)
+    const next = {
+      ArrowRight: TABS[(index + 1) % TABS.length],
+      ArrowLeft: TABS[(index - 1 + TABS.length) % TABS.length],
+      Home: TABS[0],
+      End: TABS[TABS.length - 1],
+    }[event.key]
+    if (!next) return
+    event.preventDefault()
+    setTab(next)
+    document.getElementById(tabId(next))?.focus()
+  }
 
   return (
     <div className="flex flex-col gap-8 p-4 sm:p-6">
       <OutfitSummary garments={garments} />
 
-      <section aria-labelledby="wardrobe-heading">
-        <div className="flex items-baseline justify-between">
-          <h2 id="wardrobe-heading" className="text-xl font-bold tracking-tight">
-            Wardrobe
-          </h2>
-          <span className="text-xs text-muted">
-            {garments.length} {garments.length === 1 ? 'item' : 'items'}
-          </span>
+      <div>
+        <div
+          role="tablist"
+          aria-label="Your wardrobe and saved outfits"
+          onKeyDown={moveBetweenTabs}
+          className="flex rounded-full bg-mist p-1"
+        >
+          {TABS.map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              id={tabId(value)}
+              aria-controls={panelId(value)}
+              aria-selected={tab === value}
+              tabIndex={tab === value ? 0 : -1}
+              onClick={() => setTab(value)}
+              className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                tab === value ? 'bg-surface text-ink shadow-sm' : 'text-ink-soft hover:text-ink'
+              }`}
+            >
+              {TAB_LABELS[value]}{' '}
+              <span className="ml-0.5 text-xs font-medium text-muted tabular-nums">{counts[value]}</span>
+            </button>
+          ))}
         </div>
 
-        {garments.length === 0 && !onAddClothes ? (
-          <p className="mt-2 text-sm text-muted">Your wardrobe is empty.</p>
-        ) : (
-          <>
-            {categories.length > 0 && (
-              <div
-                role="group"
-                aria-label="Filter by category"
-                className="mt-4 flex flex-wrap gap-2"
-              >
-                {filters.map(({ value, label }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={activeFilter === value}
-                    onClick={() => setFilter(value)}
-                    className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
-                      activeFilter === value
-                        ? 'bg-ink text-cream'
-                        : 'bg-mist text-ink-soft hover:bg-line'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {storage === 'unavailable' && (
-              <p role="note" className="mt-4 rounded-lg bg-warn-soft px-3 py-2 text-xs leading-relaxed text-warn">
-                This browser isn't letting Mydrobe save, so anything you add will be gone when you leave.
-                Private browsing can cause this.
-              </p>
-            )}
-
-            {(onAddClothes || ownShown.length > 0) && (
-              <Shelf title="Your clothes">
-                {onAddClothes && (
-                  <li>
-                    <AddClothesCard onClick={onAddClothes} />
-                  </li>
-                )}
-                {ownShown.map(card)}
-              </Shelf>
-            )}
-            {onAddClothes &&
-              uploads.length === 0 &&
-              (storage === 'loading' ? (
-                <p role="status" className="mt-3 text-xs text-muted">
-                  Loading your saved clothes…
-                </p>
-              ) : (
-                <p className="mt-3 text-xs leading-relaxed text-muted">
-                  Photograph a shirt or trousers laid flat on a plain background, then try it on.
-                </p>
-              ))}
-
-            {demosShown.length > 0 && <Shelf title="Demo pieces">{demosShown.map(card)}</Shelf>}
-          </>
-        )}
-      </section>
+        <div role="tabpanel" id={panelId('wardrobe')} aria-labelledby={tabId('wardrobe')} hidden={tab !== 'wardrobe'}>
+          <WardrobeShelves garments={garments} onAddClothes={onAddClothes} />
+        </div>
+        <div role="tabpanel" id={panelId('outfits')} aria-labelledby={tabId('outfits')} hidden={tab !== 'outfits'}>
+          <SavedOutfits garments={garments} />
+        </div>
+      </div>
 
       {storage === 'ready' && (
         <p className="-mt-2 flex items-start gap-2 text-[11px] leading-relaxed text-muted">
