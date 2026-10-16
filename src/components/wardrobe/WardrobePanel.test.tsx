@@ -1,14 +1,30 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEMO_GARMENTS } from '../../features/garments/demo-garments'
+import type { Garment } from '../../features/garments/garment.types'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { WardrobePanel } from './WardrobePanel'
 
 const initialState = useWardrobeStore.getState()
 
-function card(name: RegExp) {
-  return within(screen.getByRole('list', { name: 'Wardrobe items' })).getByRole('button', { name })
+const navyShirt: Garment = {
+  id: 'upload-navy-shirt',
+  name: 'Navy shirt',
+  category: 'shirt',
+  templateId: 'shirt-long-sleeve',
+  source: { kind: 'photo', url: 'blob:navy-shirt' },
+  tags: ['upload'],
+  createdAt: 0,
+  updatedAt: 0,
+}
+
+function shelf(name: 'Your clothes' | 'Demo pieces') {
+  return within(screen.getByRole('list', { name }))
+}
+
+function card(name: RegExp, from: 'Your clothes' | 'Demo pieces' = 'Demo pieces') {
+  return shelf(from).getByRole('button', { name })
 }
 
 describe('WardrobePanel', () => {
@@ -63,12 +79,58 @@ describe('WardrobePanel', () => {
 
     await user.click(screen.getByRole('button', { name: 'Trousers' }))
 
-    const items = within(screen.getByRole('list', { name: 'Wardrobe items' })).getAllByRole('listitem')
-    expect(items).toHaveLength(3)
+    expect(shelf('Demo pieces').getAllByRole('listitem')).toHaveLength(3)
+  })
+
+  it('keeps your own clothes apart from the demo pieces', () => {
+    render(<WardrobePanel garments={[navyShirt, ...DEMO_GARMENTS]} />)
+
+    expect(shelf('Your clothes').getAllByRole('listitem')).toHaveLength(1)
+    expect(card(/navy shirt/i, 'Your clothes')).toBeInTheDocument()
+    expect(shelf('Demo pieces').getAllByRole('listitem')).toHaveLength(8)
+    expect(screen.getByText('9 items')).toBeInTheDocument()
+  })
+
+  it('offers a way to add clothes, with a tip before the first upload', async () => {
+    const user = userEvent.setup()
+    const onAddClothes = vi.fn()
+    render(<WardrobePanel garments={DEMO_GARMENTS} onAddClothes={onAddClothes} />)
+
+    expect(screen.getByText(/laid flat on a plain background/i)).toBeInTheDocument()
+    await user.click(card(/add clothes/i, 'Your clothes'))
+    expect(onAddClothes).toHaveBeenCalledOnce()
+  })
+
+  it('filters your own clothes along with the demo pieces', async () => {
+    const user = userEvent.setup()
+    render(<WardrobePanel garments={[navyShirt, ...DEMO_GARMENTS]} onAddClothes={() => {}} />)
+
+    await user.click(screen.getByRole('button', { name: 'Trousers' }))
+
+    expect(shelf('Your clothes').queryByRole('button', { name: /navy shirt/i })).not.toBeInTheDocument()
+    expect(card(/add clothes/i, 'Your clothes')).toBeInTheDocument()
+  })
+
+  it('goes back to everything when the filtered category runs out', async () => {
+    const user = userEvent.setup()
+    const navyShorts: Garment = { ...navyShirt, id: 'upload-navy-shorts', name: 'Navy shorts', category: 'other' }
+    const { rerender } = render(<WardrobePanel garments={[navyShorts, ...DEMO_GARMENTS]} />)
+
+    await user.click(screen.getByRole('button', { name: 'Other' }))
+    rerender(<WardrobePanel garments={DEMO_GARMENTS} />)
+
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
+    expect(shelf('Demo pieces').getAllByRole('listitem')).toHaveLength(8)
   })
 
   it('shows an empty state without garments', () => {
     render(<WardrobePanel garments={[]} />)
     expect(screen.getByText('Your wardrobe is empty.')).toBeInTheDocument()
+  })
+
+  it('still offers to add clothes when the wardrobe is empty', () => {
+    render(<WardrobePanel garments={[]} onAddClothes={() => {}} />)
+    expect(screen.queryByText('Your wardrobe is empty.')).not.toBeInTheDocument()
+    expect(card(/add clothes/i, 'Your clothes')).toBeInTheDocument()
   })
 })
