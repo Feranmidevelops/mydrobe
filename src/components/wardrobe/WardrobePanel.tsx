@@ -22,7 +22,7 @@ interface WardrobePanelProps {
 
 function confirmAndRemove(garment: Garment) {
   if (window.confirm(`Remove ${garment.name} from your wardrobe? You'd need to upload the photo again.`)) {
-    removeUploadedGarment(garment)
+    void removeUploadedGarment(garment)
   }
 }
 

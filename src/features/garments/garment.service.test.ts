@@ -40,7 +40,10 @@ describe('preparePhoto', () => {
 
 describe('uploaded garments', () => {
   const initialState = useWardrobeStore.getState()
-  beforeEach(() => useWardrobeStore.setState(initialState, true))
+  beforeEach(async () => {
+    useWardrobeStore.setState(initialState, true)
+    await Promise.all(db.tables.map((table) => table.clear()))
+  })
 
   const details = {
     name: '  Navy shirt ',
@@ -62,15 +65,32 @@ describe('uploaded garments', () => {
     expect(isUpload(garment)).toBe(true)
   })
 
-  it('takes a removed upload out of the wardrobe and off the mannequin', () => {
+  it('deletes a removed upload from the device, the wardrobe and the mannequin', async () => {
+    const garment = createUploadedGarment({ url: 'blob:photo' }, undefined, [], details)
+    await addUploadedGarment(garment, { photo: new Blob(['photo']), mimeType: 'image/jpeg', fileSize: 1000 })
+
+    await expect(removeUploadedGarment(garment)).resolves.toBe(true)
+
+    expect(await db.garments.count()).toBe(0)
+    expect(useWardrobeStore.getState()).toMatchObject({
+      uploads: [],
+      selection: {},
+      notice: { kind: 'success', message: 'Navy shirt removed from your wardrobe' },
+    })
+  })
+
+  it('keeps a piece the device would not delete, and says so', async () => {
     const garment = createUploadedGarment({ url: 'blob:photo' }, undefined, [], details)
     useWardrobeStore.getState().addUpload(garment)
-    useWardrobeStore.getState().wear([garment])
+    const deleting = vi.spyOn(db, 'transaction').mockImplementationOnce(() => Promise.reject(new Error('stuck')) as never)
 
-    removeUploadedGarment(garment)
+    await expect(removeUploadedGarment(garment)).resolves.toBe(false)
 
-    expect(useWardrobeStore.getState().uploads).toEqual([])
-    expect(useWardrobeStore.getState().selection).toEqual({})
+    expect(useWardrobeStore.getState()).toMatchObject({
+      uploads: [garment],
+      notice: { kind: 'error', message: "Couldn't remove Navy shirt from this device. Please try again." },
+    })
+    deleting.mockRestore()
   })
 })
 

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEMO_GARMENTS } from '../../features/garments/demo-garments'
@@ -125,7 +125,7 @@ describe('WardrobePanel', () => {
     await user.click(screen.getByRole('button', { name: 'Remove Navy shirt from your wardrobe' }))
 
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Remove Navy shirt from your wardrobe?'))
-    expect(useWardrobeStore.getState().uploads).toEqual([])
+    await waitFor(() => expect(useWardrobeStore.getState().uploads).toEqual([]))
     expect(useWardrobeStore.getState().selection).toEqual({})
   })
 

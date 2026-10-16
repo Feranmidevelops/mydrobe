@@ -2,7 +2,7 @@ import { cutOutThumbnail, decodeImage, downscaleImage } from '../../lib/image-pr
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { forgetPhoto } from './analyse-photo'
 import { toHex } from './garment.colors'
-import { saveGarment, type GarmentFiles } from './garment.repository'
+import { deleteGarment, saveGarment, type GarmentFiles } from './garment.repository'
 import { getRenderability } from './garment.templates'
 import type { Garment, GarmentCategory, GarmentTemplateId } from './garment.types'
 import {
@@ -149,10 +149,26 @@ export function discardPhoto(url: string | undefined) {
   if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url)
 }
 
-/** Takes an upload out of the wardrobe (and off the mannequin) and frees its photos. */
-export function removeUploadedGarment(garment: Garment) {
+/**
+ * Deletes an upload from this device, then takes it out of the wardrobe (and
+ * off the mannequin) and frees its photos. If the device won't delete it, the
+ * piece stays and the person is told. Resolves to whether it was removed.
+ */
+export async function removeUploadedGarment(garment: Garment) {
+  const { storage, showNotice } = useWardrobeStore.getState()
+  if (storage !== 'unavailable') {
+    try {
+      await deleteGarment(garment.id)
+    } catch {
+      showNotice('error', `Couldn't remove ${garment.name} from this device. Please try again.`)
+      return false
+    }
+  }
   useWardrobeStore.getState().removeUpload(garment.id)
-  if (garment.source.kind !== 'photo') return
-  discardPhoto(garment.source.url)
-  discardPhoto(garment.source.thumbnailUrl)
+  if (garment.source.kind === 'photo') {
+    discardPhoto(garment.source.url)
+    discardPhoto(garment.source.thumbnailUrl)
+  }
+  showNotice('success', `${garment.name} removed from your wardrobe`)
+  return true
 }
