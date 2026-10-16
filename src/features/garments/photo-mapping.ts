@@ -307,10 +307,11 @@ export function frontCrop(templateId: GarmentTemplateId, mask: Uint8Array, width
  * the thigh of the left leg in a pair of trousers.
  */
 export function swatchRect(templateId: GarmentTemplateId, crop: Rect): Rect {
-  const size = Math.max(1, Math.round(Math.min(crop.width, crop.height) * 0.24))
-  const top = templateId === 'trousers-straight' ? 0.3 : 0.58
-  const x = Math.min(crop.x + Math.round(crop.width * 0.14), crop.x + crop.width - size)
-  const y = Math.min(crop.y + Math.round(crop.height * top), crop.y + crop.height - size)
+  const trousers = templateId === 'trousers-straight'
+  // A trouser leg is under half the crop's width, so its sample is smaller and further in.
+  const size = Math.max(1, Math.round(Math.min(crop.width, crop.height) * (trousers ? 0.2 : 0.24)))
+  const x = Math.min(crop.x + Math.round(crop.width * (trousers ? 0.08 : 0.14)), crop.x + crop.width - size)
+  const y = Math.min(crop.y + Math.round(crop.height * (trousers ? 0.3 : 0.58)), crop.y + crop.height - size)
   return { x, y, width: size, height: size }
 }
 
