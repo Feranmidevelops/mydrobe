@@ -1,13 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { db } from '../../lib/db'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { analysePhotoAt } from './analyse-photo'
+import type { GarmentFiles } from './garment.repository'
 import {
+  addUploadedGarment,
   createUploadedGarment,
   discardPhoto,
   isUpload,
   makeThumbnail,
   preparePhoto,
   removeUploadedGarment,
+  StorageError,
   UploadError,
 } from './garment.service'
 
@@ -36,7 +40,10 @@ describe('preparePhoto', () => {
 
 describe('uploaded garments', () => {
   const initialState = useWardrobeStore.getState()
-  beforeEach(() => useWardrobeStore.setState(initialState, true))
+  beforeEach(async () => {
+    useWardrobeStore.setState(initialState, true)
+    await Promise.all(db.tables.map((table) => table.clear()))
+  })
 
   const details = {
     name: '  Navy shirt ',
@@ -58,15 +65,32 @@ describe('uploaded garments', () => {
     expect(isUpload(garment)).toBe(true)
   })
 
-  it('takes a removed upload out of the wardrobe and off the mannequin', () => {
+  it('deletes a removed upload from the device, the wardrobe and the mannequin', async () => {
+    const garment = createUploadedGarment({ url: 'blob:photo' }, undefined, [], details)
+    await addUploadedGarment(garment, { photo: new Blob(['photo']), mimeType: 'image/jpeg', fileSize: 1000 })
+
+    await expect(removeUploadedGarment(garment)).resolves.toBe(true)
+
+    expect(await db.garments.count()).toBe(0)
+    expect(useWardrobeStore.getState()).toMatchObject({
+      uploads: [],
+      selection: {},
+      notice: { kind: 'success', message: 'Navy shirt removed from your wardrobe' },
+    })
+  })
+
+  it('keeps a piece the device would not delete, and says so', async () => {
     const garment = createUploadedGarment({ url: 'blob:photo' }, undefined, [], details)
     useWardrobeStore.getState().addUpload(garment)
-    useWardrobeStore.getState().wear([garment])
+    const deleting = vi.spyOn(db, 'transaction').mockImplementationOnce(() => Promise.reject(new Error('stuck')) as never)
 
-    removeUploadedGarment(garment)
+    await expect(removeUploadedGarment(garment)).resolves.toBe(false)
 
-    expect(useWardrobeStore.getState().uploads).toEqual([])
-    expect(useWardrobeStore.getState().selection).toEqual({})
+    expect(useWardrobeStore.getState()).toMatchObject({
+      uploads: [garment],
+      notice: { kind: 'error', message: "Couldn't remove Navy shirt from this device. Please try again." },
+    })
+    deleting.mockRestore()
   })
 })
 
@@ -89,5 +113,59 @@ describe('photo housekeeping', () => {
       bounds: { x: 0, y: 0, width: 2, height: 2 },
     }
     await expect(makeThumbnail(analysis)).resolves.toBeUndefined()
+  })
+})
+
+describe('addUploadedGarment', () => {
+  const initialState = useWardrobeStore.getState()
+  const files: GarmentFiles = { photo: new Blob(['photo']), mimeType: 'image/jpeg', fileSize: 2_000_000 }
+  const details = {
+    name: 'Navy shirt',
+    category: 'shirt' as const,
+    templateId: 'shirt-long-sleeve' as const,
+    backgroundTolerance: 70,
+  }
+
+  beforeEach(async () => {
+    useWardrobeStore.setState(initialState, true)
+    await Promise.all(db.tables.map((table) => table.clear()))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('saves it on the device, then adds it to the wardrobe and puts it on', async () => {
+    const garment = createUploadedGarment({ url: 'blob:photo' }, undefined, [[36, 55, 94]], details)
+    await addUploadedGarment(garment, files)
+
+    expect(await db.garments.get(garment.id)).toMatchObject({ name: 'Navy shirt', mimeType: 'image/jpeg' })
+    expect(useWardrobeStore.getState()).toMatchObject({
+      uploads: [garment],
+      selection: { shirt: garment.id },
+      notice: { kind: 'success', message: 'Navy shirt added to your wardrobe' },
+    })
+  })
+
+  it('leaves the wardrobe alone and explains when the device is out of space', async () => {
+    const full = Object.assign(new Error('Quota exceeded'), { name: 'QuotaExceededError' })
+    vi.spyOn(db, 'transaction').mockImplementationOnce(() => Promise.reject(full) as never)
+    const garment = createUploadedGarment({ url: 'blob:photo' }, undefined, [], details)
+
+    const failure = addUploadedGarment(garment, files)
+
+    await expect(failure).rejects.toBeInstanceOf(StorageError)
+    await expect(failure).rejects.toThrow(/enough space/)
+    expect(useWardrobeStore.getState().uploads).toEqual([])
+  })
+
+  it('adds it for this visit only when the browser will not let it save', async () => {
+    useWardrobeStore.setState({ storage: 'unavailable' })
+    const garment = createUploadedGarment({ url: 'blob:photo' }, undefined, [], details)
+
+    await addUploadedGarment(garment, files)
+
+    expect(useWardrobeStore.getState().uploads).toEqual([garment])
+    expect(await db.garments.count()).toBe(0)
   })
 })

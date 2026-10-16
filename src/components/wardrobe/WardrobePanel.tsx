@@ -8,6 +8,7 @@ import {
 } from '../../features/garments/garment.types'
 import { isSelected } from '../../features/outfits/outfit.selection'
 import { useWardrobeStore } from '../../store/wardrobe.store'
+import { LockIcon } from '../ui/icons'
 import { AddClothesCard } from './AddClothesCard'
 import { GarmentCard } from './GarmentCard'
 import { OutfitSummary } from './OutfitSummary'
@@ -22,7 +23,7 @@ interface WardrobePanelProps {
 
 function confirmAndRemove(garment: Garment) {
   if (window.confirm(`Remove ${garment.name} from your wardrobe? You'd need to upload the photo again.`)) {
-    removeUploadedGarment(garment)
+    void removeUploadedGarment(garment)
   }
 }
 
@@ -44,6 +45,7 @@ export function WardrobePanel({ garments, onAddClothes }: WardrobePanelProps) {
   const [filter, setFilter] = useState<Filter>('all')
   const selection = useWardrobeStore((state) => state.selection)
   const toggleGarment = useWardrobeStore((state) => state.toggleGarment)
+  const storage = useWardrobeStore((state) => state.storage)
 
   const categories = GARMENT_CATEGORIES.filter((category) =>
     garments.some((garment) => garment.category === category),
@@ -115,6 +117,13 @@ export function WardrobePanel({ garments, onAddClothes }: WardrobePanelProps) {
               </div>
             )}
 
+            {storage === 'unavailable' && (
+              <p role="note" className="mt-4 rounded-lg bg-warn-soft px-3 py-2 text-xs leading-relaxed text-warn">
+                This browser isn't letting Mydrobe save, so anything you add will be gone when you leave.
+                Private browsing can cause this.
+              </p>
+            )}
+
             {(onAddClothes || ownShown.length > 0) && (
               <Shelf title="Your clothes">
                 {onAddClothes && (
@@ -125,16 +134,30 @@ export function WardrobePanel({ garments, onAddClothes }: WardrobePanelProps) {
                 {ownShown.map(card)}
               </Shelf>
             )}
-            {onAddClothes && uploads.length === 0 && (
-              <p className="mt-3 text-xs leading-relaxed text-muted">
-                Photograph a shirt or trousers laid flat on a plain background, then try it on.
-              </p>
-            )}
+            {onAddClothes &&
+              uploads.length === 0 &&
+              (storage === 'loading' ? (
+                <p role="status" className="mt-3 text-xs text-muted">
+                  Loading your saved clothes…
+                </p>
+              ) : (
+                <p className="mt-3 text-xs leading-relaxed text-muted">
+                  Photograph a shirt or trousers laid flat on a plain background, then try it on.
+                </p>
+              ))}
 
             {demosShown.length > 0 && <Shelf title="Demo pieces">{demosShown.map(card)}</Shelf>}
           </>
         )}
       </section>
+
+      {storage === 'ready' && (
+        <p className="-mt-2 flex items-start gap-2 text-[11px] leading-relaxed text-muted">
+          <LockIcon className="size-3.5 shrink-0" />
+          Everything you add is saved in this browser, on this device only. Clearing your browsing data
+          deletes it.
+        </p>
+      )}
     </div>
   )
 }

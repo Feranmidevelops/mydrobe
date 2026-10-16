@@ -15,12 +15,29 @@ export interface ViewRequest {
   id: number
 }
 
+/**
+ * Whether saving on this device works. It's unknown until the saved wardrobe
+ * has been read, and "unavailable" means changes last for this visit only.
+ */
+export type StorageStatus = 'idle' | 'loading' | 'ready' | 'unavailable'
+
+/** A short message about something that just happened, shown for a moment. */
+export interface Notice {
+  id: number
+  kind: 'success' | 'error'
+  message: string
+}
+
+let noticeCount = 0
+
 interface WardrobeState {
   bodyPreset: BodyPreset
   selection: GarmentSelection
   viewRequest: ViewRequest | null
-  /** The person's own clothes, newest first. Kept for this visit only until saving arrives. */
+  /** The person's own clothes, newest first. */
   uploads: Garment[]
+  storage: StorageStatus
+  notice: Notice | null
   setBodyPreset: (preset: BodyPreset) => void
   toggleGarment: (garment: Pick<Garment, 'id' | 'category'>) => void
   /** Puts garments on without toggling, e.g. when opening a suggested look. */
@@ -31,6 +48,12 @@ interface WardrobeState {
   addUpload: (garment: Garment) => void
   /** Removes an upload and takes it off the mannequin if it was being worn. */
   removeUpload: (id: string) => void
+  setStorage: (storage: StorageStatus) => void
+  /** Adds uploads read from the device after any added during this visit. */
+  restoreUploads: (garments: Garment[]) => void
+  showNotice: (kind: Notice['kind'], message: string) => void
+  /** Clears the notice, unless a newer one has replaced it. */
+  dismissNotice: (id: number) => void
 }
 
 /**
@@ -43,6 +66,8 @@ export const useWardrobeStore = create<WardrobeState>()((set) => ({
   selection: {},
   viewRequest: null,
   uploads: [],
+  storage: 'idle',
+  notice: null,
   setBodyPreset: (bodyPreset) => set({ bodyPreset }),
   toggleGarment: (garment) =>
     set((state) => ({ selection: toggleInSelection(state.selection, garment) })),
@@ -62,4 +87,12 @@ export const useWardrobeStore = create<WardrobeState>()((set) => ({
         selection: worn ? removeFromSelection(state.selection, garment.category) : state.selection,
       }
     }),
+  setStorage: (storage) => set({ storage }),
+  restoreUploads: (garments) =>
+    set((state) => {
+      const known = new Set(state.uploads.map((upload) => upload.id))
+      return { uploads: [...state.uploads, ...garments.filter((garment) => !known.has(garment.id))] }
+    }),
+  showNotice: (kind, message) => set({ notice: { id: ++noticeCount, kind, message } }),
+  dismissNotice: (id) => set((state) => (state.notice?.id === id ? { notice: null } : {})),
 }))

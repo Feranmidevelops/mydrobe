@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import {
+  addUploadedGarment,
   createUploadedGarment,
   discardPhoto,
   makeThumbnail,
@@ -9,7 +10,6 @@ import {
   type PreparedPhoto,
 } from '../../features/garments/garment.service'
 import type { PhotoAnalysis } from '../../features/garments/photo-analysis'
-import { useWardrobeStore } from '../../store/wardrobe.store'
 import { CloseIcon } from '../ui/icons'
 import { GarmentReview } from './GarmentReview'
 import { PhotoPicker } from './PhotoPicker'
@@ -33,8 +33,6 @@ export function UploadDialog({ onClose }: { onClose: () => void }) {
   const draftUrl = useRef<string | null>(null)
   /** Bumped whenever a photo still being prepared stops being wanted. */
   const attempt = useRef(0)
-  const addUpload = useWardrobeStore((state) => state.addUpload)
-  const wear = useWardrobeStore((state) => state.wear)
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -82,13 +80,25 @@ export function UploadDialog({ onClose }: { onClose: () => void }) {
     const { photo } = step
     setAdding(true)
     try {
-      const thumbnailUrl = await makeThumbnail(analysis)
+      const thumbnail = await makeThumbnail(analysis)
       // Closed while the thumbnail was drawn: the photo has been let go already.
-      if (draftUrl.current !== photo.url) return discardPhoto(thumbnailUrl)
-      draftUrl.current = null
+      if (draftUrl.current !== photo.url) return
+      const thumbnailUrl = thumbnail ? URL.createObjectURL(thumbnail) : undefined
       const garment = createUploadedGarment(photo, thumbnailUrl, analysis.palette, details)
-      addUpload(garment)
-      if (details.templateId) wear([garment])
+      // The wardrobe owns the photo from here, unless saving it fails.
+      draftUrl.current = null
+      try {
+        await addUploadedGarment(garment, {
+          photo: photo.blob,
+          thumbnail,
+          mimeType: `image/${photo.format}`,
+          fileSize: photo.fileSize,
+        })
+      } catch (error) {
+        draftUrl.current = photo.url
+        discardPhoto(thumbnailUrl)
+        throw error
+      }
       close()
     } finally {
       setAdding(false)

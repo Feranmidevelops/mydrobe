@@ -45,6 +45,16 @@ export function ChevronRightIcon(props: IconProps) {
   )
 }
 
+export function AlertIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 4.75v3.75" />
+      <path d="M8 11h.01" />
+    </svg>
+  )
+}
+
 export function PlusIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>
