@@ -14,6 +14,7 @@ import {
   type Rgb,
   type RgbaImage,
 } from '../garments/photo-mapping'
+import { loadImage } from '../../lib/load-image'
 import type { GarmentTextures } from './garment-textures'
 import type { FrontPanel } from './geometry/garment-geometry'
 
@@ -69,9 +70,9 @@ export function analyseGarmentPhoto(
 
 /** Loads a photo and reads its pixels, scaled down for quick analysis. */
 export async function loadPhotoPixels(url: string): Promise<RgbaImage> {
-  const image = new Image()
-  image.src = url
-  await image.decode()
+  const image = await loadImage(url).catch(() => {
+    throw new PhotoMappingError("This photo couldn't be loaded.")
+  })
   const scale = Math.min(1, ANALYSIS_MAX_PX / Math.max(image.naturalWidth, image.naturalHeight))
   const width = Math.max(1, Math.round(image.naturalWidth * scale))
   const height = Math.max(1, Math.round(image.naturalHeight * scale))

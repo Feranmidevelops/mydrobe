@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Garment } from '../../features/garments/garment.types'
+import { loadImage } from '../../lib/load-image'
 import { drawFlatLay, drawPhotoThumbnail } from './flat-lay'
 
 interface GarmentThumbnailProps {
@@ -38,11 +39,8 @@ export function GarmentThumbnail({
     }
 
     let cancelled = false
-    const image = new Image()
-    image.src = source.url
-    image
-      .decode()
-      .then(() => {
+    loadImage(source.url)
+      .then((image) => {
         if (!cancelled) drawPhotoThumbnail(ctx, image, pixels)
       })
       .catch(() => {
