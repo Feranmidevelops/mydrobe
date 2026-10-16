@@ -1,3 +1,5 @@
+import type { GarmentTemplateId } from './garment.types'
+
 /*
  * Turning a garment photo into textures for a template, step by step:
  * find the background colour, separate the garment from it, pick the part of
@@ -120,4 +122,56 @@ export function maskBounds(mask: Uint8Array, width: number, height: number): Rec
   const x = columns[0]
   const y = rows[0]
   return { x, y, width: columns[columns.length - 1] - x + 1, height: rows[rows.length - 1] - y + 1 }
+}
+
+/** The unbroken run of garment pixels on a row that contains, or is nearest to, `centre`. */
+function runNear(mask: Uint8Array, width: number, row: number, centre: number) {
+  const at = (x: number) => mask[row * width + x] === 1
+  let start = Math.round(centre)
+  if (!at(start)) {
+    let offset = 1
+    while (offset < width && !at(start - offset) && !at(start + offset)) offset++
+    if (offset >= width) return null
+    start = at(start - offset) ? start - offset : start + offset
+  }
+  let left = start
+  let right = start
+  while (left > 0 && at(left - 1)) left--
+  while (right < width - 1 && at(right + 1)) right++
+  return { left, right }
+}
+
+/**
+ * The body of a top, without its sleeves: as wide as the hem, which sleeves
+ * never reach, and as tall as the whole garment.
+ */
+export function torsoRect(mask: Uint8Array, width: number, bounds: Rect): Rect {
+  const centre = bounds.x + bounds.width / 2
+  const runs = [0.86, 0.9, 0.94].flatMap((fraction) => {
+    const row = Math.round(bounds.y + fraction * (bounds.height - 1))
+    const run = runNear(mask, width, row, centre)
+    return run ? [run] : []
+  })
+  if (runs.length === 0) return bounds
+  const left = median(runs.map((run) => run.left))
+  const right = median(runs.map((run) => run.right))
+  return { x: left, y: bounds.y, width: right - left + 1, height: bounds.height }
+}
+
+/** The part of the photo that is projected onto the template's front panel. */
+export function frontCrop(templateId: GarmentTemplateId, mask: Uint8Array, width: number, bounds: Rect): Rect {
+  return templateId === 'trousers-straight' ? bounds : torsoRect(mask, width, bounds)
+}
+
+/**
+ * A square of plain fabric to tile over the back and sleeves: taken low on
+ * the wearer's right, away from a shirt's buttons and chest pocket, or from
+ * the thigh of the left leg in a pair of trousers.
+ */
+export function swatchRect(templateId: GarmentTemplateId, crop: Rect): Rect {
+  const size = Math.max(1, Math.round(Math.min(crop.width, crop.height) * 0.24))
+  const top = templateId === 'trousers-straight' ? 0.3 : 0.58
+  const x = Math.min(crop.x + Math.round(crop.width * 0.14), crop.x + crop.width - size)
+  const y = Math.min(crop.y + Math.round(crop.height * top), crop.y + crop.height - size)
+  return { x, y, width: size, height: size }
 }

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   estimateBackground,
+  frontCrop,
   garmentMask,
   maskBounds,
+  swatchRect,
+  torsoRect,
   type Rect,
   type RgbaImage,
   type Rgb,
@@ -32,6 +35,15 @@ function shirtPhoto() {
   paint(image, { x: 10, y: 20, width: 80, height: 20 }, NAVY)
   paint(image, { x: 12, y: 80, width: 9, height: 10 }, NAVY)
   paint(image, { x: 79, y: 80, width: 9, height: 10 }, NAVY)
+  return image
+}
+
+/** Front-on trousers: a waistband and two legs with a gap between them. */
+function trousersPhoto() {
+  const image = blank(100, 100)
+  paint(image, { x: 30, y: 10, width: 40, height: 15 }, NAVY)
+  paint(image, { x: 30, y: 25, width: 17, height: 65 }, NAVY)
+  paint(image, { x: 53, y: 25, width: 17, height: 65 }, NAVY)
   return image
 }
 
@@ -77,5 +89,28 @@ describe('garmentMask and maskBounds', () => {
   it('finds nothing in an empty photo', () => {
     const image = blank(30, 30)
     expect(maskBounds(garmentMask(image, WHITE), 30, 30)).toBeNull()
+  })
+})
+
+describe('front crop', () => {
+  it('keeps only the body of a top, leaving the sleeves out', () => {
+    const { mask, bounds } = analyse(shirtPhoto())
+    expect(torsoRect(mask, 100, bounds)).toEqual({ x: 35, y: 20, width: 30, height: 70 })
+    expect(frontCrop('shirt-long-sleeve', mask, 100, bounds)).toEqual(torsoRect(mask, 100, bounds))
+  })
+
+  it('takes the whole of a pair of trousers', () => {
+    const { mask, bounds } = analyse(trousersPhoto())
+    expect(frontCrop('trousers-straight', mask, 100, bounds)).toEqual(bounds)
+  })
+})
+
+describe('swatchRect', () => {
+  it('stays inside the crop and away from the buttons down the middle of a shirt', () => {
+    const crop = { x: 35, y: 20, width: 30, height: 70 }
+    const swatch = swatchRect('shirt-long-sleeve', crop)
+    expect(swatch.x).toBeGreaterThanOrEqual(crop.x)
+    expect(swatch.y + swatch.height).toBeLessThanOrEqual(crop.y + crop.height)
+    expect(swatch.x + swatch.width).toBeLessThanOrEqual(crop.x + crop.width / 2)
   })
 })
