@@ -2,24 +2,14 @@ import { CanvasTexture, MirroredRepeatWrapping, SRGBColorSpace } from 'three'
 import type { GarmentTemplateId } from '../garments/garment.types'
 import { analysePhotoAt } from '../garments/analyse-photo'
 import type { PhotoAnalysis } from '../garments/photo-analysis'
-import { DEFAULT_BACKGROUND_TOLERANCE, type RgbaImage } from '../garments/photo-mapping'
-import { loadPhotoPixels } from '../../lib/image-processing'
+import { DEFAULT_BACKGROUND_TOLERANCE } from '../garments/photo-mapping'
+import { loadPhotoPixels, pixelsToCanvas } from '../../lib/image-processing'
 import type { GarmentTextures } from './garment-textures'
 import type { FrontPanel } from './geometry/garment-geometry'
 
 const FRONT_PX_PER_MM = 1.6
 const MAX_TEXTURE_PX = 2048
 const SWATCH_PX = 512
-
-export function pixelsToCanvas(pixels: RgbaImage): HTMLCanvasElement {
-  const canvas = document.createElement('canvas')
-  canvas.width = pixels.width
-  canvas.height = pixels.height
-  const imageData = new ImageData(pixels.width, pixels.height)
-  imageData.data.set(pixels.data)
-  canvas.getContext('2d')?.putImageData(imageData, 0, 0)
-  return canvas
-}
 
 function drawScaled(source: HTMLCanvasElement, width: number, height: number) {
   const canvas = document.createElement('canvas')

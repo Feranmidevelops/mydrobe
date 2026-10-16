@@ -21,3 +21,14 @@ export async function loadPhotoPixels(url: string): Promise<RgbaImage> {
   ctx.drawImage(image, 0, 0, width, height)
   return { data: ctx.getImageData(0, 0, width, height).data, width, height }
 }
+
+/** Draws raw pixels onto a new canvas. */
+export function pixelsToCanvas(pixels: RgbaImage): HTMLCanvasElement {
+  const canvas = document.createElement('canvas')
+  canvas.width = pixels.width
+  canvas.height = pixels.height
+  const imageData = new ImageData(pixels.width, pixels.height)
+  imageData.data.set(pixels.data)
+  canvas.getContext('2d')?.putImageData(imageData, 0, 0)
+  return canvas
+}
