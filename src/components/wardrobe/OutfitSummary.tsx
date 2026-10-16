@@ -13,7 +13,7 @@ export function OutfitSummary({ garments }: { garments: Garment[] }) {
   return (
     <section aria-labelledby="outfit-heading">
       <div className="flex items-baseline justify-between">
-        <h2 id="outfit-heading" className="font-display text-xl">
+        <h2 id="outfit-heading" className="text-lg font-semibold tracking-tight">
           Current outfit
         </h2>
         {worn.length > 0 && (

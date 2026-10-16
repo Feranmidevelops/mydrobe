@@ -35,7 +35,7 @@ export function WardrobePanel({ garments }: { garments: Garment[] }) {
 
       <section aria-labelledby="wardrobe-heading">
         <div className="flex items-baseline justify-between">
-          <h2 id="wardrobe-heading" className="font-display text-xl">
+          <h2 id="wardrobe-heading" className="text-lg font-semibold tracking-tight">
             Wardrobe
           </h2>
           <span className="text-xs text-muted">
