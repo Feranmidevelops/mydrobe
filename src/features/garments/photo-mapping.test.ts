@@ -158,6 +158,24 @@ describe('filling the background inside the crop', () => {
     expect(colorAt(filled, 0, 0)).toEqual(NAVY)
   })
 
+  it('can carry a fabric pattern through the gap instead of a flat colour', () => {
+    const image = trousersPhoto()
+    const { mask, bounds } = analyse(image)
+    const swatch = blank(2, 1)
+    paint(swatch, { x: 1, y: 0, width: 1, height: 1 }, [200, 40, 40])
+    const filled = cropAndFill(image, mask, bounds, swatch)
+
+    // Columns in the gap alternate between the swatch's two pixels, mirrored.
+    const gapRow = 60 - bounds.y
+    const gapColumns = [47, 48, 49, 50].map((x) => colorAt(filled, x - bounds.x, gapRow))
+    expect(gapColumns).toEqual([
+      [200, 40, 40],
+      [200, 40, 40],
+      WHITE,
+      WHITE,
+    ])
+  })
+
   it('reports how much of the crop is garment', () => {
     const { mask, bounds } = analyse(trousersPhoto())
     expect(coverage(mask, 100, bounds)).toBeCloseTo((40 * 15 + 2 * 17 * 65) / (40 * 80), 5)

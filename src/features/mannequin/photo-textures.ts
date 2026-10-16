@@ -60,6 +60,7 @@ export function analyseGarmentPhoto(
   const edge = Math.max(1, Math.round(Math.min(image.width, image.height) * 0.004))
   const solid = erodeMask(mask, image.width, image.height, edge)
   const fabric = averageColor(image, solid, swatch)
+  const swatchPixels = cropAndFill(image, solid, swatch, fabric)
   return {
     image,
     background,
@@ -68,8 +69,9 @@ export function analyseGarmentPhoto(
     swatch,
     fabric,
     coverage: coverage(mask, image.width, crop),
-    front: cropAndFill(image, solid, crop, fabric),
-    swatchPixels: cropAndFill(image, solid, swatch, fabric),
+    // Gaps in the front take the tiled fabric sample, so patterns carry on.
+    front: cropAndFill(image, solid, crop, swatchPixels),
+    swatchPixels,
   }
 }
 
