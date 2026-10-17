@@ -26,3 +26,12 @@ dist-ssr
 
 # Personal garment photos for the photo-mapping trial stay on this machine
 trial-photos/
+
+# Playwright output, and performance runs (the numbers behind docs/performance.md are kept in docs/)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/perf-results/
+# Generated photos for trying uploads by hand, recreated with npm run e2e:fixtures
+/e2e/fixtures/out/
