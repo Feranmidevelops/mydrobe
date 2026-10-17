@@ -6,9 +6,9 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'test-results', 'playwright-report', 'blob-report', 'perf-results']),
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ['src/**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
@@ -17,6 +17,16 @@ export default defineConfig([
     ],
     languageOptions: {
       globals: globals.browser,
+    },
+  },
+  {
+    // Node-side code: the Playwright tests, tool configs and scripts. React's hook rules
+    // would misread Playwright's `use` fixture callback, so they stay with src.
+    files: ['e2e/**/*.ts', '*.config.ts', 'scripts/**/*.mjs'],
+    extends: [js.configs.recommended, tseslint.configs.recommended],
+    languageOptions: {
+      // page.evaluate callbacks run in the page, so DOM globals are fair game too.
+      globals: { ...globals.node, ...globals.browser },
     },
   },
 ])

@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 
+/* Test code isn't UI: strings in the Playwright specs mustn't add utilities. */
+@source not "../../e2e";
+
 @theme {
   /*
    * Helvetica Neue where the device ships it (macOS, iOS); everywhere else the
