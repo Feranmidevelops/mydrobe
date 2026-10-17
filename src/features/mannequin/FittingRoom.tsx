@@ -1,7 +1,8 @@
 import { ContactShadows } from '@react-three/drei'
-import { Canvas } from '@react-three/fiber'
+import { addAfterEffect, Canvas } from '@react-three/fiber'
 import { useMemo } from 'react'
 import { useWardrobeGarments } from '../../hooks/useWardrobeGarments'
+import { mark, PERF_MARKS } from '../../lib/perf'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { resolveSelection } from '../outfits/outfit.selection'
 import { createBodyShape } from './body-shape'
@@ -50,6 +51,15 @@ export default function FittingRoom({ onContextLost }: FittingRoomProps) {
       gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
       aria-label="3D mannequin. Drag to rotate, scroll or pinch to zoom."
       onCreated={({ gl }) => {
+        // This runs before anything is drawn. With frameloop="demand" frames only
+        // run when asked for, so the first frame is the first after-render pass in
+        // which the renderer has actually drawn.
+        mark(PERF_MARKS.canvasCreated)
+        const stopWatching = addAfterEffect(() => {
+          if (gl.info.render.frame === 0) return
+          stopWatching()
+          mark(PERF_MARKS.firstFrame, { calls: gl.info.render.calls, triangles: gl.info.render.triangles })
+        })
         gl.domElement.addEventListener('webglcontextlost', (event) => {
           // Let the page offer a restart rather than leave a frozen picture.
           event.preventDefault()
