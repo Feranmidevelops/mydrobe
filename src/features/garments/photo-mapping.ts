@@ -474,29 +474,44 @@ export function dilateMask(mask: Uint8Array, width: number, height: number, radi
 }
 
 /**
- * Square erosion or dilation, done as two quick passes (rows, then columns).
- * Outside the image counts as background either way.
+ * Square erosion or dilation, done as two quick passes (rows, then columns)
+ * that keep a running count of garment pixels in the window. Outside the
+ * image counts as background either way.
  */
 function morph(mask: Uint8Array, width: number, height: number, radius: number, mode: 'erode' | 'dilate') {
   if (radius <= 0) return mask.slice()
-  const span = radius * 2 + 1
+  // Erosion keeps a pixel only if its whole window is garment; dilation if any
+  // of it is: more than `least` of the window's pixels.
+  const least = mode === 'erode' ? radius * 2 : 0
 
-  // Erosion keeps a pixel only if its whole window is garment; dilation if any of it is.
-  function pass(source: Uint8Array, length: number, lines: number, index: (line: number, i: number) => number) {
-    const result = new Uint8Array(source.length)
-    const ones = new Int32Array(length + 1)
-    for (let line = 0; line < lines; line++) {
-      for (let i = 0; i < length; i++) ones[i + 1] = ones[i] + source[index(line, i)]
-      for (let i = 0; i < length; i++) {
-        const inside = ones[Math.min(i + radius + 1, length)] - ones[Math.max(i - radius, 0)]
-        if (mode === 'erode' ? inside === span : inside > 0) result[index(line, i)] = 1
-      }
+  const rows = new Uint8Array(mask.length)
+  for (let y = 0; y < height; y++) {
+    const row = y * width
+    let inside = 0
+    for (let x = 0; x < Math.min(radius, width); x++) inside += mask[row + x]
+    for (let x = 0; x < width; x++) {
+      if (x + radius < width) inside += mask[row + x + radius]
+      if (x > radius) inside -= mask[row + x - radius - 1]
+      rows[row + x] = inside > least ? 1 : 0
     }
-    return result
   }
 
-  const rows = pass(mask, width, height, (y, x) => y * width + x)
-  return pass(rows, height, width, (x, y) => y * width + x)
+  // Down the columns, a row at a time, so memory is read in order.
+  const result = new Uint8Array(mask.length)
+  const inside = new Int32Array(width)
+  for (let y = 0; y < Math.min(radius, height); y++) {
+    const row = y * width
+    for (let x = 0; x < width; x++) inside[x] += rows[row + x]
+  }
+  for (let y = 0; y < height; y++) {
+    const entering = (y + radius) * width
+    const leaving = (y - radius - 1) * width
+    const row = y * width
+    if (y + radius < height) for (let x = 0; x < width; x++) inside[x] += rows[entering + x]
+    if (y > radius) for (let x = 0; x < width; x++) inside[x] -= rows[leaving + x]
+    for (let x = 0; x < width; x++) result[row + x] = inside[x] > least ? 1 : 0
+  }
+  return result
 }
 
 /**

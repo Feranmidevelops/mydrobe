@@ -7,6 +7,7 @@ import {
   coverage,
   coverNeckOpening,
   cropAndFill,
+  dilateMask,
   erodeMask,
   estimateBackground,
   flattenLighting,
@@ -346,6 +347,35 @@ describe('erodeMask', () => {
     paint(image, { x: 0, y: 0, width: 10, height: 1 }, NAVY)
     paint(image, { x: 5, y: 5, width: 1, height: 1 }, NAVY)
     expect(maskBounds(erodeMask(garmentMask(image, WHITE), 10, 10, 1), 10, 10)).toBeNull()
+  })
+  it('erodes and dilates exactly as checking the whole square round each pixel would', () => {
+    // A slow, obvious version to compare against, on scattered blobs.
+    function bySquares(mask: Uint8Array, width: number, height: number, radius: number, erode: boolean) {
+      const result = new Uint8Array(mask.length)
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          let all = true
+          let any = false
+          for (let dy = -radius; dy <= radius; dy++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+              const [sx, sy] = [x + dx, y + dy]
+              const on = sx >= 0 && sy >= 0 && sx < width && sy < height && mask[sy * width + sx] === 1
+              all &&= on
+              any ||= on
+            }
+          }
+          result[y * width + x] = (erode ? all : any) ? 1 : 0
+        }
+      }
+      return result
+    }
+    const [width, height] = [37, 23]
+    const mask = new Uint8Array(width * height)
+    for (let i = 0; i < mask.length; i++) mask[i] = (i * 7919) % 11 < 6 || (i % width > 8 && i % width < 20) ? 1 : 0
+    for (const radius of [1, 2, 3]) {
+      expect(erodeMask(mask, width, height, radius)).toEqual(bySquares(mask, width, height, radius, true))
+      expect(dilateMask(mask, width, height, radius)).toEqual(bySquares(mask, width, height, radius, false))
+    }
   })
 })
 
