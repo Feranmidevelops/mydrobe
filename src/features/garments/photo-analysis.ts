@@ -69,7 +69,7 @@ export function analyseGarmentPhoto(
   const front =
     templateId === 'trousers-straight'
       ? filled
-      : coverNeckOpening(filled, neckBand(mask, image.width, bounds, crop), swatchPixels, fabric)
+      : coverNeckOpening(filled, neckBand(mask, image.width, bounds, crop), swatchPixels, fabric, background)
   return {
     image,
     mask,

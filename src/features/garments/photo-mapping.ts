@@ -342,7 +342,8 @@ export function shoulderRow(mask: Uint8Array, width: number, bounds: Rect, bodyW
 
 /**
  * The body of a top, without its sleeves: as wide as the hem, which sleeves
- * never reach, and from the collar down. A hanger above the collar is left out.
+ * never reach, and from just above the shoulders down. That leaves out most
+ * of a hanger above the collar; coverNeckOpening paints over the rest.
  */
 export function torsoRect(mask: Uint8Array, width: number, bounds: Rect): Rect {
   const centre = massCentreX(mask, width, bounds)
@@ -531,38 +532,76 @@ function tileAt(fill: RgbaImage, x: number, y: number) {
   return fill.data.subarray(tile, tile + 3)
 }
 
-/** The smallest colour difference that can count as "not the fabric", for a very plain fabric. */
+/** The smallest colour difference that can count as "not the fabric". */
 const FOREIGN_COLOR = 60
 
-/**
- * Paints over what shows through a top's neck opening, such as the rest of a
- * hanger, the shaded inside of the back or a size label, with the fabric
- * sample. Only the top `band` rows change, and only in colours the fabric
- * sample itself doesn't have, so the collar and a check or stripe stay put.
- */
-export function coverNeckOpening(front: RgbaImage, band: number, swatch: RgbaImage, fabric: Rgb): RgbaImage {
-  const differences: number[] = []
-  const stride = Math.max(1, Math.round(Math.sqrt((swatch.width * swatch.height) / 4000)))
-  for (let y = 0; y < swatch.height; y += stride) {
-    for (let x = 0; x < swatch.width; x += stride) differences.push(colorDistance(pixel(swatch, x, y), fabric))
-  }
-  const limit = Math.max(FOREIGN_COLOR, percentile(differences, 0.98) * 1.5)
-
-  const data = new Uint8ClampedArray(front.data)
-  for (let y = 0; y < Math.min(band, front.height); y++) {
-    for (let x = 0; x < front.width; x++) {
-      if (colorDistance(pixel(front, x, y), fabric) > limit) data.set(tileAt(swatch, x, y), (y * front.width + x) * 4)
-    }
-  }
-  return { data, width: front.width, height: front.height }
-}
+/** How far a neckline dips below the shoulders, as a share of the crop's height. */
+const NECKLINE_DIP = 0.03
 
 /**
  * How many rows at the top of a top's front crop its neck opening can show
  * in: those above the shoulders, and a few more for the dip of the neckline.
  */
 export function neckBand(mask: Uint8Array, width: number, bounds: Rect, crop: Rect): number {
-  return shoulderRow(mask, width, bounds, crop.width) - crop.y + Math.round(crop.height * 0.03)
+  return shoulderRow(mask, width, bounds, crop.width) - crop.y + Math.round(crop.height * NECKLINE_DIP)
+}
+
+/** Counts the colours in rows `from` onwards, in coarse bins of 16 levels per channel. */
+function colorBins(image: RgbaImage, from: number) {
+  const bins = new Uint32Array(4096)
+  for (let i = from * image.width * 4; i < image.data.length; i += 4) {
+    bins[((image.data[i] >> 4) << 8) | ((image.data[i + 1] >> 4) << 4) | (image.data[i + 2] >> 4)]++
+  }
+  return bins
+}
+
+/** How many of the binned pixels are close to `color`: in its bin or a neighbouring one. */
+function nearbyCount(bins: Uint32Array, [r, g, b]: Rgb) {
+  let count = 0
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dg = -1; dg <= 1; dg++) {
+      for (let db = -1; db <= 1; db++) {
+        const [br, bg, bb] = [(r >> 4) + dr, (g >> 4) + dg, (b >> 4) + db]
+        if (br < 0 || bg < 0 || bb < 0 || br > 15 || bg > 15 || bb > 15) continue
+        count += bins[(br << 8) | (bg << 4) | bb]
+      }
+    }
+  }
+  return count
+}
+
+/** How close to the backdrop a colour must be to count as backdrop showing through. */
+const BACKDROP_MATCH = 60
+
+/**
+ * Paints over what shows through a top's neck opening, such as the rest of a
+ * hanger, the shaded inside of the back, a size label or the backdrop, with
+ * the fabric sample. Only the top `band` rows change. Within them, a colour
+ * is painted over if it's the backdrop's, or if it turns up nowhere lower
+ * down the front, so the squares of a check, a stripe and a contrasting
+ * collar (whose front dips lower) stay as photographed.
+ */
+export function coverNeckOpening(
+  front: RgbaImage,
+  band: number,
+  swatch: RgbaImage,
+  fabric: Rgb,
+  background: Rgb | null = null,
+): RgbaImage {
+  const rows = Math.min(band, front.height)
+  const below = colorBins(front, rows)
+  const enough = Math.max(1, (front.height - rows) * front.width * 0.001)
+  const backdrop = (color: Rgb) => background !== null && colorDistance(color, background) <= BACKDROP_MATCH
+  const data = new Uint8ClampedArray(front.data)
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < front.width; x++) {
+      const color = pixel(front, x, y)
+      if (colorDistance(color, fabric) <= FOREIGN_COLOR) continue
+      if (!backdrop(color) && nearbyCount(below, color) >= enough) continue
+      data.set(tileAt(swatch, x, y), (y * front.width + x) * 4)
+    }
+  }
+  return { data, width: front.width, height: front.height }
 }
 
 /**
