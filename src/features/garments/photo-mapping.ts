@@ -525,6 +525,46 @@ function mirrored(i: number, length: number) {
   return wrapped < length ? wrapped : period - 1 - wrapped
 }
 
+/** The tiled fabric sample's colour at (x, y). */
+function tileAt(fill: RgbaImage, x: number, y: number) {
+  const tile = (mirrored(y, fill.height) * fill.width + mirrored(x, fill.width)) * 4
+  return fill.data.subarray(tile, tile + 3)
+}
+
+/** The smallest colour difference that can count as "not the fabric", for a very plain fabric. */
+const FOREIGN_COLOR = 60
+
+/**
+ * Paints over what shows through a top's neck opening, such as the rest of a
+ * hanger, the shaded inside of the back or a size label, with the fabric
+ * sample. Only the top `band` rows change, and only in colours the fabric
+ * sample itself doesn't have, so the collar and a check or stripe stay put.
+ */
+export function coverNeckOpening(front: RgbaImage, band: number, swatch: RgbaImage, fabric: Rgb): RgbaImage {
+  const differences: number[] = []
+  const stride = Math.max(1, Math.round(Math.sqrt((swatch.width * swatch.height) / 4000)))
+  for (let y = 0; y < swatch.height; y += stride) {
+    for (let x = 0; x < swatch.width; x += stride) differences.push(colorDistance(pixel(swatch, x, y), fabric))
+  }
+  const limit = Math.max(FOREIGN_COLOR, percentile(differences, 0.98) * 1.5)
+
+  const data = new Uint8ClampedArray(front.data)
+  for (let y = 0; y < Math.min(band, front.height); y++) {
+    for (let x = 0; x < front.width; x++) {
+      if (colorDistance(pixel(front, x, y), fabric) > limit) data.set(tileAt(swatch, x, y), (y * front.width + x) * 4)
+    }
+  }
+  return { data, width: front.width, height: front.height }
+}
+
+/**
+ * How many rows at the top of a top's front crop its neck opening can show
+ * in: those above the shoulders, and a few more for the dip of the neckline.
+ */
+export function neckBand(mask: Uint8Array, width: number, bounds: Rect, crop: Rect): number {
+  return shoulderRow(mask, width, bounds, crop.width) - crop.y + Math.round(crop.height * 0.03)
+}
+
 /**
  * Copies `rect` out of the photo, painting any background inside it so gaps
  * (a shirt's neck opening, the space between trouser legs) don't end up on
@@ -547,8 +587,7 @@ export function cropAndFill(
       } else if (Array.isArray(fill)) {
         data.set(fill, target)
       } else {
-        const tile = (mirrored(y, fill.height) * fill.width + mirrored(x, fill.width)) * 4
-        data.set(fill.data.subarray(tile, tile + 3), target)
+        data.set(tileAt(fill, x, y), target)
       }
       data[target + 3] = 255
     }

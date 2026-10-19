@@ -4,6 +4,7 @@ import {
   averageColor,
   chooseSwatch,
   coverage,
+  coverNeckOpening,
   cropAndFill,
   DEFAULT_BACKGROUND_TOLERANCE,
   erodeMask,
@@ -12,6 +13,7 @@ import {
   frontCrop,
   garmentMask,
   maskBounds,
+  neckBand,
   type Rect,
   type Rgb,
   type RgbaImage,
@@ -62,6 +64,12 @@ export function analyseGarmentPhoto(
   const swatch = chooseSwatch(templateId, image, solid, crop)
   const fabric = averageColor(image, solid, swatch)
   const swatchPixels = flattenLighting(cropAndFill(image, solid, swatch, fabric))
+  // Gaps in the front take the tiled fabric sample, so patterns carry on.
+  const filled = cropAndFill(image, solid, crop, swatchPixels)
+  const front =
+    templateId === 'trousers-straight'
+      ? filled
+      : coverNeckOpening(filled, neckBand(mask, image.width, bounds, crop), swatchPixels, fabric)
   return {
     image,
     mask,
@@ -72,8 +80,7 @@ export function analyseGarmentPhoto(
     fabric,
     coverage: coverage(mask, image.width, crop),
     palette: extractPalette(image, solid, bounds),
-    // Gaps in the front take the tiled fabric sample, so patterns carry on.
-    front: cropAndFill(image, solid, crop, swatchPixels),
+    front,
     swatchPixels,
   }
 }

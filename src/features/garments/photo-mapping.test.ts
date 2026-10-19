@@ -4,6 +4,7 @@ import {
   backdropVariation,
   chooseSwatch,
   coverage,
+  coverNeckOpening,
   cropAndFill,
   erodeMask,
   estimateBackground,
@@ -257,6 +258,33 @@ describe('flattenLighting', () => {
     const flat = flattenLighting(image)
     const spread = (pixels: RgbaImage) => colorAt(pixels, 30, 20)[0] - colorAt(pixels, 10, 20)[0]
     expect(Math.abs(spread(flat))).toBeLessThan(spread(image) / 3)
+  })
+})
+
+describe('coverNeckOpening', () => {
+  const CREAM: Rgb = [236, 232, 224]
+
+  it('paints over a hanger and a label above the shoulders, and leaves the chest alone', () => {
+    const front = blank(60, 80, CREAM)
+    paint(front, { x: 20, y: 0, width: 20, height: 6 }, [150, 100, 60])
+    paint(front, { x: 26, y: 6, width: 8, height: 4 }, NAVY)
+    paint(front, { x: 10, y: 50, width: 10, height: 10 }, NAVY)
+    const covered = coverNeckOpening(front, 12, blank(16, 16, CREAM), CREAM)
+
+    expect(colorAt(covered, 30, 2)).toEqual(CREAM)
+    expect(colorAt(covered, 30, 8)).toEqual(CREAM)
+    expect(colorAt(covered, 15, 55)).toEqual(NAVY)
+  })
+
+  it('keeps colours the fabric has itself, like the dark lines of a check', () => {
+    const RED: Rgb = [170, 40, 40]
+    const swatch = blank(16, 16, RED)
+    paint(swatch, { x: 0, y: 0, width: 4, height: 16 }, NAVY)
+    const front = blank(40, 40, RED)
+    paint(front, { x: 10, y: 0, width: 20, height: 4 }, NAVY)
+    const fabric = averageColor(swatch, new Uint8Array(16 * 16).fill(1), { x: 0, y: 0, width: 16, height: 16 })
+
+    expect(colorAt(coverNeckOpening(front, 10, swatch, fabric), 15, 2)).toEqual(NAVY)
   })
 })
 
