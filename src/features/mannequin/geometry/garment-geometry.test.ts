@@ -6,8 +6,11 @@ import { createBodyShape, limbTransform, SHOULDER_SQUASH } from '../body-shape'
 import { BODY_PRESETS } from '../viewer.types'
 import {
   buildGarmentGeometry,
+  COLLAR,
+  COLLAR_OPENING,
   SHIRT_DRAPE,
   SHIRT_HEM_Y,
+  shirtCollar,
   shirtTorsoRings,
   shoulderCap,
   trouserLegRings,
@@ -91,6 +94,21 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
         expect(shirtReach(torso, point, 0.003)).toBeLessThan(1)
       }
     }
+  })
+
+  it('gives a long-sleeve shirt a collar that stands tallest at the back and opens at the front', () => {
+    const position = shirtCollar(shape).getAttribute('position')
+    let backTop = -Infinity
+    let frontTop = -Infinity
+    for (let i = 0; i < position.count; i++) {
+      // Measured round the neck, with a quarter turn facing the front.
+      const angle = Math.atan2(position.getZ(i), position.getX(i))
+      expect(Math.abs(angle - Math.PI / 2)).toBeGreaterThan(COLLAR_OPENING - 0.05)
+      if (Math.sin(angle) < -0.9) backTop = Math.max(backTop, position.getY(i))
+      if (Math.sin(angle) > 0.3) frontTop = Math.max(frontTop, position.getY(i))
+    }
+    expect(backTop).toBeCloseTo(COLLAR.backTopY, 2)
+    expect(frontTop).toBeLessThan(backTop - 0.015)
   })
 
   it('lays the sleeve cap close over the top of the shoulder, like fabric rather than padding', () => {

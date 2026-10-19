@@ -130,19 +130,44 @@ export function shoulderCap(shape: BodyShape, side: Side): BufferGeometry {
   return sphere.scale(1, height / radius, 1).translate(x * side, y, z)
 }
 
+/** Where a shirt collar starts on the neck (hidden inside the shirt), and how high it reaches. */
+export const COLLAR = { baseY: 1.43, backTopY: 1.49, frontTopY: 1.465 } as const
+/** Half the angle a collar leaves open at the front, where the photo shows the real collar. */
+export const COLLAR_OPENING = 0.45
+
+/**
+ * A shirt collar: a band round the back and sides of the neck that stands
+ * tallest at the back and slopes down towards the front, where it opens.
+ */
+export function shirtCollar(shape: BodyShape): BufferGeometry {
+  const backHeight = COLLAR.backTopY - COLLAR.baseY
+  const rings = sliceRings(shape.neck, COLLAR.baseY, COLLAR.backTopY, 4).map((ring, i) => ({
+    ...ring,
+    rx: ring.rx + 0.012 + i * 0.002,
+    rz: ring.rz + 0.012 + i * 0.002,
+  }))
+  const collar = buildLoft(rings, {
+    radialSegments: 32,
+    thetaStart: Math.PI / 2 + COLLAR_OPENING,
+    thetaLength: 2 * Math.PI - 2 * COLLAR_OPENING,
+    uv: torsoSwatchUv,
+  })
+  const position = collar.getAttribute('position')
+  for (let i = 0; i < position.count; i++) {
+    // 0 at the centre back, 1 at the front.
+    const towardsFront = (Math.sin(Math.atan2(position.getZ(i), position.getX(i))) + 1) / 2
+    const height = backHeight + (COLLAR.frontTopY - COLLAR.backTopY) * towardsFront
+    position.setY(i, COLLAR.baseY + (position.getY(i) - COLLAR.baseY) * (height / backHeight))
+  }
+  return collar
+}
+
 function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeometry {
   const torso = shirtTorsoRings(shape, sleeve)
   const front = [buildLoft(torso.front, { radialSegments: 40, ...FRONT_HALF })]
   const rest = [buildLoft(torso.back, { radialSegments: 40, ...BACK_HALF, uv: torsoSwatchUv })]
 
-  if (sleeve === 'long') {
-    const collar = sliceRings(shape.neck, 1.43, 1.5, 5).map((ring, i) => ({
-      ...ring,
-      rx: ring.rx + 0.012 + i * 0.002,
-      rz: ring.rz + 0.012 + i * 0.002,
-    }))
-    rest.push(buildLoft(collar, { radialSegments: 32, uv: torsoSwatchUv }))
-  }
+  if (sleeve === 'long') rest.push(shirtCollar(shape))
 
   const sleeveLength = sleeve === 'long' ? shape.arm.length - 0.03 : 0.2
   for (const side of SIDES) {
