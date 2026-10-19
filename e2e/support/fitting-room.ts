@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test'
+import { waitForFirstFrame } from './marks.ts'
 
 /** The lazily loaded chunks in the production build. Rolldown's hashes can contain - and _. */
 export const PAGE_CHUNK = /\/assets\/FittingRoomPage-[\w-]+\.js$/
@@ -31,6 +32,7 @@ export async function openFittingRoom(page: Page, path = '/fitting-room') {
   await expect(storageReady(page)).toBeVisible()
   await expect(stage(page).getByText('Setting up the fitting room…')).toHaveCount(0)
   await expect(stageCanvas(page)).toBeVisible()
+  await waitForFirstFrame(page)
 }
 
 /** Makes the page behave as if the browser had no WebGL, or only WebGL 1 with ['webgl2']. Survives reloads. */
@@ -41,4 +43,33 @@ export async function blockWebGL(page: Page, kinds = ['webgl', 'webgl2', 'experi
       return blocked.includes(type) ? null : (original as (...args: unknown[]) => unknown).call(this, type, ...rest)
     } as typeof original
   }, kinds)
+}
+
+/**
+ * How many garments and outfits are saved on the device, read straight from
+ * IndexedDB. Call it once the saved wardrobe has loaded: before that, opening
+ * the database would create an empty one.
+ */
+export function savedCounts(page: Page) {
+  return page.evaluate(
+    () =>
+      new Promise<{ garments: number; outfits: number }>((resolve, reject) => {
+        const request = indexedDB.open('mydrobe')
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => {
+          const db = request.result
+          const transaction = db.transaction(['garments', 'outfits'], 'readonly')
+          const garments = transaction.objectStore('garments').count()
+          const outfits = transaction.objectStore('outfits').count()
+          transaction.oncomplete = () => {
+            db.close()
+            resolve({ garments: garments.result, outfits: outfits.result })
+          }
+          transaction.onerror = () => {
+            db.close()
+            reject(transaction.error)
+          }
+        }
+      }),
+  )
 }

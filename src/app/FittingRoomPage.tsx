@@ -10,6 +10,7 @@ import { UploadDialog } from '../components/upload/UploadDialog'
 import { WardrobePanel } from '../components/wardrobe/WardrobePanel'
 import { MANNEQUIN_ASSET } from '../features/mannequin/mannequin-asset'
 import { restoreSavedWardrobe } from '../features/storage/storage.service'
+import { mark, PERF_MARKS } from '../lib/perf'
 import { useWardrobeGarments } from '../hooks/useWardrobeGarments'
 
 /** The fitting room: the 3D stage with its controls, next to the wardrobe. */
@@ -24,6 +25,8 @@ export default function FittingRoomPage() {
   }
 
   useEffect(() => {
+    // The first usable, non-3D part of the fitting room is on screen.
+    mark(PERF_MARKS.fittingRoomShown)
     void restoreSavedWardrobe()
   }, [])
 

@@ -13,6 +13,7 @@ export function CameraRig() {
   const viewRequest = useWardrobeStore((state) => state.viewRequest)
   const width = useThree((state) => state.size.width)
   const height = useThree((state) => state.size.height)
+  const invalidate = useThree((state) => state.invalidate)
 
   // Re-frame whenever the stage changes size, e.g. rotating a phone.
   useEffect(() => {
@@ -30,11 +31,14 @@ export function CameraRig() {
     const animate = !prefersReducedMotion()
     if (viewRequest.view === 'reset') {
       void controls.reset(animate)
-      return
+    } else {
+      const azimuth = nearestAngle(controls.azimuthAngle, VIEW_AZIMUTH[viewRequest.view])
+      void controls.rotateTo(azimuth, HOME_POLAR, animate)
     }
-    const azimuth = nearestAngle(controls.azimuthAngle, VIEW_AZIMUTH[viewRequest.view])
-    void controls.rotateTo(azimuth, HOME_POLAR, animate)
-  }, [viewRequest])
+    // A jump without a glide starts no transition, so nothing else asks the
+    // on-demand renderer for a frame: ask for one here.
+    invalidate()
+  }, [viewRequest, invalidate])
 
   return (
     <CameraControls

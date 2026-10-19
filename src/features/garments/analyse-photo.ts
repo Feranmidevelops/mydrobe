@@ -1,3 +1,4 @@
+import { measure, PERF_MARKS } from '../../lib/perf'
 import type { GarmentTemplateId } from './garment.types'
 import { analyseGarmentPhoto, PhotoMappingError, type PhotoAnalysis } from './photo-analysis'
 import { DEFAULT_BACKGROUND_TOLERANCE, type RgbaImage } from './photo-mapping'
@@ -71,8 +72,12 @@ export function analysePhotoAt(
     remembered.set(key, existing)
     return existing
   }
+  const started = performance.now()
   const analysis = load(url).then((image) => analysePhoto(image, templateId, tolerance))
-  analysis.catch(() => remembered.delete(key))
+  analysis.then(
+    () => measure(PERF_MARKS.photoAnalysis, started, { templateId }),
+    () => remembered.delete(key),
+  )
   remembered.set(key, analysis)
   while (remembered.size > MAX_REMEMBERED) remembered.delete(remembered.keys().next().value!)
   return analysis

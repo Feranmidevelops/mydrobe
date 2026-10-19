@@ -16,9 +16,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    // Unit and component tests sit next to the code, plus a guard test for the generated
-    // e2e photos. Playwright's e2e/**/*.spec.ts run in real browsers, not here.
-    include: ['src/**/*.test.{ts,tsx}', 'e2e/fixtures/**/*.test.ts'],
+    // Unit and component tests sit next to the code, plus tests of the e2e helpers.
+    // Playwright's e2e/**/*.spec.ts run in real browsers, not here.
+    include: ['src/**/*.test.{ts,tsx}', 'e2e/**/*.test.ts'],
     css: false,
     // Interaction tests can take a few seconds when the machine is busy
     // (dev server, browser and tests all running at once).

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { mark, PERF_MARKS } from '../../lib/perf'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import type { Garment, GarmentTemplateId } from '../garments/garment.types'
 import type { BodyShape } from './body-shape'
@@ -53,6 +54,7 @@ export function useGarmentTextures(
     let cancelled = false
     let created: GarmentTextures | null = null
     setFitting(garmentId, 'loading')
+    mark(PERF_MARKS.fitStart, { garmentId })
     createPhotoGarmentTextures(request.url, request.templateId, request.panel, request.tolerance)
       .then(({ textures }) => {
         if (cancelled) {
@@ -62,11 +64,13 @@ export function useGarmentTextures(
         created = textures
         setLoaded({ request, textures })
         setFitting(garmentId, null)
+        mark(PERF_MARKS.garmentFitted, { garmentId })
       })
       .catch((error: unknown) => {
         if (cancelled) return
         console.warn('Could not map the garment photo', error)
         setFitting(garmentId, 'failed')
+        mark(PERF_MARKS.fitFailed, { garmentId })
       })
     return () => {
       cancelled = true
