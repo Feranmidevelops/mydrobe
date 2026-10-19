@@ -90,9 +90,15 @@ function forNeighbours(i: number, width: number, height: number, visit: (j: numb
 
 /**
  * Keeps only the biggest connected patch of garment pixels, dropping props
- * laid beside the garment and specks of busy background.
+ * laid beside the garment and specks of busy background. Given `within`, the
+ * patch that overlaps it most is kept instead.
  */
-export function largestComponent(mask: Uint8Array, width: number, height: number): Uint8Array {
+export function largestComponent(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  within?: Uint8Array,
+): Uint8Array {
   const labels = new Int32Array(mask.length)
   const queue = new Int32Array(mask.length)
   let label = 0
@@ -103,18 +109,21 @@ export function largestComponent(mask: Uint8Array, width: number, height: number
     label++
     let head = 0
     let tail = 0
+    let size = 0
     labels[start] = label
     queue[tail++] = start
     while (head < tail) {
-      forNeighbours(queue[head++], width, height, (j) => {
+      const i = queue[head++]
+      size += within ? within[i] : 1
+      forNeighbours(i, width, height, (j) => {
         if (mask[j] && !labels[j]) {
           labels[j] = label
           queue[tail++] = j
         }
       })
     }
-    if (tail > bestSize) {
-      bestSize = tail
+    if (size > bestSize) {
+      bestSize = size
       best = label
     }
   }
@@ -297,6 +306,83 @@ export function textureBarrier(image: RgbaImage, inRange: Uint8Array, tolerance:
 }
 
 /**
+ * Grows the background inwards from the photo's edges through pixels in
+ * range of the backdrop's colour, stepping no further than `step` in colour
+ * at a time. Pixels in `blocked` hold it back (see textureBarrier), though it
+ * carries on a few pixels past them. Returns 1 for each background pixel.
+ */
+function growBackdrop(image: RgbaImage, inRange: Uint8Array, step: number, blocked: Uint8Array | null): Uint8Array {
+  const { data, width, height } = image
+  const total = width * height
+  const isBackground = new Uint8Array(total)
+  const transparent = (i: number) => data[i * 4 + 3] < 128
+  const rgb = (i: number): Rgb => [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]
+  const joins = (j: number, from: Rgb) => transparent(j) || (inRange[j] === 1 && colorDistance(rgb(j), from) <= step)
+  const queue = new Int32Array(total)
+  let head = 0
+  let tail = 0
+  const add = (i: number) => {
+    isBackground[i] = 1
+    queue[tail++] = i
+  }
+
+  for (let x = 0; x < width; x++) {
+    for (const i of [x, (height - 1) * width + x]) {
+      if (!isBackground[i] && !blocked?.[i] && (transparent(i) || inRange[i])) add(i)
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    for (const i of [y * width, y * width + width - 1]) {
+      if (!isBackground[i] && !blocked?.[i] && (transparent(i) || inRange[i])) add(i)
+    }
+  }
+
+  // Grow the backdrop up to the barrier, noting where it was held back.
+  const held: number[] = []
+  while (head < tail) {
+    const from = queue[head++]
+    const here = rgb(from)
+    forNeighbours(from, width, height, (j) => {
+      if (isBackground[j] || !joins(j, here)) return
+      if (blocked?.[j]) {
+        isBackground[j] = 1
+        held.push(j)
+      } else {
+        add(j)
+      }
+    })
+  }
+
+  // Texture is averaged over a square, so the barrier holds the backdrop
+  // back a few pixels short of a garment's edge. Let it carry on that far
+  // past the barrier, with only the colour tests to stop it; diagonally
+  // too, so it reaches as far into a corner as along an edge.
+  const depth = new Uint8Array(total)
+  head = 0
+  tail = 0
+  for (const j of held) {
+    depth[j] = 1
+    queue[tail++] = j
+  }
+  while (head < tail) {
+    const from = queue[head++]
+    if (depth[from] > TEXTURE_RADIUS) continue
+    const here = rgb(from)
+    const x = from % width
+    for (let dy = -width; dy <= width; dy += width) {
+      if (from + dy < 0 || from + dy >= total) continue
+      for (let dx = -1; dx <= 1; dx++) {
+        const j = from + dy + dx
+        if ((dx === -1 && x === 0) || (dx === 1 && x === width - 1) || isBackground[j] || !joins(j, here)) continue
+        depth[j] = depth[from] + 1
+        add(j)
+      }
+    }
+  }
+  return isBackground
+}
+
+/**
  * Marks garment pixels with 1. The background is grown inwards from the
  * photo's edges: it steps across gentle changes (a shadow, a gradient
  * backdrop) but stops at the sharp change where the garment starts, and it
@@ -305,6 +391,10 @@ export function textureBarrier(image: RgbaImage, inRange: Uint8Array, tolerance:
  * whose dark squares match a dark backdrop. Anything it can't reach, such as
  * a dark check on a dark backdrop that the garment encloses, counts as
  * garment. Only the largest patch of garment is kept.
+ *
+ * Which patch that is gets decided by colour alone: the barrier only fills in
+ * what the colours wore away from it, so backdrop it holds back between props
+ * laid beside the garment can't join them into a bigger patch.
  *
  * In a cut-out (no background colour) transparency alone decides.
  */
@@ -315,88 +405,34 @@ export function garmentMask(
 ): Uint8Array {
   const { data, width, height } = image
   const total = width * height
-  const isBackground = new Uint8Array(total)
-  const transparent = (i: number) => data[i * 4 + 3] < 128
-
-  if (!background) {
-    for (let i = 0; i < total; i++) if (transparent(i)) isBackground[i] = 1
-  } else {
-    const rgb = (i: number): Rgb => [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]
-    // A busy backdrop (concrete, wood grain) needs more slack than a plain
-    // one, so loosen both limits to match how much the edges themselves vary.
-    const { spread, roughness } = backdropVariation(image, background)
-    const step = Math.max(tolerance / 3, roughness * 3)
-    const range = Math.max(tolerance * 2, spread * 1.25)
-    const inRange = new Uint8Array(total)
-    for (let i = 0; i < total; i++) if (colorDistance(rgb(i), background) <= range) inRange[i] = 1
-    const blocked = textureBarrier(image, inRange, tolerance)
-    const joins = (j: number, from: Rgb) => transparent(j) || (inRange[j] === 1 && colorDistance(rgb(j), from) <= step)
-    const queue = new Int32Array(total)
-    let head = 0
-    let tail = 0
-    const add = (i: number) => {
-      isBackground[i] = 1
-      queue[tail++] = i
-    }
-
-    for (let x = 0; x < width; x++) {
-      for (const i of [x, (height - 1) * width + x]) {
-        if (!isBackground[i] && !blocked[i] && (transparent(i) || inRange[i])) add(i)
-      }
-    }
-    for (let y = 0; y < height; y++) {
-      for (const i of [y * width, y * width + width - 1]) {
-        if (!isBackground[i] && !blocked[i] && (transparent(i) || inRange[i])) add(i)
-      }
-    }
-
-    // Grow the backdrop up to the barrier, noting where it was held back.
-    const held: number[] = []
-    while (head < tail) {
-      const from = queue[head++]
-      const here = rgb(from)
-      forNeighbours(from, width, height, (j) => {
-        if (isBackground[j] || !joins(j, here)) return
-        if (blocked[j]) {
-          isBackground[j] = 1
-          held.push(j)
-        } else {
-          add(j)
-        }
-      })
-    }
-
-    // Texture is averaged over a square, so the barrier holds the backdrop
-    // back a few pixels short of a garment's edge. Let it carry on that far
-    // past the barrier, with only the colour tests to stop it; diagonally
-    // too, so it reaches as far into a corner as along an edge.
-    const depth = new Uint8Array(total)
-    head = 0
-    tail = 0
-    for (const j of held) {
-      depth[j] = 1
-      queue[tail++] = j
-    }
-    while (head < tail) {
-      const from = queue[head++]
-      if (depth[from] > TEXTURE_RADIUS) continue
-      const here = rgb(from)
-      const x = from % width
-      for (let dy = -width; dy <= width; dy += width) {
-        if (from + dy < 0 || from + dy >= total) continue
-        for (let dx = -1; dx <= 1; dx++) {
-          const j = from + dy + dx
-          if ((dx === -1 && x === 0) || (dx === 1 && x === width - 1) || isBackground[j] || !joins(j, here)) continue
-          depth[j] = depth[from] + 1
-          add(j)
-        }
-      }
-    }
+  const garment = (isBackground: Uint8Array) => {
+    const mask = new Uint8Array(total)
+    for (let i = 0; i < total; i++) mask[i] = isBackground[i] ? 0 : 1
+    return tidyMask(mask, width, height)
   }
 
-  const mask = new Uint8Array(total)
-  for (let i = 0; i < total; i++) mask[i] = isBackground[i] ? 0 : 1
-  return largestComponent(tidyMask(mask, width, height), width, height)
+  if (!background) {
+    const isBackground = new Uint8Array(total)
+    for (let i = 0; i < total; i++) if (data[i * 4 + 3] < 128) isBackground[i] = 1
+    return largestComponent(garment(isBackground), width, height)
+  }
+
+  // A busy backdrop (concrete, wood grain) needs more slack than a plain
+  // one, so loosen both limits to match how much the edges themselves vary.
+  const { spread, roughness } = backdropVariation(image, background)
+  const step = Math.max(tolerance / 3, roughness * 3)
+  const range = Math.max(tolerance * 2, spread * 1.25)
+  const inRange = new Uint8Array(total)
+  for (let i = 0; i < total; i++) {
+    if (colorDistance([data[i * 4], data[i * 4 + 1], data[i * 4 + 2]], background) <= range) inRange[i] = 1
+  }
+  const byColour = largestComponent(garment(growBackdrop(image, inRange, step, null)), width, height)
+  const blocked = textureBarrier(image, inRange, tolerance)
+  if (!blocked.includes(1)) return byColour
+  const withBarrier = garment(growBackdrop(image, inRange, step, blocked))
+  return byColour.includes(1)
+    ? largestComponent(withBarrier, width, height, byColour)
+    : largestComponent(withBarrier, width, height)
 }
 
 /**

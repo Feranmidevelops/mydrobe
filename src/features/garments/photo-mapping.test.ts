@@ -255,6 +255,23 @@ describe('the texture barrier', () => {
     expect(coverage(mask, 240, rect)).toBeGreaterThan(0.95)
   })
 
+  it('never lets the backdrop it holds back change which patch is the garment', () => {
+    // A plain grey garment on the left; a belt and a shoe on the right, with a
+    // strip of textured backdrop between them that the barrier holds back.
+    const image = blank(240, 240, [4, 4, 4])
+    const garment = { x: 20, y: 60, width: 60, height: 100 }
+    paint(image, garment, [130, 130, 130])
+    paint(image, { x: 120, y: 80, width: 40, height: 90 }, [150, 90, 40])
+    paint(image, { x: 180, y: 80, width: 40, height: 90 }, [200, 200, 200])
+    for (let y = 80; y < 170; y++) {
+      for (let x = 160; x < 180; x++) {
+        const v = 5 + 3 * ((x + y) % 2 === 0 ? 1 : -1)
+        image.data.set([v, v, v, 255], (y * 240 + x) * 4)
+      }
+    }
+    expect(maskBounds(garmentMask(image, estimateBackground(image)), 240, 240)).toEqual(garment)
+  })
+
   it('stays by the garment, and loosens as the tolerance rises', () => {
     const { image, rect } = checkOnBlack()
     let farthest = 0
