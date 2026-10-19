@@ -12,6 +12,7 @@ import {
   SHIRT_HEM_Y,
   shirtCollar,
   shirtTorsoRings,
+  sleeveRings,
   shoulderCap,
   trouserLegRings,
   TROUSER_WAIST_EASE,
@@ -111,14 +112,57 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
     expect(frontTop).toBeLessThan(backTop - 0.015)
   })
 
-  it('lays the sleeve cap close over the top of the shoulder, like fabric rather than padding', () => {
-    const cap = shoulderCap(shape, 1)
-    cap.computeBoundingBox()
-    const capTop = cap.boundingBox!.max.y
-    const shoulderTop = shape.arm.joint[1] + shape.shoulderRadius * SHOULDER_SQUASH
-    expect(capTop).toBeGreaterThan(shoulderTop)
-    expect(capTop - shoulderTop).toBeLessThanOrEqual(0.006)
-  })
+  it.each(['long', 'short'] as const)(
+    'covers the shoulder with a %s-sleeve cap that lies close, like fabric rather than padding',
+    (sleeve) => {
+      const torso = shirtTorsoRings(shape, sleeve)
+      const rings = sleeveRings(shape, sleeve)
+      const top = rings[rings.length - 1]
+      const cap = shoulderCap(shape, 1, top)
+      const toArm = limbTransform(shape.arm, 1).invert()
+      const inArm = (point: Vector3) => point.clone().applyMatrix4(toArm)
+
+      // In the arm's frame the cap rises from the sleeve's opening, and its rim
+      // sits exactly on the opening, so no ledge shows where the two meet.
+      const position = cap.getAttribute('position')
+      let height = 0
+      for (let i = 0; i < position.count; i++) {
+        const local = inArm(new Vector3().fromBufferAttribute(position, i))
+        expect(local.y).toBeGreaterThan(top.y - 1e-6)
+        if (Math.abs(local.y - top.y) < 1e-6) {
+          expect((local.x / top.rx) ** 2 + (local.z / top.rz) ** 2).toBeCloseTo(1, 4)
+        }
+        height = Math.max(height, local.y - top.y)
+      }
+      const inSleeve = (point: Vector3) => {
+        const local = inArm(point)
+        const ring = local.y > top.y ? top : ringAt(rings, local.y)
+        const rise = local.y > top.y ? ((local.y - top.y) / height) ** 2 : 0
+        return (local.x / ring.rx) ** 2 + (local.z / ring.rz) ** 2 + rise < 1
+      }
+
+      // Every point of the mannequin's shoulder above the joint is under the cap or inside the shirt.
+      const [x, y, z] = shape.arm.joint
+      const r = shape.shoulderRadius
+      for (let i = 0; i < 32; i++) {
+        for (let j = 0; j <= 8; j++) {
+          const around = (i / 32) * Math.PI * 2
+          const up = (j / 8) * (Math.PI / 2)
+          const point = new Vector3(
+            x + r * Math.cos(up) * Math.cos(around),
+            y + r * SHOULDER_SQUASH * Math.sin(up),
+            z + r * Math.cos(up) * Math.sin(around),
+          )
+          expect(inSleeve(point) || shirtReach(torso, point) < 1).toBe(true)
+        }
+      }
+
+      cap.computeBoundingBox()
+      const above = cap.boundingBox!.max.y - (y + r * SHOULDER_SQUASH)
+      expect(above).toBeGreaterThan(0)
+      expect(above).toBeLessThanOrEqual(0.008)
+    },
+  )
 
   it.each(['long', 'short'] as const)('lets a %s-sleeve shirt hem hang over the trouser legs', (sleeve) => {
     // Untucked shirts must stay outside the trousers where the two overlap.
