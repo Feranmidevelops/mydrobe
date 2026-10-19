@@ -1,3 +1,4 @@
+import { extractPalette } from './garment.colors'
 import type { GarmentTemplateId } from './garment.types'
 
 /*
@@ -380,29 +381,57 @@ export function swatchRect(templateId: GarmentTemplateId, crop: Rect): Rect {
   return { x, y, width: size, height: size }
 }
 
-/** The colour most of the garment is inside `rect`, so a print, pocket or hand doesn't sway it. */
-export function dominantColor(image: RgbaImage, mask: Uint8Array, rect: Rect): Rgb {
-  const channels: [number[], number[], number[]] = [[], [], []]
-  const stride = Math.max(1, Math.round(Math.sqrt((rect.width * rect.height) / 4000)))
+/** Garment pixels in `rect`, sampled every `stride` pixels. */
+function garmentSamples(image: RgbaImage, mask: Uint8Array, rect: Rect, stride: number) {
+  const samples: { x: number; y: number; color: Rgb }[] = []
   for (let y = rect.y; y < rect.y + rect.height; y += stride) {
     for (let x = rect.x; x < rect.x + rect.width; x += stride) {
-      if (!mask[y * image.width + x]) continue
-      const [r, g, b] = pixel(image, x, y)
-      channels[0].push(r)
-      channels[1].push(g)
-      channels[2].push(b)
+      if (mask[y * image.width + x]) samples.push({ x, y, color: pixel(image, x, y) })
     }
   }
-  if (channels[0].length === 0) return averageColor(image, mask, rect)
-  return [median(channels[0]), median(channels[1]), median(channels[2])]
+  return samples
+}
+
+/** Index of the palette colour nearest to `color`. */
+function nearest(palette: Rgb[], color: Rgb) {
+  let best = 0
+  for (let i = 1; i < palette.length; i++) {
+    if (colorDistance(color, palette[i]) < colorDistance(color, palette[best])) best = i
+  }
+  return best
+}
+
+/**
+ * Which of the garment's main colours belong to the fabric itself: those
+ * found all over the crop, such as both colours of a check. A colour found in
+ * only some places is a print, a pocket, a label or a hand.
+ */
+export function fabricColors(image: RgbaImage, mask: Uint8Array, crop: Rect, palette: Rgb[]): boolean[] {
+  const GRID = 4
+  const cells = Array.from({ length: GRID * GRID }, () => ({ total: 0, counts: new Array<number>(palette.length).fill(0) }))
+  const stride = Math.max(1, Math.round(Math.sqrt((crop.width * crop.height) / 6000)))
+  for (const { x, y, color } of garmentSamples(image, mask, crop, stride)) {
+    const column = Math.min(GRID - 1, Math.floor(((x - crop.x) / crop.width) * GRID))
+    const row = Math.min(GRID - 1, Math.floor(((y - crop.y) / crop.height) * GRID))
+    const cell = cells[row * GRID + column]
+    cell.total++
+    cell.counts[nearest(palette, color)]++
+  }
+  const counted = cells.filter((cell) => cell.total >= 20)
+  return palette.map((_, c) => {
+    const present = counted.filter((cell) => cell.counts[c] >= cell.total * 0.05).length
+    return counted.length > 0 && present >= counted.length * 0.75
+  })
 }
 
 /**
  * Picks the patch of fabric that best represents the garment, to tile over
  * the back and sleeves. Candidate squares across the crop are scored by how
- * far their pixels sit from the garment's dominant colour, so the pick steers
- * clear of prints, pockets, labels and hands. Falls back to a fixed spot when
- * no candidate is fully garment.
+ * far their mix of fabric colours is from the whole crop's, and by how much
+ * of them is something else. So a check's sample holds both its colours in
+ * the right measure, and a plain shirt's steers clear of prints, pockets,
+ * labels and hands. Falls back to a fixed spot when no candidate is fully
+ * garment.
  */
 export function chooseSwatch(
   templateId: GarmentTemplateId,
@@ -412,7 +441,32 @@ export function chooseSwatch(
 ): Rect {
   const trousers = templateId === 'trousers-straight'
   const size = Math.max(2, Math.round(Math.min(crop.width, crop.height) * (trousers ? 0.16 : 0.2)))
-  const dominant = dominantColor(image, mask, crop)
+  const palette = extractPalette(image, mask, crop, 4)
+  if (palette.length === 0) return swatchRect(templateId, crop)
+  const fabric = fabricColors(image, mask, crop, palette)
+
+  /** Share of each fabric colour among the fabric pixels, the share of anything else, and how far pixels sit from their colour. */
+  function mix(rect: Rect, stride: number) {
+    const shares = new Array<number>(palette.length).fill(0)
+    let other = 0
+    let spread = 0
+    const samples = garmentSamples(image, mask, rect, stride)
+    for (const { color } of samples) {
+      const c = nearest(palette, color)
+      if (fabric[c]) shares[c]++
+      else other++
+      spread += colorDistance(color, palette[c])
+    }
+    const fabricCount = samples.length - other
+    return {
+      shares: shares.map((share) => share / Math.max(1, fabricCount)),
+      other: other / Math.max(1, samples.length),
+      spread: spread / Math.max(1, samples.length),
+      count: samples.length,
+    }
+  }
+
+  const target = mix(crop, Math.max(1, Math.round(Math.sqrt((crop.width * crop.height) / 6000)))).shares
   const stride = Math.max(1, Math.round(size / 24))
   let best: Rect | null = null
   let bestScore = Infinity
@@ -428,19 +482,12 @@ export function chooseSwatch(
         height: size,
       }
       if (rect.x + size > crop.x + crop.width || rect.y + size > crop.y + crop.height) continue
-      let total = 0
-      let garment = 0
-      let samples = 0
-      for (let y = rect.y; y < rect.y + size; y += stride) {
-        for (let x = rect.x; x < rect.x + size; x += stride) {
-          samples++
-          if (!mask[y * image.width + x]) continue
-          garment++
-          total += colorDistance(pixel(image, x, y), dominant)
-        }
-      }
-      if (garment < samples * 0.97) continue
-      const score = total / garment
+      const samples = Math.ceil(size / stride) ** 2
+      const candidate = mix(rect, stride)
+      if (candidate.count < samples * 0.97) continue
+      const mismatch = candidate.shares.reduce((sum, share, c) => sum + Math.abs(share - target[c]), 0)
+      // The spread only breaks ties between equally good patches of a plain fabric.
+      const score = mismatch + 2 * candidate.other + candidate.spread / 2000
       if (score < bestScore) {
         bestScore = score
         best = rect

@@ -249,6 +249,26 @@ describe('chooseSwatch', () => {
     const swatch = chooseSwatch('shirt-short-sleeve', image, mask, crop)
     expect(averageColor(image, mask, swatch)).toEqual(NAVY)
   })
+
+  it('takes both colours of a check, not a plain corner of it', () => {
+    // A red and navy check with a plain red patch low on the left, which is
+    // closest to the shirt's median colour.
+    const RED: Rgb = [190, 40, 40]
+    const image = blank(200, 200)
+    paint(image, { x: 50, y: 30, width: 100, height: 150 }, RED)
+    for (let y = 30; y < 180; y += 16) {
+      for (let x = 50; x < 150; x += 16) paint(image, { x, y, width: 8, height: 8 }, NAVY)
+    }
+    paint(image, { x: 50, y: 110, width: 40, height: 50 }, RED)
+    const mask = garmentMask(image, WHITE)
+    const swatch = chooseSwatch('shirt-long-sleeve', image, mask, { x: 50, y: 30, width: 100, height: 150 })
+
+    let navy = 0
+    for (let y = swatch.y; y < swatch.y + swatch.height; y++) {
+      for (let x = swatch.x; x < swatch.x + swatch.width; x++) if (colorAt(image, x, y)[0] === NAVY[0]) navy++
+    }
+    expect(navy / (swatch.width * swatch.height)).toBeGreaterThan(0.1)
+  })
 })
 
 describe('flattenLighting', () => {
