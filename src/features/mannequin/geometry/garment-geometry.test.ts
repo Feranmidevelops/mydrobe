@@ -6,9 +6,13 @@ import { createBodyShape, limbTransform, SHOULDER_SQUASH } from '../body-shape'
 import { BODY_PRESETS } from '../viewer.types'
 import {
   buildGarmentGeometry,
+  COLLAR,
+  COLLAR_OPENING,
   SHIRT_DRAPE,
   SHIRT_HEM_Y,
+  shirtCollar,
   shirtTorsoRings,
+  sleeveRings,
   shoulderCap,
   trouserLegRings,
   TROUSER_WAIST_EASE,
@@ -93,13 +97,102 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
     }
   })
 
-  it('lays the sleeve cap close over the top of the shoulder, like fabric rather than padding', () => {
-    const cap = shoulderCap(shape, 1)
-    cap.computeBoundingBox()
-    const capTop = cap.boundingBox!.max.y
-    const shoulderTop = shape.arm.joint[1] + shape.shoulderRadius * SHOULDER_SQUASH
-    expect(capTop).toBeGreaterThan(shoulderTop)
-    expect(capTop - shoulderTop).toBeLessThanOrEqual(0.006)
+  it('gives a long-sleeve shirt a collar that stands tallest at the back and opens at the front', () => {
+    const position = shirtCollar(shape).getAttribute('position')
+    let backTop = -Infinity
+    let frontTop = -Infinity
+    for (let i = 0; i < position.count; i++) {
+      // Measured round the neck, with a quarter turn facing the front.
+      const angle = Math.atan2(position.getZ(i), position.getX(i))
+      expect(Math.abs(angle - Math.PI / 2)).toBeGreaterThan(COLLAR_OPENING - 0.05)
+      if (Math.sin(angle) < -0.9) backTop = Math.max(backTop, position.getY(i))
+      if (Math.sin(angle) > 0.3) frontTop = Math.max(frontTop, position.getY(i))
+    }
+    expect(backTop).toBeCloseTo(COLLAR.backTopY, 2)
+    expect(frontTop).toBeLessThan(backTop - 0.015)
+  })
+
+  it.each(['long', 'short'] as const)(
+    'covers the shoulder with a %s-sleeve cap that lies close, like fabric rather than padding',
+    (sleeve) => {
+      const torso = shirtTorsoRings(shape, sleeve)
+      const rings = sleeveRings(shape, sleeve)
+      const top = rings[rings.length - 1]
+      const cap = shoulderCap(shape, 1, top)
+      const toArm = limbTransform(shape.arm, 1).invert()
+      const inArm = (point: Vector3) => point.clone().applyMatrix4(toArm)
+
+      // In the arm's frame the cap rises from the sleeve's opening, and its rim
+      // sits exactly on the opening, so no ledge shows where the two meet.
+      const position = cap.getAttribute('position')
+      let height = 0
+      for (let i = 0; i < position.count; i++) {
+        const local = inArm(new Vector3().fromBufferAttribute(position, i))
+        expect(local.y).toBeGreaterThan(top.y - 1e-6)
+        if (Math.abs(local.y - top.y) < 1e-6) {
+          expect((local.x / top.rx) ** 2 + (local.z / top.rz) ** 2).toBeCloseTo(1, 4)
+        }
+        height = Math.max(height, local.y - top.y)
+      }
+      const inSleeve = (point: Vector3) => {
+        const local = inArm(point)
+        const ring = local.y > top.y ? top : ringAt(rings, local.y)
+        const rise = local.y > top.y ? ((local.y - top.y) / height) ** 2 : 0
+        return (local.x / ring.rx) ** 2 + (local.z / ring.rz) ** 2 + rise < 1
+      }
+
+      // Every point of the mannequin's shoulder above the joint is under the cap or inside the shirt.
+      const [x, y, z] = shape.arm.joint
+      const r = shape.shoulderRadius
+      for (let i = 0; i < 32; i++) {
+        for (let j = 0; j <= 8; j++) {
+          const around = (i / 32) * Math.PI * 2
+          const up = (j / 8) * (Math.PI / 2)
+          const point = new Vector3(
+            x + r * Math.cos(up) * Math.cos(around),
+            y + r * SHOULDER_SQUASH * Math.sin(up),
+            z + r * Math.cos(up) * Math.sin(around),
+          )
+          expect(inSleeve(point) || shirtReach(torso, point) < 1).toBe(true)
+        }
+      }
+
+      cap.computeBoundingBox()
+      const above = cap.boundingBox!.max.y - (y + r * SHOULDER_SQUASH)
+      expect(above).toBeGreaterThan(0)
+      expect(above).toBeLessThanOrEqual(0.008)
+    },
+  )
+
+  it('runs the sleeve fabric on over the shoulder cap, unstretched and the same way round', () => {
+    const rings = sleeveRings(shape, 'short')
+    const top = rings[rings.length - 1]
+    const cap = shoulderCap(shape, 1, top)
+    const position = cap.getAttribute('position')
+    const uv = cap.getAttribute('uv')
+    const toArm = limbTransform(shape.arm, 1).invert()
+    const radius = (top.rx + top.rz) / 2
+    // The dome is a grid of 9 rings of 25 points, from its top down to its rim.
+    const at = (ring: number, point: number) => ring * 25 + point
+    const where = (i: number) => new Vector3().fromBufferAttribute(position, i)
+
+    for (let ring = 0; ring < 8; ring++) {
+      for (let point = 0; point < 25; point += 3) {
+        // Up and down the dome, the fabric moves as far as the surface does.
+        const [a, b] = [at(ring, point), at(ring + 1, point)]
+        const across = where(a).distanceTo(where(b))
+        expect(Math.abs(uv.getY(a) - uv.getY(b)) / across).toBeGreaterThan(0.9)
+        expect(Math.abs(uv.getY(a) - uv.getY(b)) / across).toBeLessThan(1.1)
+      }
+    }
+    for (let point = 1; point < 24; point++) {
+      // Round the rim, the fabric sits where the sleeve's own does: the right arm's seam faces the body.
+      const local = where(at(8, point)).applyMatrix4(toArm)
+      let theta = Math.atan2(local.z / top.rz, local.x / top.rx)
+      while (theta < Math.PI) theta += Math.PI * 2
+      expect(uv.getX(at(8, point))).toBeCloseTo(theta * radius, 4)
+      expect(uv.getY(at(8, point))).toBeCloseTo(top.y, 6)
+    }
   })
 
   it.each(['long', 'short'] as const)('lets a %s-sleeve shirt hem hang over the trouser legs', (sleeve) => {

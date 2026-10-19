@@ -117,17 +117,85 @@ export function trouserLegRings(shape: BodyShape): Ring[] {
 /** How far a sleeve's cap sits above the top of the shoulder; fabric lies flat there, with no ease. */
 export const SHOULDER_TOP_EASE = 0.005
 
-/** A shirt's cap over one shoulder, where the sleeve meets the body. */
-export function shoulderCap(shape: BodyShape, side: Side): BufferGeometry {
-  const radius = shape.shoulderRadius + SHIRT_EASE
-  const height = shape.shoulderRadius * SHOULDER_SQUASH + SHOULDER_TOP_EASE
-  const [x, y, z] = shape.arm.joint
-  const sphere = new SphereGeometry(radius, 24, 16)
-  const uv = sphere.getAttribute('uv')
-  for (let i = 0; i < uv.count; i++) {
-    uv.setXY(i, uv.getX(i) * Math.PI * 2 * radius, uv.getY(i) * Math.PI * radius)
+/** A sleeve in the arm's own frame, from the cuff up to the shoulder joint. */
+export function sleeveRings(shape: BodyShape, sleeve: 'long' | 'short'): Ring[] {
+  const sleeveLength = sleeve === 'long' ? shape.arm.length - 0.03 : 0.2
+  return sliceRings(shape.arm.rings, -sleeveLength, 0, 14).map((ring) => {
+    const towardsCuff = -ring.y / sleeveLength
+    const ease = sleeve === 'long' ? 0.012 : 0.016 + 0.014 * towardsCuff
+    return inflateRings([ring], ease)[0]
+  })
+}
+
+/** Distance over a quarter ellipse of half-width `r` and height `h`, from its rim up to `elevation`. */
+function arcUp(r: number, h: number, elevation: number) {
+  const STEPS = 16
+  let length = 0
+  for (let i = 0; i < STEPS; i++) {
+    const t = ((i + 0.5) / STEPS) * elevation
+    length += Math.hypot(r * Math.sin(t), h * Math.cos(t)) * (elevation / STEPS)
   }
-  return sphere.scale(1, height / radius, 1).translate(x * side, y, z)
+  return length
+}
+
+/**
+ * A shirt's cap over one shoulder: a dome on top of the sleeve, tilted with
+ * the arm and sharing the sleeve's opening, so the two meet without a ledge.
+ * Its fabric runs on from the sleeve's: the same way round the arm, from the
+ * same seam, and measured over the dome in metres, so a check or stripe
+ * carries on across the join unstretched. `sleeveTop` is the sleeve's top
+ * ring, in the arm's own frame.
+ */
+export function shoulderCap(shape: BodyShape, side: Side, sleeveTop: Ring): BufferGeometry {
+  const height = shape.shoulderRadius * SHOULDER_SQUASH + SHOULDER_TOP_EASE
+  const seam = seamTowardsBody(side)
+  // The sphere's own seam is turned to lie along the sleeve's.
+  const dome = new SphereGeometry(1, 24, 8, Math.PI - seam, Math.PI * 2, 0, Math.PI / 2)
+  const position = dome.getAttribute('position')
+  const uv = dome.getAttribute('uv')
+  const radius = (sleeveTop.rx + sleeveTop.rz) / 2
+  for (let i = 0; i < uv.count; i++) {
+    // The angle round the arm the sleeve's loft would give this point.
+    const theta = seam + Math.PI * 2 * (1 - uv.getX(i))
+    const elevation = Math.asin(Math.min(1, position.getY(i)))
+    uv.setXY(i, theta * radius, sleeveTop.y + arcUp(radius, height, elevation))
+  }
+  return dome
+    .scale(sleeveTop.rx, height, sleeveTop.rz)
+    .translate(sleeveTop.cx ?? 0, sleeveTop.y, sleeveTop.cz ?? 0)
+    .applyMatrix4(limbTransform(shape.arm, side))
+}
+
+/** Where a shirt collar starts on the neck (hidden inside the shirt), and how high it reaches. */
+export const COLLAR = { baseY: 1.43, backTopY: 1.49, frontTopY: 1.465 } as const
+/** Half the angle a collar leaves open at the front, where the photo shows the real collar. */
+export const COLLAR_OPENING = 0.45
+
+/**
+ * A shirt collar: a band round the back and sides of the neck that stands
+ * tallest at the back and slopes down towards the front, where it opens.
+ */
+export function shirtCollar(shape: BodyShape): BufferGeometry {
+  const backHeight = COLLAR.backTopY - COLLAR.baseY
+  const rings = sliceRings(shape.neck, COLLAR.baseY, COLLAR.backTopY, 4).map((ring, i) => ({
+    ...ring,
+    rx: ring.rx + 0.012 + i * 0.002,
+    rz: ring.rz + 0.012 + i * 0.002,
+  }))
+  const collar = buildLoft(rings, {
+    radialSegments: 32,
+    thetaStart: Math.PI / 2 + COLLAR_OPENING,
+    thetaLength: 2 * Math.PI - 2 * COLLAR_OPENING,
+    uv: torsoSwatchUv,
+  })
+  const position = collar.getAttribute('position')
+  for (let i = 0; i < position.count; i++) {
+    // 0 at the centre back, 1 at the front.
+    const towardsFront = (Math.sin(Math.atan2(position.getZ(i), position.getX(i))) + 1) / 2
+    const height = backHeight + (COLLAR.frontTopY - COLLAR.backTopY) * towardsFront
+    position.setY(i, COLLAR.baseY + (position.getY(i) - COLLAR.baseY) * (height / backHeight))
+  }
+  return collar
 }
 
 function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeometry {
@@ -135,22 +203,10 @@ function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeome
   const front = [buildLoft(torso.front, { radialSegments: 40, ...FRONT_HALF })]
   const rest = [buildLoft(torso.back, { radialSegments: 40, ...BACK_HALF, uv: torsoSwatchUv })]
 
-  if (sleeve === 'long') {
-    const collar = sliceRings(shape.neck, 1.43, 1.5, 5).map((ring, i) => ({
-      ...ring,
-      rx: ring.rx + 0.012 + i * 0.002,
-      rz: ring.rz + 0.012 + i * 0.002,
-    }))
-    rest.push(buildLoft(collar, { radialSegments: 32, uv: torsoSwatchUv }))
-  }
+  if (sleeve === 'long') rest.push(shirtCollar(shape))
 
-  const sleeveLength = sleeve === 'long' ? shape.arm.length - 0.03 : 0.2
+  const rings = sleeveRings(shape, sleeve)
   for (const side of SIDES) {
-    const rings = sliceRings(shape.arm.rings, -sleeveLength, 0, 14).map((ring) => {
-      const towardsCuff = -ring.y / sleeveLength
-      const ease = sleeve === 'long' ? 0.012 : 0.016 + 0.014 * towardsCuff
-      return inflateRings([ring], ease)[0]
-    })
     rest.push(
       buildLoft(rings, {
         radialSegments: 24,
@@ -158,7 +214,7 @@ function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeome
         transform: limbTransform(shape.arm, side),
         uv: limbSwatchUv,
       }),
-      shoulderCap(shape, side),
+      shoulderCap(shape, side, rings[rings.length - 1]),
     )
   }
 
