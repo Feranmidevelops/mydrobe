@@ -426,9 +426,12 @@ export function garmentMask(
   for (let i = 0; i < total; i++) {
     if (colorDistance([data[i * 4], data[i * 4 + 1], data[i * 4 + 2]], background) <= range) inRange[i] = 1
   }
-  const byColour = largestComponent(garment(growBackdrop(image, inRange, step, null)), width, height)
+  const backdrop = growBackdrop(image, inRange, step, null)
+  const byColour = largestComponent(garment(backdrop), width, height)
+  // When the barrier holds back none of the backdrop the colours alone take,
+  // growing it again would give the same mask, so that work is skipped.
   const blocked = textureBarrier(image, inRange, tolerance)
-  if (!blocked.includes(1)) return byColour
+  if (!blocked.some((held, i) => held === 1 && backdrop[i] === 1)) return byColour
   const withBarrier = garment(growBackdrop(image, inRange, step, blocked))
   return byColour.includes(1)
     ? largestComponent(withBarrier, width, height, byColour)
