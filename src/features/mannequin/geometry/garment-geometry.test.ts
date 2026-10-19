@@ -9,7 +9,7 @@ import {
   SHIRT_DRAPE,
   SHIRT_HEM_Y,
   shirtTorsoRings,
-  shoulderCapHeight,
+  shoulderCap,
   trouserLegRings,
   TROUSER_WAIST_EASE,
   TROUSER_WAIST_Y,
@@ -94,10 +94,12 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
   })
 
   it('lays the sleeve cap close over the top of the shoulder, like fabric rather than padding', () => {
-    // Measured up from the shoulder joint, like the mannequin's own shoulder.
-    const shoulderTop = shape.shoulderRadius * SHOULDER_SQUASH
-    expect(shoulderCapHeight(shape)).toBeGreaterThan(shoulderTop)
-    expect(shoulderCapHeight(shape) - shoulderTop).toBeLessThanOrEqual(0.006)
+    const cap = shoulderCap(shape, 1)
+    cap.computeBoundingBox()
+    const capTop = cap.boundingBox!.max.y
+    const shoulderTop = shape.arm.joint[1] + shape.shoulderRadius * SHOULDER_SQUASH
+    expect(capTop).toBeGreaterThan(shoulderTop)
+    expect(capTop - shoulderTop).toBeLessThanOrEqual(0.006)
   })
 
   it.each(['long', 'short'] as const)('lets a %s-sleeve shirt hem hang over the trouser legs', (sleeve) => {

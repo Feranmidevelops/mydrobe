@@ -117,20 +117,17 @@ export function trouserLegRings(shape: BodyShape): Ring[] {
 /** How far a sleeve's cap sits above the top of the shoulder; fabric lies flat there, with no ease. */
 export const SHOULDER_TOP_EASE = 0.005
 
-/** Height of a shirt's shoulder cap above the shoulder joint. */
-export function shoulderCapHeight(shape: BodyShape) {
-  return shape.shoulderRadius * SHOULDER_SQUASH + SHOULDER_TOP_EASE
-}
-
-function shoulderCap(shape: BodyShape, side: Side): BufferGeometry {
+/** A shirt's cap over one shoulder, where the sleeve meets the body. */
+export function shoulderCap(shape: BodyShape, side: Side): BufferGeometry {
   const radius = shape.shoulderRadius + SHIRT_EASE
+  const height = shape.shoulderRadius * SHOULDER_SQUASH + SHOULDER_TOP_EASE
   const [x, y, z] = shape.arm.joint
   const sphere = new SphereGeometry(radius, 24, 16)
   const uv = sphere.getAttribute('uv')
   for (let i = 0; i < uv.count; i++) {
     uv.setXY(i, uv.getX(i) * Math.PI * 2 * radius, uv.getY(i) * Math.PI * radius)
   }
-  return sphere.scale(1, shoulderCapHeight(shape) / radius, 1).translate(x * side, y, z)
+  return sphere.scale(1, height / radius, 1).translate(x * side, y, z)
 }
 
 function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeometry {
