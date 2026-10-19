@@ -2,13 +2,14 @@ import { Vector3 } from 'three'
 import { describe, expect, it } from 'vitest'
 import { GARMENT_TEMPLATES } from '../../garments/garment.templates'
 import type { GarmentTemplateId } from '../../garments/garment.types'
-import { createBodyShape, limbTransform } from '../body-shape'
+import { createBodyShape, limbTransform, SHOULDER_SQUASH } from '../body-shape'
 import { BODY_PRESETS } from '../viewer.types'
 import {
   buildGarmentGeometry,
   SHIRT_DRAPE,
   SHIRT_HEM_Y,
   shirtTorsoRings,
+  shoulderCapHeight,
   trouserLegRings,
 } from './garment-geometry'
 import { ringAt, type Ring } from './loft'
@@ -57,6 +58,13 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
       expect((ring.cz ?? 0) + ring.rz).toBeGreaterThan((body.cz ?? 0) + body.rz)
       expect((ring.cz ?? 0) - ring.rz).toBeLessThan((body.cz ?? 0) - body.rz)
     }
+  })
+
+  it('lays the sleeve cap close over the top of the shoulder, like fabric rather than padding', () => {
+    // Measured up from the shoulder joint, like the mannequin's own shoulder.
+    const shoulderTop = shape.shoulderRadius * SHOULDER_SQUASH
+    expect(shoulderCapHeight(shape)).toBeGreaterThan(shoulderTop)
+    expect(shoulderCapHeight(shape) - shoulderTop).toBeLessThanOrEqual(0.006)
   })
 
   it.each(['long', 'short'] as const)('lets a %s-sleeve shirt hem hang over the trouser legs', (sleeve) => {
