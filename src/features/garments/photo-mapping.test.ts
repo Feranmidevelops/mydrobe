@@ -12,6 +12,7 @@ import {
   garmentMask,
   largestComponent,
   maskBounds,
+  shoulderRow,
   swatchRect,
   tidyMask,
   torsoRect,
@@ -197,6 +198,21 @@ describe('front crop', () => {
     const { mask, bounds } = analyse(shirtPhoto())
     expect(torsoRect(mask, 100, bounds)).toEqual({ x: 35, y: 20, width: 30, height: 70 })
     expect(frontCrop('shirt-long-sleeve', mask, 100, bounds)).toEqual(torsoRect(mask, 100, bounds))
+  })
+
+  it('starts at the collar of a top on a hanger, leaving the hanger out', () => {
+    // A tee hanging from a solid hanger that widens from the hook down to the collar.
+    const image = blank(200, 260)
+    for (let y = 20; y < 50; y++) paint(image, { x: 100 - (y - 10), y, width: 2 * (y - 10), height: 1 }, NAVY)
+    paint(image, { x: 75, y: 50, width: 50, height: 12 }, NAVY) // collar, above the shoulders
+    paint(image, { x: 30, y: 62, width: 140, height: 50 }, NAVY) // shoulders and sleeves
+    paint(image, { x: 50, y: 62, width: 100, height: 178 }, NAVY) // body
+    const { mask, bounds } = analyse(image)
+    expect(bounds.y).toBe(20)
+
+    const crop = frontCrop('shirt-short-sleeve', mask, 200, bounds)
+    expect(shoulderRow(mask, 200, bounds, 100)).toBe(62)
+    expect(crop).toEqual({ x: 50, y: 48, width: 100, height: 192 })
   })
 
   it('takes the whole of a pair of trousers', () => {

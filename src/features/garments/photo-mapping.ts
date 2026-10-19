@@ -318,9 +318,31 @@ function massCentreX(mask: Uint8Array, width: number, bounds: Rect) {
   return count > 0 ? sum / count : bounds.x + bounds.width / 2
 }
 
+/** How far a collar rises above the shoulders, as a share of the shoulders' height above the hem. */
+export const COLLAR_RISE = 0.08
+
+/**
+ * The row where a top's shoulders begin: the first row, from the top, after
+ * which the garment stays nearly as wide as its body for a while. A hanger
+ * and hook above the collar are narrower, so they're passed over. Falls back
+ * to the top of `bounds` when the top third has no such row.
+ */
+export function shoulderRow(mask: Uint8Array, width: number, bounds: Rect, bodyWidth: number): number {
+  const wide = bodyWidth * 0.85
+  const steady = Math.max(1, Math.round(bounds.height * 0.06))
+  let run = 0
+  for (let y = bounds.y; y < bounds.y + bounds.height / 3 + steady; y++) {
+    let count = 0
+    for (let x = bounds.x; x < bounds.x + bounds.width; x++) count += mask[y * width + x]
+    run = count >= wide ? run + 1 : 0
+    if (run === steady) return y - steady + 1
+  }
+  return bounds.y
+}
+
 /**
  * The body of a top, without its sleeves: as wide as the hem, which sleeves
- * never reach, and as tall as the whole garment.
+ * never reach, and from the collar down. A hanger above the collar is left out.
  */
 export function torsoRect(mask: Uint8Array, width: number, bounds: Rect): Rect {
   const centre = massCentreX(mask, width, bounds)
@@ -332,7 +354,10 @@ export function torsoRect(mask: Uint8Array, width: number, bounds: Rect): Rect {
   if (runs.length === 0) return bounds
   const left = median(runs.map((run) => run.left))
   const right = median(runs.map((run) => run.right))
-  return { x: left, y: bounds.y, width: right - left + 1, height: bounds.height }
+  const bottom = bounds.y + bounds.height - 1
+  const shoulders = shoulderRow(mask, width, bounds, right - left + 1)
+  const top = Math.max(bounds.y, Math.round(shoulders - COLLAR_RISE * (bottom - shoulders)))
+  return { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }
 }
 
 /** The part of the photo that is projected onto the template's front panel. */
