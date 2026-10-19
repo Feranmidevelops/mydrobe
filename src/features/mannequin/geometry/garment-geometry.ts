@@ -57,9 +57,34 @@ function seamTowardsBody(side: Side) {
   return side > 0 ? Math.PI : 0
 }
 
+/** How far fabric can slope inwards below a fuller part of the body, in metres per metre of drop. */
+export const SHIRT_DRAPE = 0.08
+
+/**
+ * Lets fabric fall from the fullest parts of the body, such as the chest,
+ * belly and seat, instead of tucking in under them: going down from the neck,
+ * a ring's front, back and sides can only move in gently. Rings are in
+ * ascending height.
+ */
+export function hang(rings: Ring[], slope = SHIRT_DRAPE): Ring[] {
+  const hung = rings.map((ring) => ({ ...ring }))
+  for (let i = hung.length - 2; i >= 0; i--) {
+    const above = hung[i + 1]
+    const ring = hung[i]
+    const give = slope * (above.y - ring.y)
+    const cz = ring.cz ?? 0
+    const front = Math.max(cz + ring.rz, (above.cz ?? 0) + above.rz - give)
+    const back = Math.min(cz - ring.rz, (above.cz ?? 0) - above.rz + give)
+    ring.rx = Math.max(ring.rx, above.rx - give)
+    ring.rz = (front - back) / 2
+    ring.cz = (front + back) / 2
+  }
+  return hung
+}
+
 export function shirtTorsoRings(shape: BodyShape, sleeve: 'long' | 'short'): Ring[] {
   const hemY = SHIRT_HEM_Y[sleeve]
-  return sliceRings(shape.torso, hemY, NECK_BASE_Y, 30).map((ring) => {
+  return hang(sliceRings(shape.torso, hemY, NECK_BASE_Y, 30)).map((ring) => {
     const flare = SHIRT_HEM_FLARE * smoothstep(HIP_Y, hemY, ring.y)
     return inflateRings([ring], SHIRT_EASE + flare)[0]
   })

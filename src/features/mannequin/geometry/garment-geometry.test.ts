@@ -6,11 +6,12 @@ import { createBodyShape, limbTransform } from '../body-shape'
 import { BODY_PRESETS } from '../viewer.types'
 import {
   buildGarmentGeometry,
+  SHIRT_DRAPE,
   SHIRT_HEM_Y,
   shirtTorsoRings,
   trouserLegRings,
 } from './garment-geometry'
-import { ringAt } from './loft'
+import { ringAt, type Ring } from './loft'
 
 const templateIds = Object.keys(GARMENT_TEMPLATES) as GarmentTemplateId[]
 
@@ -33,6 +34,28 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
       expect(uv.getX(i)).toBeLessThanOrEqual(1 + 1e-6)
       expect(uv.getY(i)).toBeGreaterThanOrEqual(-1e-6)
       expect(uv.getY(i)).toBeLessThanOrEqual(1 + 1e-6)
+    }
+  })
+
+  it('lets a shirt fall from the chest and belly instead of tucking in under them', () => {
+    const rings = shirtTorsoRings(shape, 'short')
+    const front = (ring: Ring) => (ring.cz ?? 0) + ring.rz
+    const back = (ring: Ring) => (ring.cz ?? 0) - ring.rz
+    for (let i = 0; i < rings.length - 1; i++) {
+      const [ring, above] = [rings[i], rings[i + 1]]
+      const give = SHIRT_DRAPE * (above.y - ring.y) + 1e-9
+      expect(front(ring)).toBeGreaterThanOrEqual(front(above) - give)
+      expect(back(ring)).toBeLessThanOrEqual(back(above) + give)
+      expect(ring.rx).toBeGreaterThanOrEqual(above.rx - give)
+    }
+  })
+
+  it('keeps the shirt outside the body', () => {
+    for (const ring of shirtTorsoRings(shape, 'long')) {
+      const body = ringAt(shape.torso, ring.y)
+      expect(ring.rx).toBeGreaterThan(body.rx)
+      expect((ring.cz ?? 0) + ring.rz).toBeGreaterThan((body.cz ?? 0) + body.rz)
+      expect((ring.cz ?? 0) - ring.rz).toBeLessThan((body.cz ?? 0) - body.rz)
     }
   })
 
