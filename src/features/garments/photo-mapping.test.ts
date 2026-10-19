@@ -298,6 +298,24 @@ describe('neck opening', () => {
     expect(colorAt(covered, 30, 50)).toEqual(WHITE)
   })
 
+  it('takes the soft edge around a hanger with it, but leaves the same colour elsewhere', () => {
+    const BLACK: Rgb = [20, 20, 20]
+    const EDGE: Rgb = [130, 120, 110]
+    const front = blank(60, 80, BLACK)
+    // Backdrop through the neck, ringed by a pixel of blended edge.
+    paint(front, { x: 19, y: 1, width: 22, height: 8 }, EDGE)
+    paint(front, { x: 20, y: 2, width: 20, height: 6 }, WHITE)
+    paint(front, { x: 4, y: 4, width: 1, height: 1 }, EDGE)
+    // A print lower down with the same blended edge, so that colour is the shirt's own.
+    paint(front, { x: 9, y: 39, width: 42, height: 22 }, EDGE)
+    paint(front, { x: 10, y: 40, width: 40, height: 20 }, WHITE)
+    const covered = coverNeckOpening(front, 12, blank(16, 16, BLACK), BLACK, WHITE)
+
+    expect(colorAt(covered, 19, 5)).toEqual(BLACK)
+    expect(colorAt(covered, 30, 1)).toEqual(BLACK)
+    expect(colorAt(covered, 4, 4)).toEqual(EDGE)
+  })
+
   it('keeps a collar in a contrasting colour, whose front dips lower', () => {
     const front = blank(60, 80, CREAM)
     paint(front, { x: 18, y: 0, width: 24, height: 4 }, NAVY)

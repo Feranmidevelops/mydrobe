@@ -573,13 +573,17 @@ function nearbyCount(bins: Uint32Array, [r, g, b]: Rgb) {
 /** How close to the backdrop a colour must be to count as backdrop showing through. */
 const BACKDROP_MATCH = 60
 
+/** How many pixels of soft edge around something painted over go with it. */
+const EDGE_ROUNDS = 2
+
 /**
  * Paints over what shows through a top's neck opening, such as the rest of a
  * hanger, the shaded inside of the back, a size label or the backdrop, with
  * the fabric sample. Only the top `band` rows change. Within them, a colour
  * is painted over if it's the backdrop's, or if it turns up nowhere lower
  * down the front, so the squares of a check, a stripe and a contrasting
- * collar (whose front dips lower) stay as photographed.
+ * collar (whose front dips lower) stay as photographed. The soft edge around
+ * whatever is painted over goes too, so no outline of a hanger is left.
  */
 export function coverNeckOpening(
   front: RgbaImage,
@@ -588,20 +592,35 @@ export function coverNeckOpening(
   fabric: Rgb,
   background: Rgb | null = null,
 ): RgbaImage {
+  const { width } = front
   const rows = Math.min(band, front.height)
   const below = colorBins(front, rows)
-  const enough = Math.max(1, (front.height - rows) * front.width * 0.001)
+  const enough = Math.max(1, (front.height - rows) * width * 0.001)
   const backdrop = (color: Rgb) => background !== null && colorDistance(color, background) <= BACKDROP_MATCH
-  const data = new Uint8ClampedArray(front.data)
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < front.width; x++) {
-      const color = pixel(front, x, y)
-      if (colorDistance(color, fabric) <= FOREIGN_COLOR) continue
-      if (!backdrop(color) && nearbyCount(below, color) >= enough) continue
-      data.set(tileAt(swatch, x, y), (y * front.width + x) * 4)
-    }
+  const covered = new Uint8Array(rows * width)
+  for (let i = 0; i < covered.length; i++) {
+    const color = pixel(front, i % width, Math.floor(i / width))
+    if (colorDistance(color, fabric) <= FOREIGN_COLOR) continue
+    if (backdrop(color) || nearbyCount(below, color) < enough) covered[i] = 1
   }
-  return { data, width: front.width, height: front.height }
+  for (let round = 0; round < EDGE_ROUNDS; round++) {
+    const edge: number[] = []
+    for (let i = 0; i < covered.length; i++) {
+      if (covered[i] || colorDistance(pixel(front, i % width, Math.floor(i / width)), fabric) <= FOREIGN_COLOR) continue
+      let next = false
+      forNeighbours(i, width, rows, (j) => {
+        if (covered[j]) next = true
+      })
+      if (next) edge.push(i)
+    }
+    for (const i of edge) covered[i] = 1
+  }
+
+  const data = new Uint8ClampedArray(front.data)
+  for (let i = 0; i < covered.length; i++) {
+    if (covered[i]) data.set(tileAt(swatch, i % width, Math.floor(i / width)), i * 4)
+  }
+  return { data, width, height: front.height }
 }
 
 /**
