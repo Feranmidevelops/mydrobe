@@ -30,7 +30,8 @@ export const SHIRT_HEM_Y = { long: 0.81, short: 0.86 } as const
 export const SHIRT_EASE = 0.016
 export const SHIRT_HEM_FLARE = 0.012
 export const TROUSER_EASE = 0.012
-const TROUSER_WAIST_Y = 1.08
+export const TROUSER_WAIST_EASE = 0.01
+export const TROUSER_WAIST_Y = 1.08
 const NECK_BASE_Y = 1.455
 const HIP_Y = 0.95
 const KNEE_D = 0.36
@@ -61,33 +62,44 @@ function seamTowardsBody(side: Side) {
 export const SHIRT_DRAPE = 0.08
 
 /**
- * Lets fabric fall from the fullest parts of the body, such as the chest,
- * belly and seat, instead of tucking in under them: going down from the neck,
- * a ring's front, back and sides can only move in gently. Rings are in
- * ascending height.
+ * A shirt's torso as two half-profiles that meet at the sides: same heights,
+ * widths and centres, but the front can stand further out than the back.
  */
-export function hang(rings: Ring[], slope = SHIRT_DRAPE): Ring[] {
-  const hung = rings.map((ring) => ({ ...ring }))
-  for (let i = hung.length - 2; i >= 0; i--) {
-    const above = hung[i + 1]
-    const ring = hung[i]
-    const give = slope * (above.y - ring.y)
-    const cz = ring.cz ?? 0
-    const front = Math.max(cz + ring.rz, (above.cz ?? 0) + above.rz - give)
-    const back = Math.min(cz - ring.rz, (above.cz ?? 0) - above.rz + give)
-    ring.rx = Math.max(ring.rx, above.rx - give)
-    ring.rz = (front - back) / 2
-    ring.cz = (front + back) / 2
-  }
-  return hung
+export interface TorsoProfile {
+  front: Ring[]
+  back: Ring[]
 }
 
-export function shirtTorsoRings(shape: BodyShape, sleeve: 'long' | 'short'): Ring[] {
+/**
+ * Lets fabric fall from the fullest parts of the body, such as the chest,
+ * belly and seat, instead of tucking in under them: going down from the neck,
+ * the front, back and sides can only move in gently. The front and back hang
+ * separately, so a belly pushes the front out without pulling the back in.
+ * Rings are in ascending height.
+ */
+export function hang(rings: Ring[], slope = SHIRT_DRAPE): TorsoProfile {
+  const front = rings.map((ring) => ({ ...ring }))
+  const back = rings.map((ring) => ({ ...ring }))
+  for (let i = rings.length - 2; i >= 0; i--) {
+    const give = slope * (rings[i + 1].y - rings[i].y)
+    const cz = rings[i].cz ?? 0
+    const frontAbove = (rings[i + 1].cz ?? 0) + front[i + 1].rz
+    const backAbove = (rings[i + 1].cz ?? 0) - back[i + 1].rz
+    front[i].rz = Math.max(rings[i].rz, frontAbove - give - cz)
+    back[i].rz = Math.max(rings[i].rz, cz - backAbove - give)
+    front[i].rx = back[i].rx = Math.max(rings[i].rx, front[i + 1].rx - give)
+  }
+  return { front, back }
+}
+
+export function shirtTorsoRings(shape: BodyShape, sleeve: 'long' | 'short'): TorsoProfile {
   const hemY = SHIRT_HEM_Y[sleeve]
-  return hang(sliceRings(shape.torso, hemY, NECK_BASE_Y, 30)).map((ring) => {
+  const { front, back } = hang(sliceRings(shape.torso, hemY, NECK_BASE_Y, 30))
+  const loosen = (ring: Ring) => {
     const flare = SHIRT_HEM_FLARE * smoothstep(HIP_Y, hemY, ring.y)
     return inflateRings([ring], SHIRT_EASE + flare)[0]
-  })
+  }
+  return { front: front.map(loosen), back: back.map(loosen) }
 }
 
 export function trouserLegRings(shape: BodyShape): Ring[] {
@@ -123,8 +135,8 @@ function shoulderCap(shape: BodyShape, side: Side): BufferGeometry {
 
 function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeometry {
   const torso = shirtTorsoRings(shape, sleeve)
-  const front = [buildLoft(torso, { radialSegments: 40, ...FRONT_HALF })]
-  const rest = [buildLoft(torso, { radialSegments: 40, ...BACK_HALF, uv: torsoSwatchUv })]
+  const front = [buildLoft(torso.front, { radialSegments: 40, ...FRONT_HALF })]
+  const rest = [buildLoft(torso.back, { radialSegments: 40, ...BACK_HALF, uv: torsoSwatchUv })]
 
   if (sleeve === 'long') {
     const collar = sliceRings(shape.neck, 1.43, 1.5, 5).map((ring, i) => ({
@@ -157,7 +169,7 @@ function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeome
 }
 
 function trousersGeometry(shape: BodyShape): GarmentGeometry {
-  const waist = inflateRings(sliceRings(shape.torso, shape.torso[0].y, TROUSER_WAIST_Y, 14), 0.01)
+  const waist = inflateRings(sliceRings(shape.torso, shape.torso[0].y, TROUSER_WAIST_Y, 14), TROUSER_WAIST_EASE)
   const front = [buildLoft(waist, { radialSegments: 40, ...FRONT_HALF, capStart: true })]
   const rest = [
     buildLoft(waist, { radialSegments: 40, ...BACK_HALF, capStart: true, uv: torsoSwatchUv }),
