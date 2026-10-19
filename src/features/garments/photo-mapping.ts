@@ -148,12 +148,158 @@ export function backdropVariation(image: RgbaImage, background: Rgb) {
   return { spread: percentile(fromBackdrop, 0.9), roughness: percentile(steps, 0.75) }
 }
 
+/** How far round each pixel its texture is averaged, in pixels. */
+const TEXTURE_RADIUS = 2
+
+/** Added to brightness when judging texture, so the noise in a near-black backdrop doesn't read as a weave. */
+const DARK_OFFSET = 10
+
+/**
+ * How textured the photo is around each pixel: how far each pixel stands out
+ * from the average of its four neighbours (on the colorDistance scale),
+ * averaged over a square of side 2 * radius + 1, relative to how bright that
+ * square is. A steady ramp isn't texture, so a backdrop shading gradually
+ * across the photo or into a soft halo scores low; a weave, a seam or the
+ * edge of a garment scores high. Being relative to brightness, a weave reads
+ * the same in shadow as in light, and wood grain lit in the middle of a photo
+ * reads no busier than at its darker edges.
+ */
+export function textureMap(image: RgbaImage, radius = TEXTURE_RADIUS): Float32Array {
+  const { data, width, height } = image
+  const total = width * height
+  const laplacian = new Float32Array(total)
+  const light = new Float32Array(total)
+  for (let i = 0; i < total; i++) light[i] = (data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2]) / 3
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const p = (y * width + x) * 4
+      const up = p - width * 4
+      const down = p + width * 4
+      const dr = 4 * data[p] - data[p - 4] - data[p + 4] - data[up] - data[down]
+      const dg = 4 * data[p + 1] - data[p - 3] - data[p + 5] - data[up + 1] - data[down + 1]
+      const db = 4 * data[p + 2] - data[p - 2] - data[p + 6] - data[up + 2] - data[down + 2]
+      // Weighted as in colorDistance, and quartered so a lone odd pixel scores its own colour difference.
+      const red = data[p]
+      laplacian[p / 4] = Math.sqrt((2 + red / 256) * dr * dr + 4 * dg * dg + (2 + (255 - red) / 256) * db * db) / 4
+    }
+  }
+  const texture = boxMean(laplacian, width, height, radius)
+  const brightness = boxMean(light, width, height, radius)
+  for (let i = 0; i < total; i++) texture[i] /= brightness[i] + DARK_OFFSET
+  return texture
+}
+
+/** Mean of `values` over a square of side 2 * radius + 1, clipped at the image's edges. */
+function boxMean(values: Float32Array, width: number, height: number, radius: number): Float32Array {
+  const rows = new Float32Array(values.length)
+  for (let y = 0; y < height; y++) {
+    const row = y * width
+    let sum = 0
+    for (let x = 0; x < Math.min(radius, width); x++) sum += values[row + x]
+    for (let x = 0; x < width; x++) {
+      if (x + radius < width) sum += values[row + x + radius]
+      if (x - radius - 1 >= 0) sum -= values[row + x - radius - 1]
+      rows[row + x] = sum / (Math.min(width - 1, x + radius) - Math.max(0, x - radius) + 1)
+    }
+  }
+  // Down the columns, keeping a running sum for each so the rows are read in order.
+  const result = new Float32Array(values.length)
+  const columns = new Float64Array(width)
+  for (let y = 0; y < Math.min(radius, height); y++) {
+    for (let x = 0; x < width; x++) columns[x] += rows[y * width + x]
+  }
+  for (let y = 0; y < height; y++) {
+    if (y + radius < height) for (let x = 0; x < width; x++) columns[x] += rows[(y + radius) * width + x]
+    if (y - radius - 1 >= 0) for (let x = 0; x < width; x++) columns[x] -= rows[(y - radius - 1) * width + x]
+    const count = Math.min(height - 1, y + radius) - Math.max(0, y - radius) + 1
+    for (let x = 0; x < width; x++) result[y * width + x] = columns[x] / count
+  }
+  return result
+}
+
+/** How far from the garment's colours the texture barrier reaches, as a share of the photo's long side. */
+const BARRIER_REACH = 0.04
+
+/** The least texture that holds the backdrop back at the default tolerance, whatever the backdrop. */
+const BARRIER_FLOOR = 0.3
+
+/** How many times as textured as the backdrop itself (bar its busiest few pixels) the barrier is. */
+const BARRIER_FACTOR = 2
+
+/**
+ * Marks pixels within about `distance` of one whose colour the backdrop never
+ * shows. Worked out on blocks of 4 x 4 pixels, as it only needs to be roughly
+ * right.
+ */
+function nearGarmentColors(image: RgbaImage, inRange: Uint8Array, distance: number): Uint8Array {
+  const { data, width, height } = image
+  const BLOCK = 4
+  const columns = Math.ceil(width / BLOCK)
+  const rows = Math.ceil(height / BLOCK)
+  const marked = new Uint8Array(columns * rows)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x
+      if (!inRange[i] && data[i * 4 + 3] >= 128) marked[Math.floor(y / BLOCK) * columns + Math.floor(x / BLOCK)] = 1
+    }
+  }
+  const blocks = dilateMask(marked, columns, rows, Math.ceil(distance / BLOCK))
+  const near = new Uint8Array(width * height)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) near[y * width + x] = blocks[Math.floor(y / BLOCK) * columns + Math.floor(x / BLOCK)]
+  }
+  return near
+}
+
+/**
+ * The pixels the backdrop isn't grown into, marked with 1: textured ones near
+ * colours the backdrop never shows. The black squares of a check on a black
+ * backdrop look just like the backdrop, but the weave of the squares around
+ * them doesn't, so the backdrop can't seep from one dark square to the next
+ * through the dark threads between. Texture counts once it's well beyond the
+ * backdrop's own, measured away from the garment and round the photo's edges,
+ * so a busy backdrop isn't held back by its own grain; and the barrier stays
+ * near the garment, so a backdrop busier in some places than others can't be
+ * cut off far from it. A higher tolerance weakens the barrier along with the
+ * colour tests.
+ *
+ * `inRange` marks the pixels within range of the backdrop's colour.
+ */
+export function textureBarrier(image: RgbaImage, inRange: Uint8Array, tolerance: number): Uint8Array {
+  const { data, width, height } = image
+  const total = width * height
+  const texture = textureMap(image)
+  const near = nearGarmentColors(image, inRange, Math.max(1, Math.round(Math.max(width, height) * BARRIER_REACH)))
+  // Samples of the backdrop's own texture: backdrop-coloured pixels away from
+  // the garment, and round the photo's edges (all there is when a busy
+  // backdrop strays out of its own colour range everywhere). The busier wins.
+  const band = Math.max(2, Math.round(Math.min(width, height) * 0.02))
+  const away: number[] = []
+  const edges: number[] = []
+  for (let i = 0; i < total; i += 7) {
+    if (!inRange[i] || data[i * 4 + 3] < 128) continue
+    const x = i % width
+    const y = (i - x) / width
+    if (!near[i]) away.push(texture[i])
+    if (x < band || y < band || x >= width - band || y >= height - band) edges.push(texture[i])
+  }
+  const own = Math.max(percentile(away, 0.95), percentile(edges, 0.95))
+  // A low tolerance tightens the barrier, but never so far that the backdrop's own texture holds it back.
+  const slack = tolerance / DEFAULT_BACKGROUND_TOLERANCE
+  const limit = Math.max(BARRIER_FLOOR * slack, BARRIER_FACTOR * own * Math.max(1, slack))
+  const blocked = new Uint8Array(total)
+  for (let i = 0; i < total; i++) if (near[i] && texture[i] > limit) blocked[i] = 1
+  return blocked
+}
+
 /**
  * Marks garment pixels with 1. The background is grown inwards from the
  * photo's edges: it steps across gentle changes (a shadow, a gradient
  * backdrop) but stops at the sharp change where the garment starts, and it
- * never strays far from the backdrop's colour. Anything it can't reach, such
- * as a dark check on a dark backdrop that the garment encloses, counts as
+ * never strays far from the backdrop's colour. Nor does it grow into the
+ * garment's texture (see textureBarrier), so it can't seep through a check
+ * whose dark squares match a dark backdrop. Anything it can't reach, such as
+ * a dark check on a dark backdrop that the garment encloses, counts as
  * garment. Only the largest patch of garment is kept.
  *
  * In a cut-out (no background colour) transparency alone decides.
@@ -177,7 +323,10 @@ export function garmentMask(
     const { spread, roughness } = backdropVariation(image, background)
     const step = Math.max(tolerance / 3, roughness * 3)
     const range = Math.max(tolerance * 2, spread * 1.25)
-    const nearBackdrop = (i: number) => colorDistance(rgb(i), background) <= range
+    const inRange = new Uint8Array(total)
+    for (let i = 0; i < total; i++) if (colorDistance(rgb(i), background) <= range) inRange[i] = 1
+    const blocked = textureBarrier(image, inRange, tolerance)
+    const joins = (j: number, from: Rgb) => transparent(j) || (inRange[j] === 1 && colorDistance(rgb(j), from) <= step)
     const queue = new Int32Array(total)
     let head = 0
     let tail = 0
@@ -188,22 +337,56 @@ export function garmentMask(
 
     for (let x = 0; x < width; x++) {
       for (const i of [x, (height - 1) * width + x]) {
-        if (!isBackground[i] && (transparent(i) || nearBackdrop(i))) add(i)
+        if (!isBackground[i] && !blocked[i] && (transparent(i) || inRange[i])) add(i)
       }
     }
     for (let y = 0; y < height; y++) {
       for (const i of [y * width, y * width + width - 1]) {
-        if (!isBackground[i] && (transparent(i) || nearBackdrop(i))) add(i)
+        if (!isBackground[i] && !blocked[i] && (transparent(i) || inRange[i])) add(i)
       }
     }
 
+    // Grow the backdrop up to the barrier, noting where it was held back.
+    const held: number[] = []
     while (head < tail) {
       const from = queue[head++]
       const here = rgb(from)
       forNeighbours(from, width, height, (j) => {
-        if (isBackground[j]) return
-        if (transparent(j) || (colorDistance(rgb(j), here) <= step && nearBackdrop(j))) add(j)
+        if (isBackground[j] || !joins(j, here)) return
+        if (blocked[j]) {
+          isBackground[j] = 1
+          held.push(j)
+        } else {
+          add(j)
+        }
       })
+    }
+
+    // Texture is averaged over a square, so the barrier holds the backdrop
+    // back a few pixels short of a garment's edge. Let it carry on that far
+    // past the barrier, with only the colour tests to stop it; diagonally
+    // too, so it reaches as far into a corner as along an edge.
+    const depth = new Uint8Array(total)
+    head = 0
+    tail = 0
+    for (const j of held) {
+      depth[j] = 1
+      queue[tail++] = j
+    }
+    while (head < tail) {
+      const from = queue[head++]
+      if (depth[from] > TEXTURE_RADIUS) continue
+      const here = rgb(from)
+      const x = from % width
+      for (let dy = -width; dy <= width; dy += width) {
+        if (from + dy < 0 || from + dy >= total) continue
+        for (let dx = -1; dx <= 1; dx++) {
+          const j = from + dy + dx
+          if ((dx === -1 && x === 0) || (dx === 1 && x === width - 1) || isBackground[j] || !joins(j, here)) continue
+          depth[j] = depth[from] + 1
+          add(j)
+        }
+      }
     }
   }
 

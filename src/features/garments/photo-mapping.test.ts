@@ -3,6 +3,7 @@ import {
   averageColor,
   backdropVariation,
   chooseSwatch,
+  colorDistance,
   coverage,
   coverNeckOpening,
   cropAndFill,
@@ -15,6 +16,8 @@ import {
   maskBounds,
   shoulderRow,
   swatchRect,
+  textureBarrier,
+
   tidyMask,
   torsoRect,
   type Rect,
@@ -143,6 +146,133 @@ describe('garmentMask and maskBounds', () => {
   it('finds nothing in an empty photo', () => {
     const image = blank(30, 30)
     expect(maskBounds(garmentMask(image, WHITE), 30, 30)).toBeNull()
+  })
+})
+
+describe('the texture barrier', () => {
+  /**
+   * Paints a woven buffalo check over `rect`: black, charcoal and grey squares,
+   * the black and charcoal ones both within a near-black backdrop's colour
+   * range. Plain weave, so neighbouring threads alternate.
+   */
+  function paintCheck(image: RgbaImage, rect: Rect, origin: { x: number; y: number } = rect) {
+    for (let y = rect.y; y < rect.y + rect.height; y++) {
+      for (let x = rect.x; x < rect.x + rect.width; x++) {
+        const dark =
+          (Math.floor((x - origin.x) / 12) % 2 === 0 ? 1 : 0) + (Math.floor((y - origin.y) / 12) % 2 === 0 ? 1 : 0)
+        const [level, weave] = dark === 2 ? [5, 3] : dark === 1 ? [14, 2] : [120, 15]
+        const v = level + weave * ((x + y) % 2 === 0 ? 1 : -1)
+        image.data.set([v, v, v, 255], (y * image.width + x) * 4)
+      }
+    }
+  }
+
+  function checkOnBlack() {
+    const image = blank(240, 240, [4, 4, 4])
+    const rect = { x: 60, y: 30, width: 120, height: 180 }
+    paintCheck(image, rect)
+    return { image, rect }
+  }
+
+  it.each([40, 70])('keeps the dark squares of a woven check on a dark backdrop, at tolerance %i', (tolerance) => {
+    const { image, rect } = checkOnBlack()
+    const mask = garmentMask(image, estimateBackground(image), tolerance)
+    const bounds = maskBounds(mask, 240, 240)!
+    expect(bounds).toEqual(rect)
+    expect(coverage(mask, 240, rect)).toBeGreaterThan(0.95)
+    expect(torsoRect(mask, 240, bounds).width).toBeGreaterThanOrEqual(115)
+  })
+
+  it('keeps most of the check even at a high tolerance', () => {
+    const { image, rect } = checkOnBlack()
+    expect(coverage(garmentMask(image, estimateBackground(image), 110), 240, rect)).toBeGreaterThan(0.9)
+  })
+
+  it('keeps check trouser legs whole, and the gap between them open', () => {
+    const image = blank(240, 240, [4, 4, 4])
+    const parts = [
+      { x: 60, y: 20, width: 120, height: 48 },
+      { x: 60, y: 68, width: 48, height: 150 },
+      { x: 132, y: 68, width: 48, height: 150 },
+    ]
+    for (const part of parts) paintCheck(image, part, { x: 60, y: 20 })
+    const mask = garmentMask(image, estimateBackground(image))
+    const area = (part: Rect) => part.width * part.height
+    const kept = parts.reduce((sum, part) => sum + coverage(mask, 240, part) * area(part), 0)
+    expect(kept / parts.reduce((sum, part) => sum + area(part), 0)).toBeGreaterThan(0.95)
+    expect(mask[150 * 240 + 120]).toBe(0)
+    expect(mask[210 * 240 + 120]).toBe(0)
+  })
+
+  it('lets a backdrop go however busy its own grain is', () => {
+    const image = blank(240, 240)
+    for (let y = 0; y < 240; y++) {
+      for (let x = 0; x < 240; x++) {
+        const grain = (y % 6 < 3 ? 8 : -8) + ((x * 3 + y * 5) % 7) - 3
+        image.data.set([40 + grain, 30 + grain, 22 + grain, 255], (y * 240 + x) * 4)
+      }
+    }
+    const rect = { x: 60, y: 30, width: 120, height: 180 }
+    paint(image, rect, [150, 140, 120])
+    expect(maskBounds(garmentMask(image, estimateBackground(image)), 240, 240)).toEqual(rect)
+  })
+
+  it('lets a smooth halo of light round a dark garment go', () => {
+    const image = blank(240, 240)
+    const rect = { x: 60, y: 30, width: 120, height: 180 }
+    for (let y = 0; y < 240; y++) {
+      for (let x = 0; x < 240; x++) {
+        const dx = Math.max(rect.x - x, 0, x - (rect.x + rect.width - 1))
+        const dy = Math.max(rect.y - y, 0, y - (rect.y + rect.height - 1))
+        const inside = dx === 0 && dy === 0
+        const v = inside ? 90 + ((x + y) % 4 < 2 ? 10 : -10) : 5 + 20 * Math.max(0, 1 - Math.hypot(dx, dy) / 25)
+        image.data.set([v, v, v, 255], (y * 240 + x) * 4)
+      }
+    }
+    expect(maskBounds(garmentMask(image, estimateBackground(image)), 240, 240)).toEqual(rect)
+  })
+
+  it('still drops a busy hanger rail touching a check', () => {
+    const { image, rect } = checkOnBlack()
+    for (let y = 40; y < 44; y++) {
+      for (let x = 180; x < 240; x++) {
+        const v = x % 3 === 0 ? 30 : 150
+        image.data.set([v, v, v, 255], (y * 240 + x) * 4)
+      }
+    }
+    const mask = garmentMask(image, estimateBackground(image))
+    expect(mask[42 * 240 + 220]).toBe(0)
+    const bounds = maskBounds(mask, 240, 240)!
+    expect({ ...bounds, width: rect.width }).toEqual(rect)
+    expect(bounds.width).toBeLessThanOrEqual(121)
+  })
+
+  it('stays by the garment, and loosens as the tolerance rises', () => {
+    const { image, rect } = checkOnBlack()
+    let farthest = 0
+    const blockedAt = (tolerance: number) => {
+      const inRange = new Uint8Array(240 * 240)
+      for (let i = 0; i < inRange.length; i++) {
+        const v = image.data[i * 4]
+        if (colorDistance([v, v, v], [4, 4, 4]) <= 2 * tolerance) inRange[i] = 1
+      }
+      const blocked = textureBarrier(image, inRange, tolerance)
+      let count = 0
+      for (let i = 0; i < blocked.length; i++) {
+        if (!blocked[i]) continue
+        count++
+        const x = i % 240
+        const y = Math.floor(i / 240)
+        const outside = Math.max(rect.x - x, x - (rect.x + rect.width - 1), rect.y - y, y - (rect.y + rect.height - 1), 0)
+        farthest = Math.max(farthest, outside)
+      }
+      return count
+    }
+    const [loose, normal, tight] = [blockedAt(110), blockedAt(70), blockedAt(40)]
+    expect(normal).toBeGreaterThan(0)
+    expect(loose).toBeLessThanOrEqual(normal)
+    expect(normal).toBeLessThanOrEqual(tight)
+    expect(farthest).toBeLessThanOrEqual(16)
   })
 })
 
