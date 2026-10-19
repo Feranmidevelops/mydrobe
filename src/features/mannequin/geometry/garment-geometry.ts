@@ -28,7 +28,7 @@ export interface GarmentGeometry {
 /** Shirt hems sit this far below the hip, flaring out to clear the trousers. */
 export const SHIRT_HEM_Y = { long: 0.81, short: 0.86 } as const
 export const SHIRT_EASE = 0.016
-export const SHIRT_HEM_FLARE = 0.035
+export const SHIRT_HEM_FLARE = 0.012
 export const TROUSER_EASE = 0.012
 const TROUSER_WAIST_Y = 1.08
 const NECK_BASE_Y = 1.455
