@@ -379,6 +379,26 @@ describe('chooseSwatch', () => {
     const swatch = chooseSwatch('shirt-short-sleeve', image, mask, crop)
     expect(averageColor(image, mask, swatch)).toEqual(NAVY)
   })
+  it('steers clear of a big chest print that spans most of the shirt', () => {
+    // A navy tee with a yellow print 62% of its width and 53% of its height, from just below the shoulders.
+    const image = blank(200, 200)
+    paint(image, { x: 50, y: 30, width: 100, height: 150 }, NAVY)
+    paint(image, { x: 69, y: 45, width: 62, height: 80 }, [230, 190, 60])
+    const mask = garmentMask(image, WHITE)
+    const swatch = chooseSwatch('shirt-short-sleeve', image, mask, { x: 50, y: 30, width: 100, height: 150 })
+    expect(averageColor(image, mask, swatch)).toEqual(NAVY)
+  })
+
+  it('takes plain fabric from between the creases, clear of backdrop showing through', () => {
+    const DENIM: Rgb = [40, 70, 100]
+    const image = blank(200, 200)
+    paint(image, { x: 50, y: 30, width: 100, height: 150 }, DENIM)
+    for (let y = 40; y < 170; y += 30) paint(image, { x: 50, y, width: 100, height: 6 }, [90, 110, 130])
+    paint(image, { x: 110, y: 120, width: 14, height: 14 }, [218, 218, 218])
+    const mask = garmentMask(image, WHITE)
+    const swatch = chooseSwatch('trousers-straight', image, mask, { x: 50, y: 30, width: 100, height: 150 })
+    expect(averageColor(image, mask, swatch)).toEqual(DENIM)
+  })
 })
 
 describe('flattenLighting', () => {
