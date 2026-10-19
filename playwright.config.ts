@@ -5,6 +5,9 @@ const PORT = 4173
 const BASE_URL = `http://127.0.0.1:${PORT}`
 const CI = !!process.env.CI
 
+// Specs that need their own browser flags run only in their own projects.
+const WEBGL_OFF = /webgl-off\.spec\.ts$/
+
 export default defineConfig({
   testDir: './e2e',
   // e2e/fixtures/*.test.ts belong to Vitest; the performance suite has its own config.
@@ -30,7 +33,23 @@ export default defineConfig({
   },
   projects: [
     // The default headless shell renders WebGL 2 with SwiftShader, the same on every machine.
-    { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
+    {
+      name: 'desktop',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
+      testIgnore: [WEBGL_OFF],
+    },
+    // Real browser switches rather than a patched page: no WebGL at all, then WebGL 1 only.
+    // (--disable-gpu isn't one of them: Chromium falls back to software rendering.)
+    {
+      name: 'no-webgl',
+      use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--disable-webgl', '--disable-3d-apis'] } },
+      testMatch: WEBGL_OFF,
+    },
+    {
+      name: 'webgl1-only',
+      use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--disable-webgl2'] } },
+      testMatch: WEBGL_OFF,
+    },
   ],
   webServer: {
     // Always the production build, served as it would be. Type checking stays with
