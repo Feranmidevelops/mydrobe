@@ -318,9 +318,32 @@ function massCentreX(mask: Uint8Array, width: number, bounds: Rect) {
   return count > 0 ? sum / count : bounds.x + bounds.width / 2
 }
 
+/** How far a collar rises above the shoulders, as a share of the shoulders' height above the hem. */
+export const COLLAR_RISE = 0.08
+
+/**
+ * The row where a top's shoulders begin: the first row, from the top, after
+ * which the garment stays nearly as wide as its body for a while. A hanger
+ * and hook above the collar are narrower, so they're passed over. Falls back
+ * to the top of `bounds` when the top third has no such row.
+ */
+export function shoulderRow(mask: Uint8Array, width: number, bounds: Rect, bodyWidth: number): number {
+  const wide = bodyWidth * 0.85
+  const steady = Math.max(1, Math.round(bounds.height * 0.06))
+  let run = 0
+  for (let y = bounds.y; y < bounds.y + bounds.height / 3 + steady; y++) {
+    let count = 0
+    for (let x = bounds.x; x < bounds.x + bounds.width; x++) count += mask[y * width + x]
+    run = count >= wide ? run + 1 : 0
+    if (run === steady) return y - steady + 1
+  }
+  return bounds.y
+}
+
 /**
  * The body of a top, without its sleeves: as wide as the hem, which sleeves
- * never reach, and as tall as the whole garment.
+ * never reach, and from just above the shoulders down. That leaves out most
+ * of a hanger above the collar; coverNeckOpening paints over the rest.
  */
 export function torsoRect(mask: Uint8Array, width: number, bounds: Rect): Rect {
   const centre = massCentreX(mask, width, bounds)
@@ -332,7 +355,10 @@ export function torsoRect(mask: Uint8Array, width: number, bounds: Rect): Rect {
   if (runs.length === 0) return bounds
   const left = median(runs.map((run) => run.left))
   const right = median(runs.map((run) => run.right))
-  return { x: left, y: bounds.y, width: right - left + 1, height: bounds.height }
+  const bottom = bounds.y + bounds.height - 1
+  const shoulders = shoulderRow(mask, width, bounds, right - left + 1)
+  const top = Math.max(bounds.y, Math.round(shoulders - COLLAR_RISE * (bottom - shoulders)))
+  return { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }
 }
 
 /** The part of the photo that is projected onto the template's front panel. */
@@ -500,6 +526,103 @@ function mirrored(i: number, length: number) {
   return wrapped < length ? wrapped : period - 1 - wrapped
 }
 
+/** The tiled fabric sample's colour at (x, y). */
+function tileAt(fill: RgbaImage, x: number, y: number) {
+  const tile = (mirrored(y, fill.height) * fill.width + mirrored(x, fill.width)) * 4
+  return fill.data.subarray(tile, tile + 3)
+}
+
+/** The smallest colour difference that can count as "not the fabric". */
+const FOREIGN_COLOR = 60
+
+/** How far a neckline dips below the shoulders, as a share of the crop's height. */
+const NECKLINE_DIP = 0.03
+
+/**
+ * How many rows at the top of a top's front crop its neck opening can show
+ * in: those above the shoulders, and a few more for the dip of the neckline.
+ */
+export function neckBand(mask: Uint8Array, width: number, bounds: Rect, crop: Rect): number {
+  return shoulderRow(mask, width, bounds, crop.width) - crop.y + Math.round(crop.height * NECKLINE_DIP)
+}
+
+/** Counts the colours in rows `from` onwards, in coarse bins of 16 levels per channel. */
+function colorBins(image: RgbaImage, from: number) {
+  const bins = new Uint32Array(4096)
+  for (let i = from * image.width * 4; i < image.data.length; i += 4) {
+    bins[((image.data[i] >> 4) << 8) | ((image.data[i + 1] >> 4) << 4) | (image.data[i + 2] >> 4)]++
+  }
+  return bins
+}
+
+/** How many of the binned pixels are close to `color`: in its bin or a neighbouring one. */
+function nearbyCount(bins: Uint32Array, [r, g, b]: Rgb) {
+  let count = 0
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dg = -1; dg <= 1; dg++) {
+      for (let db = -1; db <= 1; db++) {
+        const [br, bg, bb] = [(r >> 4) + dr, (g >> 4) + dg, (b >> 4) + db]
+        if (br < 0 || bg < 0 || bb < 0 || br > 15 || bg > 15 || bb > 15) continue
+        count += bins[(br << 8) | (bg << 4) | bb]
+      }
+    }
+  }
+  return count
+}
+
+/** How close to the backdrop a colour must be to count as backdrop showing through. */
+const BACKDROP_MATCH = 60
+
+/** How many pixels of soft edge around something painted over go with it. */
+const EDGE_ROUNDS = 2
+
+/**
+ * Paints over what shows through a top's neck opening, such as the rest of a
+ * hanger, the shaded inside of the back, a size label or the backdrop, with
+ * the fabric sample. Only the top `band` rows change. Within them, a colour
+ * is painted over if it's the backdrop's, or if it turns up nowhere lower
+ * down the front, so the squares of a check, a stripe and a contrasting
+ * collar (whose front dips lower) stay as photographed. The soft edge around
+ * whatever is painted over goes too, so no outline of a hanger is left.
+ */
+export function coverNeckOpening(
+  front: RgbaImage,
+  band: number,
+  swatch: RgbaImage,
+  fabric: Rgb,
+  background: Rgb | null = null,
+): RgbaImage {
+  const { width } = front
+  const rows = Math.min(band, front.height)
+  const below = colorBins(front, rows)
+  const enough = Math.max(1, (front.height - rows) * width * 0.001)
+  const backdrop = (color: Rgb) => background !== null && colorDistance(color, background) <= BACKDROP_MATCH
+  const covered = new Uint8Array(rows * width)
+  for (let i = 0; i < covered.length; i++) {
+    const color = pixel(front, i % width, Math.floor(i / width))
+    if (colorDistance(color, fabric) <= FOREIGN_COLOR) continue
+    if (backdrop(color) || nearbyCount(below, color) < enough) covered[i] = 1
+  }
+  for (let round = 0; round < EDGE_ROUNDS; round++) {
+    const edge: number[] = []
+    for (let i = 0; i < covered.length; i++) {
+      if (covered[i] || colorDistance(pixel(front, i % width, Math.floor(i / width)), fabric) <= FOREIGN_COLOR) continue
+      let next = false
+      forNeighbours(i, width, rows, (j) => {
+        if (covered[j]) next = true
+      })
+      if (next) edge.push(i)
+    }
+    for (const i of edge) covered[i] = 1
+  }
+
+  const data = new Uint8ClampedArray(front.data)
+  for (let i = 0; i < covered.length; i++) {
+    if (covered[i]) data.set(tileAt(swatch, i % width, Math.floor(i / width)), i * 4)
+  }
+  return { data, width, height: front.height }
+}
+
 /**
  * Copies `rect` out of the photo, painting any background inside it so gaps
  * (a shirt's neck opening, the space between trouser legs) don't end up on
@@ -522,8 +645,7 @@ export function cropAndFill(
       } else if (Array.isArray(fill)) {
         data.set(fill, target)
       } else {
-        const tile = (mirrored(y, fill.height) * fill.width + mirrored(x, fill.width)) * 4
-        data.set(fill.data.subarray(tile, tile + 3), target)
+        data.set(tileAt(fill, x, y), target)
       }
       data[target + 3] = 255
     }

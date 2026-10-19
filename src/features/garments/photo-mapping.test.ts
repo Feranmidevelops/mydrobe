@@ -4,6 +4,7 @@ import {
   backdropVariation,
   chooseSwatch,
   coverage,
+  coverNeckOpening,
   cropAndFill,
   erodeMask,
   estimateBackground,
@@ -12,6 +13,7 @@ import {
   garmentMask,
   largestComponent,
   maskBounds,
+  shoulderRow,
   swatchRect,
   tidyMask,
   torsoRect,
@@ -199,6 +201,21 @@ describe('front crop', () => {
     expect(frontCrop('shirt-long-sleeve', mask, 100, bounds)).toEqual(torsoRect(mask, 100, bounds))
   })
 
+  it('starts a top on a hanger just above its shoulders, leaving most of the hanger out', () => {
+    // A tee hanging from a solid hanger that widens from the hook down to the collar.
+    const image = blank(200, 260)
+    for (let y = 20; y < 50; y++) paint(image, { x: 100 - (y - 10), y, width: 2 * (y - 10), height: 1 }, NAVY)
+    paint(image, { x: 75, y: 50, width: 50, height: 12 }, NAVY) // collar, above the shoulders
+    paint(image, { x: 30, y: 62, width: 140, height: 50 }, NAVY) // shoulders and sleeves
+    paint(image, { x: 50, y: 62, width: 100, height: 178 }, NAVY) // body
+    const { mask, bounds } = analyse(image)
+    expect(bounds.y).toBe(20)
+
+    const crop = frontCrop('shirt-short-sleeve', mask, 200, bounds)
+    expect(shoulderRow(mask, 200, bounds, 100)).toBe(62)
+    expect(crop).toEqual({ x: 50, y: 48, width: 100, height: 192 })
+  })
+
   it('takes the whole of a pair of trousers', () => {
     const { mask, bounds } = analyse(trousersPhoto())
     expect(frontCrop('trousers-straight', mask, 100, bounds)).toEqual(bounds)
@@ -241,6 +258,71 @@ describe('flattenLighting', () => {
     const flat = flattenLighting(image)
     const spread = (pixels: RgbaImage) => colorAt(pixels, 30, 20)[0] - colorAt(pixels, 10, 20)[0]
     expect(Math.abs(spread(flat))).toBeLessThan(spread(image) / 3)
+  })
+})
+
+describe('neck opening', () => {
+  const CREAM: Rgb = [236, 232, 224]
+  const WOOD: Rgb = [150, 100, 60]
+  const LABEL: Rgb = [20, 20, 20]
+
+  it('paints over a hanger and a label, and leaves the chest alone', () => {
+    const front = blank(60, 80, CREAM)
+    paint(front, { x: 20, y: 0, width: 20, height: 6 }, WOOD)
+    paint(front, { x: 26, y: 6, width: 8, height: 4 }, LABEL)
+    paint(front, { x: 10, y: 50, width: 10, height: 10 }, NAVY)
+    const covered = coverNeckOpening(front, 12, blank(16, 16, CREAM), CREAM)
+
+    expect(colorAt(covered, 30, 2)).toEqual(CREAM)
+    expect(colorAt(covered, 30, 8)).toEqual(CREAM)
+    expect(colorAt(covered, 15, 55)).toEqual(NAVY)
+  })
+
+  it('keeps colours found lower down the front, like the squares of a check', () => {
+    // The fabric sample happens to be all red, but navy squares run the length of the shirt.
+    const RED: Rgb = [170, 40, 40]
+    const front = blank(60, 80, RED)
+    for (let y = 0; y < 80; y += 20) {
+      for (let x = 0; x < 60; x += 20) paint(front, { x, y, width: 10, height: 10 }, NAVY)
+    }
+    expect(colorAt(coverNeckOpening(front, 12, blank(16, 16, RED), RED), 5, 5)).toEqual(NAVY)
+  })
+
+  it('paints over the backdrop showing through, even when a print lower down shares its colour', () => {
+    const BLACK: Rgb = [20, 20, 20]
+    const front = blank(60, 80, BLACK)
+    paint(front, { x: 22, y: 2, width: 16, height: 6 }, WHITE)
+    paint(front, { x: 10, y: 40, width: 40, height: 20 }, WHITE)
+    const covered = coverNeckOpening(front, 12, blank(16, 16, BLACK), BLACK, WHITE)
+    expect(colorAt(covered, 30, 4)).toEqual(BLACK)
+    expect(colorAt(covered, 30, 50)).toEqual(WHITE)
+  })
+
+  it('takes the soft edge around a hanger with it, but leaves the same colour elsewhere', () => {
+    const BLACK: Rgb = [20, 20, 20]
+    const EDGE: Rgb = [130, 120, 110]
+    const front = blank(60, 80, BLACK)
+    // Backdrop through the neck, ringed by a pixel of blended edge.
+    paint(front, { x: 19, y: 1, width: 22, height: 8 }, EDGE)
+    paint(front, { x: 20, y: 2, width: 20, height: 6 }, WHITE)
+    paint(front, { x: 4, y: 4, width: 1, height: 1 }, EDGE)
+    // A print lower down with the same blended edge, so that colour is the shirt's own.
+    paint(front, { x: 9, y: 39, width: 42, height: 22 }, EDGE)
+    paint(front, { x: 10, y: 40, width: 40, height: 20 }, WHITE)
+    const covered = coverNeckOpening(front, 12, blank(16, 16, BLACK), BLACK, WHITE)
+
+    expect(colorAt(covered, 19, 5)).toEqual(BLACK)
+    expect(colorAt(covered, 30, 1)).toEqual(BLACK)
+    expect(colorAt(covered, 4, 4)).toEqual(EDGE)
+  })
+
+  it('keeps a collar in a contrasting colour, whose front dips lower', () => {
+    const front = blank(60, 80, CREAM)
+    paint(front, { x: 18, y: 0, width: 24, height: 4 }, NAVY)
+    paint(front, { x: 18, y: 0, width: 4, height: 16 }, NAVY)
+    paint(front, { x: 38, y: 0, width: 4, height: 16 }, NAVY)
+    paint(front, { x: 18, y: 12, width: 24, height: 4 }, NAVY)
+    expect(colorAt(coverNeckOpening(front, 12, blank(16, 16, CREAM), CREAM), 30, 2)).toEqual(NAVY)
   })
 })
 
