@@ -270,19 +270,24 @@ export function textureBarrier(image: RgbaImage, inRange: Uint8Array, tolerance:
   const texture = textureMap(image)
   const near = nearGarmentColors(image, inRange, Math.max(1, Math.round(Math.max(width, height) * BARRIER_REACH)))
   // Samples of the backdrop's own texture: backdrop-coloured pixels away from
-  // the garment, and round the photo's edges (all there is when a busy
-  // backdrop strays out of its own colour range everywhere). The busier wins.
+  // the garment, and round the photo's edges. The busier sample wins. At the
+  // edges, a garment running off the photo is near its own colours, so only
+  // the rest of the edge counts, unless that leaves too little (a busy
+  // backdrop straying out of its own colour range everywhere).
   const band = Math.max(2, Math.round(Math.min(width, height) * 0.02))
   const away: number[] = []
   const edges: number[] = []
+  const edgesNearGarment: number[] = []
   for (let i = 0; i < total; i += 7) {
     if (!inRange[i] || data[i * 4 + 3] < 128) continue
     const x = i % width
     const y = (i - x) / width
+    const atEdge = x < band || y < band || x >= width - band || y >= height - band
     if (!near[i]) away.push(texture[i])
-    if (x < band || y < band || x >= width - band || y >= height - band) edges.push(texture[i])
+    if (atEdge) (near[i] ? edgesNearGarment : edges).push(texture[i])
   }
-  const own = Math.max(percentile(away, 0.95), percentile(edges, 0.95))
+  const edgeSample = edges.length >= 50 ? edges : [...edges, ...edgesNearGarment]
+  const own = Math.max(percentile(away, 0.95), percentile(edgeSample, 0.95))
   // A low tolerance tightens the barrier, but never so far that the backdrop's own texture holds it back.
   const slack = tolerance / DEFAULT_BACKGROUND_TOLERANCE
   const limit = Math.max(BARRIER_FLOOR * slack, BARRIER_FACTOR * own * Math.max(1, slack))

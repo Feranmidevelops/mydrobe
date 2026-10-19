@@ -247,6 +247,14 @@ describe('the texture barrier', () => {
     expect(bounds.width).toBeLessThanOrEqual(121)
   })
 
+  it('still holds when the check runs off the edge of the photo', () => {
+    const image = blank(240, 240, [4, 4, 4])
+    const rect = { x: 60, y: 30, width: 180, height: 180 }
+    paintCheck(image, rect)
+    const mask = garmentMask(image, estimateBackground(image))
+    expect(coverage(mask, 240, rect)).toBeGreaterThan(0.95)
+  })
+
   it('stays by the garment, and loosens as the tolerance rises', () => {
     const { image, rect } = checkOnBlack()
     let farthest = 0
