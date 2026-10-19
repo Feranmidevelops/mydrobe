@@ -164,6 +164,37 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
     },
   )
 
+  it('runs the sleeve fabric on over the shoulder cap, unstretched and the same way round', () => {
+    const rings = sleeveRings(shape, 'short')
+    const top = rings[rings.length - 1]
+    const cap = shoulderCap(shape, 1, top)
+    const position = cap.getAttribute('position')
+    const uv = cap.getAttribute('uv')
+    const toArm = limbTransform(shape.arm, 1).invert()
+    const radius = (top.rx + top.rz) / 2
+    // The dome is a grid of 9 rings of 25 points, from its top down to its rim.
+    const at = (ring: number, point: number) => ring * 25 + point
+    const where = (i: number) => new Vector3().fromBufferAttribute(position, i)
+
+    for (let ring = 0; ring < 8; ring++) {
+      for (let point = 0; point < 25; point += 3) {
+        // Up and down the dome, the fabric moves as far as the surface does.
+        const [a, b] = [at(ring, point), at(ring + 1, point)]
+        const across = where(a).distanceTo(where(b))
+        expect(Math.abs(uv.getY(a) - uv.getY(b)) / across).toBeGreaterThan(0.9)
+        expect(Math.abs(uv.getY(a) - uv.getY(b)) / across).toBeLessThan(1.1)
+      }
+    }
+    for (let point = 1; point < 24; point++) {
+      // Round the rim, the fabric sits where the sleeve's own does: the right arm's seam faces the body.
+      const local = where(at(8, point)).applyMatrix4(toArm)
+      let theta = Math.atan2(local.z / top.rz, local.x / top.rx)
+      while (theta < Math.PI) theta += Math.PI * 2
+      expect(uv.getX(at(8, point))).toBeCloseTo(theta * radius, 4)
+      expect(uv.getY(at(8, point))).toBeCloseTo(top.y, 6)
+    }
+  })
+
   it.each(['long', 'short'] as const)('lets a %s-sleeve shirt hem hang over the trouser legs', (sleeve) => {
     // Untucked shirts must stay outside the trousers where the two overlap.
     const hemY = SHIRT_HEM_Y[sleeve]

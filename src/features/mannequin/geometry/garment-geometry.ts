@@ -127,17 +127,39 @@ export function sleeveRings(shape: BodyShape, sleeve: 'long' | 'short'): Ring[] 
   })
 }
 
+/** Distance over a quarter ellipse of half-width `r` and height `h`, from its rim up to `elevation`. */
+function arcUp(r: number, h: number, elevation: number) {
+  const STEPS = 16
+  let length = 0
+  for (let i = 0; i < STEPS; i++) {
+    const t = ((i + 0.5) / STEPS) * elevation
+    length += Math.hypot(r * Math.sin(t), h * Math.cos(t)) * (elevation / STEPS)
+  }
+  return length
+}
+
 /**
  * A shirt's cap over one shoulder: a dome on top of the sleeve, tilted with
  * the arm and sharing the sleeve's opening, so the two meet without a ledge.
- * `sleeveTop` is the sleeve's top ring, in the arm's own frame.
+ * Its fabric runs on from the sleeve's: the same way round the arm, from the
+ * same seam, and measured over the dome in metres, so a check or stripe
+ * carries on across the join unstretched. `sleeveTop` is the sleeve's top
+ * ring, in the arm's own frame.
  */
 export function shoulderCap(shape: BodyShape, side: Side, sleeveTop: Ring): BufferGeometry {
   const height = shape.shoulderRadius * SHOULDER_SQUASH + SHOULDER_TOP_EASE
-  const dome = new SphereGeometry(1, 24, 8, 0, Math.PI * 2, 0, Math.PI / 2)
+  const seam = seamTowardsBody(side)
+  // The sphere's own seam is turned to lie along the sleeve's.
+  const dome = new SphereGeometry(1, 24, 8, Math.PI - seam, Math.PI * 2, 0, Math.PI / 2)
+  const position = dome.getAttribute('position')
   const uv = dome.getAttribute('uv')
-  const around = Math.PI * (sleeveTop.rx + sleeveTop.rz)
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * around, uv.getY(i) * height)
+  const radius = (sleeveTop.rx + sleeveTop.rz) / 2
+  for (let i = 0; i < uv.count; i++) {
+    // The angle round the arm the sleeve's loft would give this point.
+    const theta = seam + Math.PI * 2 * (1 - uv.getX(i))
+    const elevation = Math.asin(Math.min(1, position.getY(i)))
+    uv.setXY(i, theta * radius, sleeveTop.y + arcUp(radius, height, elevation))
+  }
   return dome
     .scale(sleeveTop.rx, height, sleeveTop.rz)
     .translate(sleeveTop.cx ?? 0, sleeveTop.y, sleeveTop.cz ?? 0)
