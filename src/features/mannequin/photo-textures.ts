@@ -24,20 +24,35 @@ function drawScaled(source: HTMLCanvasElement, width: number, height: number) {
   return canvas
 }
 
+/** A width and height, in photo pixels for the crop and in metres for the front panel. */
+interface Size {
+  width: number
+  height: number
+}
+
 /**
  * How a fabric tile repeats on the mannequin, whose fabric is laid out in
- * metres: plainly for a whole repeat of a pattern, mirrored for a plain
- * sample (which hides its edges), and as many times per metre as it fits at
- * the scale it had in the photo, taking the crop's width as the panel's.
+ * metres. A plain sample is mirrored, which hides its edges, at the scale the
+ * crop's width had on the panel, as it always was.
+ *
+ * A whole repeat of a pattern wraps plainly, at the scale the front panel
+ * shows the photo across and down, so its checks are the same size front and
+ * back. It's also turned over left to right: round the back and sleeves the
+ * fabric's coordinates run the other way to the front's, which mirrored
+ * tiling never showed, but a plaid or houndstooth would read backwards.
  */
 export function tileRepeat(
   tile: Pick<FabricTile, 'width' | 'height' | 'wrap'>,
-  cropWidth: number,
-  panelWidth: number,
+  crop: Size,
+  panel: Size,
 ): { wrap: Wrapping; repeat: [number, number] } {
+  if (tile.wrap !== 'repeat') {
+    const perMetre = crop.width / (tile.width * panel.width)
+    return { wrap: MirroredRepeatWrapping, repeat: [perMetre, crop.width / (tile.height * panel.width)] }
+  }
   return {
-    wrap: tile.wrap === 'repeat' ? RepeatWrapping : MirroredRepeatWrapping,
-    repeat: [cropWidth / (tile.width * panelWidth), cropWidth / (tile.height * panelWidth)],
+    wrap: RepeatWrapping,
+    repeat: [-crop.width / (tile.width * panel.width), crop.height / (tile.height * panel.height)],
   }
 }
 
@@ -65,7 +80,7 @@ export function photoTextures(analysis: PhotoAnalysis, panel: FrontPanel): Garme
       ? pixelsToCanvas(resampleTile(tile.pixels, SWATCH_PX, 'repeat'))
       : drawScaled(pixelsToCanvas(tile.pixels), SWATCH_PX, SWATCH_PX),
   )
-  const { wrap, repeat } = tileRepeat(tile, analysis.crop.width, panelWidth)
+  const { wrap, repeat } = tileRepeat(tile, analysis.crop, { width: panelWidth, height: panel.maxY - panel.minY })
   swatch.colorSpace = SRGBColorSpace
   swatch.anisotropy = 8
   swatch.wrapS = wrap
