@@ -10,6 +10,7 @@ import {
   DEFAULT_BACKGROUND_TOLERANCE,
   erodeMask,
   estimateBackground,
+  evenTileBrightness,
   flattenLighting,
   frontCrop,
   garmentMask,
@@ -103,7 +104,8 @@ export function analyseGarmentPhoto(
   const swatch = chooseSwatch(templateId, image, solid, crop)
   const fabric = averageColor(image, solid, swatch)
   const swatchPixels = flattenLighting(cropAndFill(image, solid, swatch, fabric))
-  const tile: FabricTile = fabricRepeat(templateId, image, solid, crop, swatch) ?? {
+  const repeat = fabricRepeat(templateId, image, solid, crop, swatch)
+  const tile: FabricTile = (repeat && evenTileBrightness(repeat, image, solid)) ?? {
     pixels: swatchPixels,
     width: swatch.width,
     height: swatch.height,

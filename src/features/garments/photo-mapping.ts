@@ -808,6 +808,64 @@ function tileAt(fill: RgbaImage | FabricTile, x: number, y: number, photoX = x, 
     : texel(pixels, mirrored(sx, pixels.width), mirrored(sy, pixels.height))
 }
 
+/** An sRGB channel value (0 to 255) as linear light (0 to 1). */
+function toLinear(value: number) {
+  const v = value / 255
+  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+}
+
+/** Linear light (0 to 1) as an sRGB channel value (0 to 255). */
+function toSrgb(value: number) {
+  const v = Math.min(1, Math.max(0, value))
+  return 255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055)
+}
+
+/** How bright the pixel at offset `i` of `data` is, in linear light. */
+function luminanceAt(data: Uint8ClampedArray, i: number) {
+  return 0.2126 * toLinear(data[i]) + 0.7152 * toLinear(data[i + 1]) + 0.0722 * toLinear(data[i + 2])
+}
+
+/** The most a tile's brightness is changed by, either way, so a poor reading can't wash it out. */
+const MOST_BRIGHTER = 1.5
+
+/**
+ * Evens a tile of the fabric's repeat to the brightness of the photo it was
+ * cut from, so the back and sleeves are as light as the front. Folding the
+ * repeats together and taking out their shading can leave a tile a little
+ * darker (fine stripes came out about a tenth darker). One factor is used for
+ * every channel, in linear light, so the colours don't shift. Anything else
+ * comes back as it is.
+ */
+export function evenTileBrightness(tile: FabricTile, image: RgbaImage, mask: Uint8Array): FabricTile {
+  if (tile.wrap !== 'repeat' || !tile.placement) return tile
+  const { origin, u, v } = tile.placement
+  const STEPS = 48
+  let photo = 0
+  let count = 0
+  for (let a = 0; a < STEPS; a++) {
+    for (let b = 0; b < STEPS; b++) {
+      const [s, t] = [(a + 0.5) / STEPS, (b + 0.5) / STEPS]
+      const x = Math.round(origin[0] + s * u[0] + t * v[0])
+      const y = Math.round(origin[1] + s * u[1] + t * v[1])
+      if (x < 0 || y < 0 || x >= image.width || y >= image.height || !mask[y * image.width + x]) continue
+      photo += luminanceAt(image.data, (y * image.width + x) * 4)
+      count++
+    }
+  }
+  const { data, width, height } = tile.pixels
+  let own = 0
+  for (let i = 0; i < data.length; i += 4) own += luminanceAt(data, i)
+  own /= data.length / 4
+  if (count < (STEPS * STEPS) / 2 || own <= 0) return tile
+  const gain = Math.min(MOST_BRIGHTER, Math.max(1 / MOST_BRIGHTER, photo / count / own))
+  const evened = new Uint8ClampedArray(data.length)
+  for (let i = 0; i < data.length; i += 4) {
+    for (let channel = 0; channel < 3; channel++) evened[i + channel] = toSrgb(toLinear(data[i + channel]) * gain)
+    evened[i + 3] = data[i + 3]
+  }
+  return { ...tile, pixels: { data: evened, width, height } }
+}
+
 /**
  * Resizes a fabric tile to `size` x `size` by bilinear filtering that wraps
  * round its edges the way the tile will repeat, so no seam line appears where

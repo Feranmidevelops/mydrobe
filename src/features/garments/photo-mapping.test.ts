@@ -10,6 +10,7 @@ import {
   dilateMask,
   erodeMask,
   estimateBackground,
+  evenTileBrightness,
   flattenLighting,
   frontCrop,
   garmentMask,
@@ -608,6 +609,23 @@ describe('fabric tiles', () => {
     const filled = cropAndFill(image, new Uint8Array(40 * 40), { x: 0, y: 0, width: 40, height: 40 }, lattice)
     expect(colorAt(filled, 21, 28)).toEqual([10, 10, 0])
     expect(colorAt(filled, 9, 19)).toEqual([30, 20, 0])
+  })
+
+  it('evens a repeat to the brightness of the photo it came from, without shifting its colours', () => {
+    // A mid-grey photo, and a tile of it that came out darker.
+    const image = blank(40, 40, [128, 128, 128])
+    const mask = new Uint8Array(40 * 40).fill(1)
+    const dark: FabricTile = { ...lattice, pixels: blank(4, 3, [115, 115, 115]) }
+    const evened = evenTileBrightness(dark, image, mask)
+    const [r, g, b] = colorAt(evened.pixels, 1, 1)
+    expect(Math.abs(r - 128)).toBeLessThanOrEqual(1)
+    expect([g, b]).toEqual([r, r])
+    expect(evened.placement).toBe(dark.placement)
+  })
+
+  it('leaves the plain sample as it is', () => {
+    const plain: FabricTile = { pixels: blank(4, 4, [100, 100, 100]), width: 4, height: 4, wrap: 'mirror' }
+    expect(evenTileBrightness(plain, blank(40, 40), new Uint8Array(40 * 40).fill(1))).toBe(plain)
   })
 
   it('paints the neck opening in step with the photo too', () => {
