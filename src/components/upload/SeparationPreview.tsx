@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { PhotoAnalysis } from '../../features/garments/photo-analysis'
 import type { Rgb } from '../../features/garments/photo-mapping'
-import { fadeBackground } from '../../features/garments/upload-review'
+import { fabricOutline, fadeBackground } from '../../features/garments/upload-review'
 
 /** Brand cream, tan and espresso, as on the rest of the page. */
 const FADE_TINT: Rgb = [246, 241, 236]
@@ -9,8 +9,8 @@ const FRONT_COLOR = '#835d3e'
 const FABRIC_COLOR = '#4a2d1f'
 
 interface SeparationPreviewProps {
-  analysis: Pick<PhotoAnalysis, 'image' | 'mask' | 'crop' | 'swatch'>
-  /** Outline the front and fabric sample used on the mannequin; off for pieces shown in 2D only. */
+  analysis: Pick<PhotoAnalysis, 'image' | 'mask' | 'crop' | 'swatch' | 'tile'>
+  /** Outline the front and the fabric used on the mannequin; off for pieces shown in 2D only. */
   showMapping: boolean
   className?: string
 }
@@ -24,7 +24,7 @@ export function SeparationPreview({ analysis, showMapping, className }: Separati
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
 
-    const { image, mask, crop, swatch } = analysis
+    const { image, mask, crop } = analysis
     canvas.width = image.width
     canvas.height = image.height
     const pixels = new ImageData(image.width, image.height)
@@ -39,7 +39,10 @@ export function SeparationPreview({ analysis, showMapping, className }: Separati
     ctx.strokeRect(crop.x, crop.y, crop.width, crop.height)
     ctx.setLineDash([])
     ctx.strokeStyle = FABRIC_COLOR
-    ctx.strokeRect(swatch.x, swatch.y, swatch.width, swatch.height)
+    ctx.beginPath()
+    for (const [x, y] of fabricOutline(analysis)) ctx.lineTo(x, y)
+    ctx.closePath()
+    ctx.stroke()
   }, [analysis, showMapping])
 
   return (
