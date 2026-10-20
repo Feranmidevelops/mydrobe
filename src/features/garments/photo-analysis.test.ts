@@ -25,6 +25,9 @@ describe('analyseGarmentPhoto', () => {
     expect(analysis.palette).toEqual([[150, 40, 40]])
     expect(analysis.front.width).toBe(40)
     expect(analysis.swatchPixels.width).toBe(analysis.swatch.width)
+    // A plain fabric tiles its sample, mirrored, at the sample's own size.
+    expect(analysis.tile).toEqual({ pixels: analysis.swatchPixels, width: 40 * 0.2, height: 40 * 0.2, wrap: 'mirror' })
+    expect(analysis.tile.pixels).toBe(analysis.swatchPixels)
   })
 
   it('keeps a wooden hanger off the front of a tee', () => {

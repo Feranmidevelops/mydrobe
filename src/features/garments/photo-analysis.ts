@@ -1,5 +1,6 @@
 import { extractPalette } from './garment.colors'
 import type { GarmentTemplateId } from './garment.types'
+import { latticeTile, type FabricTile } from './pattern-tile'
 import {
   averageColor,
   chooseSwatch,
@@ -35,7 +36,7 @@ export interface PhotoAnalysis {
   bounds: Rect
   /** Part of the photo projected onto the template's front. */
   crop: Rect
-  /** Fabric sample tiled over the back and sleeves. */
+  /** The plain fabric sample, also where the tile below is looked for. */
   swatch: Rect
   fabric: Rgb
   /** Share of the crop that is garment rather than background. */
@@ -43,7 +44,13 @@ export interface PhotoAnalysis {
   /** The garment's main colours, most common first. */
   palette: Rgb[]
   front: RgbaImage
+  /** The plain fabric sample's pixels, evened out. The same object as `tile.pixels` when no repeat was found. */
   swatchPixels: RgbaImage
+  /**
+   * What tiles over the back, sleeves, collar and caps: one repeat of a
+   * check, plaid or stripe, or else the plain sample, mirrored.
+   */
+  tile: FabricTile
 }
 
 export function analyseGarmentPhoto(
@@ -64,12 +71,18 @@ export function analyseGarmentPhoto(
   const swatch = chooseSwatch(templateId, image, solid, crop)
   const fabric = averageColor(image, solid, swatch)
   const swatchPixels = flattenLighting(cropAndFill(image, solid, swatch, fabric))
-  // Gaps in the front take the tiled fabric sample, so patterns carry on.
-  const filled = cropAndFill(image, solid, crop, swatchPixels)
+  const tile: FabricTile = latticeTile(image, solid, crop, swatch) ?? {
+    pixels: swatchPixels,
+    width: swatch.width,
+    height: swatch.height,
+    wrap: 'mirror',
+  }
+  // Gaps in the front take the tiled fabric, so patterns carry on through them.
+  const filled = cropAndFill(image, solid, crop, tile)
   const front =
     templateId === 'trousers-straight'
       ? filled
-      : coverNeckOpening(filled, neckBand(mask, image.width, bounds, crop), swatchPixels, fabric, background)
+      : coverNeckOpening(filled, neckBand(mask, image.width, bounds, crop), tile, fabric, background, [crop.x, crop.y])
   return {
     image,
     mask,
@@ -82,5 +95,6 @@ export function analyseGarmentPhoto(
     palette: extractPalette(image, solid, bounds),
     front,
     swatchPixels,
+    tile,
   }
 }
