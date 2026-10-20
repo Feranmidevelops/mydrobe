@@ -60,13 +60,17 @@ function legAround(crop: Rect, swatch: Rect): Rect {
   return { x: onLeft ? crop.x : crop.x + crop.width - width, y: crop.y, width, height: crop.height }
 }
 
+/** Stripes at least this far apart (photo pixels) on trousers may really be a check, read across both legs. */
+const COARSE_STRIPES = 30
+
 /**
  * A tile of the fabric's repeat, if it has one (see latticeTile). Tidying the
  * mask fills in the gap between a pair of trousers' legs, and that band of
- * plain backdrop can make a check read as stripes. So when trousers come out
- * as stripes, the leg the plain sample came from is searched on its own as
- * well, and a check found there wins. The whole crop goes first, as one leg
- * is too narrow to hold a large check's repeat.
+ * plain backdrop can make a check read as broad stripes, a check's width
+ * apart. So when trousers come out as broad stripes, the leg the plain sample
+ * came from is searched on its own as well, and a check found there wins.
+ * Pinstripes are left alone. The whole crop goes first, as one leg is too
+ * narrow to hold a large check's repeat.
  */
 export function fabricRepeat(
   templateId: GarmentTemplateId,
@@ -76,7 +80,7 @@ export function fabricRepeat(
   swatch: Rect,
 ): FabricTile | null {
   const tile = latticeTile(image, solid, crop, swatch)
-  if (templateId !== 'trousers-straight' || !tile?.stripes) return tile
+  if (templateId !== 'trousers-straight' || !tile?.stripes || tile.stripes < COARSE_STRIPES) return tile
   const inLeg = latticeTile(image, solid, legAround(crop, swatch), swatch)
   return inLeg && !inLeg.stripes ? inLeg : tile
 }

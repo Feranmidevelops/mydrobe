@@ -30,8 +30,8 @@ export interface FabricTile {
   wrap: 'repeat' | 'mirror'
   /** For a repeat tile: where its corner sat in the photo, and the photo vectors its edges span. */
   placement?: { origin: Vec; u: Vec; v: Vec }
-  /** True for stripes, which repeat one way only, rather than a check, plaid or other grid. */
-  stripes?: boolean
+  /** For stripes, which repeat one way only rather than as a check or plaid does: how far apart they are, in photo pixels. */
+  stripes?: number
 }
 
 /**
@@ -2386,6 +2386,6 @@ function verify(source: Source, found: Found, detectWin: Rect, scale: number, as
     height: lengthOf(V) * rv,
     wrap: 'repeat',
     placement: { origin: [origin[0] + rx, origin[1] + ry], u: scaled(U, ru), v: scaled(V, rv) },
-    stripes,
+    ...(stripes ? { stripes: lengthOf(vertical ? u : v) } : {}),
   }
 }
