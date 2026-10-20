@@ -15,6 +15,7 @@ import {
   garmentMask,
   largestComponent,
   maskBounds,
+  resampleTile,
   shoulderRow,
   swatchRect,
   textureBarrier,
@@ -25,6 +26,7 @@ import {
   type RgbaImage,
   type Rgb,
 } from './photo-mapping'
+import type { FabricTile } from './pattern-tile'
 
 const WHITE: Rgb = [255, 255, 255]
 const NAVY: Rgb = [36, 55, 94]
@@ -564,5 +566,54 @@ describe('filling the background inside the crop', () => {
   it('reports how much of the crop is garment', () => {
     const { mask, bounds } = analyse(trousersPhoto())
     expect(coverage(mask, 100, bounds)).toBeCloseTo((40 * 15 + 2 * 15 * 65) / (40 * 80), 5)
+  })
+})
+
+describe('fabric tiles', () => {
+  /** A tile whose texel (x, y) is coloured [10x, 10y, 0], so a test can tell which texel landed where. */
+  function numberedTile(width: number, height: number): RgbaImage {
+    const data = new Uint8ClampedArray(width * height * 4)
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) data.set([10 * x, 10 * y, 0, 255], (y * width + x) * 4)
+    }
+    return { data, width, height }
+  }
+
+  const lattice: FabricTile = {
+    pixels: numberedTile(4, 3),
+    width: 8,
+    height: 6,
+    wrap: 'repeat',
+    placement: { origin: [10, 20], u: [8, 0], v: [0, 6] },
+  }
+
+  it('resizes a tile round its own edges, the way it will repeat', () => {
+    const grey = { data: new Uint8ClampedArray([0, 0, 0, 255, 90, 90, 90, 255, 180, 180, 180, 255]), width: 3, height: 1 }
+    const repeat = resampleTile(grey, 6, 'repeat')
+    const mirror = resampleTile(grey, 6, 'mirror')
+    expect([colorAt(repeat, 0, 0)[0], colorAt(repeat, 5, 0)[0]]).toEqual([45, 135])
+    expect([colorAt(mirror, 0, 0)[0], colorAt(mirror, 5, 0)[0]]).toEqual([0, 180])
+  })
+
+  it('fills just as before with the plain sample', () => {
+    const image = trousersPhoto()
+    const { mask, bounds } = analyse(image)
+    const swatchPixels = numberedTile(5, 5)
+    const tile: FabricTile = { pixels: swatchPixels, width: 5, height: 5, wrap: 'mirror' }
+    expect(cropAndFill(image, mask, bounds, tile)).toEqual(cropAndFill(image, mask, bounds, swatchPixels))
+  })
+
+  it('lays a repeat in step with the photo it came from', () => {
+    const image = blank(40, 40)
+    const filled = cropAndFill(image, new Uint8Array(40 * 40), { x: 0, y: 0, width: 40, height: 40 }, lattice)
+    expect(colorAt(filled, 21, 28)).toEqual([10, 10, 0])
+    expect(colorAt(filled, 9, 19)).toEqual([30, 20, 0])
+  })
+
+  it('paints the neck opening in step with the photo too', () => {
+    const WOOD: Rgb = [150, 100, 60]
+    const covered = coverNeckOpening(blank(20, 10, WOOD), 10, lattice, [236, 232, 224], null, [5, 7])
+    // Front pixel (4, 3) is photo pixel (9, 10), which is texel (3, 1) of the repeat.
+    expect(colorAt(covered, 4, 3)).toEqual([30, 10, 0])
   })
 })

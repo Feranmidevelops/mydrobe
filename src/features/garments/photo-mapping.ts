@@ -1,4 +1,5 @@
 import type { GarmentTemplateId } from './garment.types'
+import type { FabricTile } from './pattern-tile'
 
 /*
  * Turning a garment photo into textures for a template, step by step:
@@ -768,10 +769,74 @@ function mirrored(i: number, length: number) {
   return wrapped < length ? wrapped : period - 1 - wrapped
 }
 
-/** The tiled fabric sample's colour at (x, y). */
-function tileAt(fill: RgbaImage, x: number, y: number) {
-  const tile = (mirrored(y, fill.height) * fill.width + mirrored(x, fill.width)) * 4
-  return fill.data.subarray(tile, tile + 3)
+/** The colour of texel (x, y) of `pixels`. */
+function texel(pixels: RgbaImage, x: number, y: number) {
+  const i = (y * pixels.width + x) * 4
+  return pixels.data.subarray(i, i + 3)
+}
+
+/** The fractional part of `value`, from 0 up to (not including) 1, for negative values too. */
+function fraction(value: number) {
+  return value - Math.floor(value)
+}
+
+/**
+ * The tiled fabric's colour at (x, y) of the area being filled, which sits at
+ * (photoX, photoY) in the photo. A tile of the fabric's repeat that knows
+ * where it came from is laid in step with the photo, so a check carries on
+ * through a gap; anything else repeats from the area's corner, mirrored
+ * unless it's a seamless repeat.
+ */
+function tileAt(fill: RgbaImage | FabricTile, x: number, y: number, photoX = x, photoY = y) {
+  if (!('wrap' in fill)) return texel(fill, mirrored(x, fill.width), mirrored(y, fill.height))
+  const { pixels } = fill
+  if (fill.wrap === 'repeat' && fill.placement) {
+    const { origin, u, v } = fill.placement
+    const dx = photoX - origin[0]
+    const dy = photoY - origin[1]
+    const det = u[0] * v[1] - u[1] * v[0]
+    const s = fraction((dx * v[1] - dy * v[0]) / det)
+    const t = fraction((u[0] * dy - u[1] * dx) / det)
+    // A hair over, so a point on a texel's edge doesn't round down into the one before it.
+    const at = (share: number, length: number) => Math.min(length - 1, Math.floor(share * length + 1e-9))
+    return texel(pixels, at(s, pixels.width), at(t, pixels.height))
+  }
+  const sx = Math.floor((x * pixels.width) / fill.width)
+  const sy = Math.floor((y * pixels.height) / fill.height)
+  return fill.wrap === 'repeat'
+    ? texel(pixels, ((sx % pixels.width) + pixels.width) % pixels.width, ((sy % pixels.height) + pixels.height) % pixels.height)
+    : texel(pixels, mirrored(sx, pixels.width), mirrored(sy, pixels.height))
+}
+
+/**
+ * Resizes a fabric tile to `size` x `size` by bilinear filtering that wraps
+ * round its edges the way the tile will repeat, so no seam line appears where
+ * one copy meets the next (a canvas resize clamps at the edges instead).
+ */
+export function resampleTile(pixels: RgbaImage, size: number, wrap: 'repeat' | 'mirror'): RgbaImage {
+  const { width, height } = pixels
+  const index = (i: number, length: number) => (wrap === 'repeat' ? ((i % length) + length) % length : mirrored(i, length))
+  const data = new Uint8ClampedArray(size * size * 4)
+  for (let y = 0; y < size; y++) {
+    const fy = ((y + 0.5) * height) / size - 0.5
+    const y0 = Math.floor(fy)
+    const ty = fy - y0
+    const [top, bottom] = [index(y0, height), index(y0 + 1, height)]
+    for (let x = 0; x < size; x++) {
+      const fx = ((x + 0.5) * width) / size - 0.5
+      const x0 = Math.floor(fx)
+      const tx = fx - x0
+      const [left, right] = [index(x0, width), index(x0 + 1, width)]
+      for (let channel = 0; channel < 3; channel++) {
+        const at = (column: number, row: number) => pixels.data[(row * width + column) * 4 + channel]
+        const upper = at(left, top) * (1 - tx) + at(right, top) * tx
+        const lower = at(left, bottom) * (1 - tx) + at(right, bottom) * tx
+        data[(y * size + x) * 4 + channel] = upper * (1 - ty) + lower * ty
+      }
+      data[(y * size + x) * 4 + 3] = 255
+    }
+  }
+  return { data, width: size, height: size }
 }
 
 /** The smallest colour difference that can count as "not the fabric". */
@@ -826,13 +891,16 @@ const EDGE_ROUNDS = 2
  * down the front, so the squares of a check, a stripe and a contrasting
  * collar (whose front dips lower) stay as photographed. The soft edge around
  * whatever is painted over goes too, so no outline of a hanger is left.
+ * `offset` is where the front sits in the photo, so a tile of the fabric's
+ * repeat paints in step with the check around it.
  */
 export function coverNeckOpening(
   front: RgbaImage,
   band: number,
-  swatch: RgbaImage,
+  swatch: RgbaImage | FabricTile,
   fabric: Rgb,
   background: Rgb | null = null,
+  offset: [number, number] = [0, 0],
 ): RgbaImage {
   const { width } = front
   const rows = Math.min(band, front.height)
@@ -860,7 +928,9 @@ export function coverNeckOpening(
 
   const data = new Uint8ClampedArray(front.data)
   for (let i = 0; i < covered.length; i++) {
-    if (covered[i]) data.set(tileAt(swatch, i % width, Math.floor(i / width)), i * 4)
+    if (!covered[i]) continue
+    const [x, y] = [i % width, Math.floor(i / width)]
+    data.set(tileAt(swatch, x, y, offset[0] + x, offset[1] + y), i * 4)
   }
   return { data, width, height: front.height }
 }
@@ -868,14 +938,14 @@ export function coverNeckOpening(
 /**
  * Copies `rect` out of the photo, painting any background inside it so gaps
  * (a shirt's neck opening, the space between trouser legs) don't end up on
- * the mannequin. `fill` is either a flat colour or a fabric sample, which is
- * tiled so a pattern carries on through the gap.
+ * the mannequin. `fill` is either a flat colour or a fabric sample or tile,
+ * which is tiled so a pattern carries on through the gap.
  */
 export function cropAndFill(
   image: RgbaImage,
   mask: Uint8Array,
   rect: Rect,
-  fill: Rgb | RgbaImage,
+  fill: Rgb | RgbaImage | FabricTile,
 ): RgbaImage {
   const data = new Uint8ClampedArray(rect.width * rect.height * 4)
   for (let y = 0; y < rect.height; y++) {
@@ -887,7 +957,7 @@ export function cropAndFill(
       } else if (Array.isArray(fill)) {
         data.set(fill, target)
       } else {
-        data.set(tileAt(fill, x, y), target)
+        data.set(tileAt(fill, x, y, rect.x + x, rect.y + y), target)
       }
       data[target + 3] = 255
     }
