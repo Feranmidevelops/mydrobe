@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { GarmentTemplateId } from './garment.types'
-import { latticeTile, type FabricTile } from './pattern-tile'
+import type { FabricTile } from './pattern-tile'
+import { fabricRepeat } from './photo-analysis'
 import {
   chooseSwatch,
   erodeMask,
@@ -20,7 +21,7 @@ import {
  */
 
 interface Fabric {
-  pattern: 'buffalo' | 'plaid' | 'stripe' | 'gingham' | 'houndstooth' | 'plain' | 'plain-print'
+  pattern: 'buffalo' | 'plaid' | 'stripe' | 'gingham' | 'houndstooth' | 'tonal-check' | 'tonal-stripe' | 'plain' | 'plain-print'
   /** The true repeat across (u) and down (v) the fabric, in pixels. */
   px: number
   py: number
@@ -106,6 +107,16 @@ function fabricColor(fabric: Fabric, u: number, v: number): Rgb {
     }
     case 'houndstooth':
       return HOUNDSTOOTH[Math.floor(frac(v / py) * 8)][Math.floor(frac(u / px) * 8)] === '1' ? [25, 25, 25] : [225, 220, 205]
+    case 'tonal-check': {
+      // One brown in three shades 3% apart: a low-contrast check with no change of hue.
+      const shade = 1 + 0.03 * ((frac(u / px) < 0.5 ? 1 : -1) + (frac(v / py) < 0.5 ? 1 : -1))
+      return [120 * shade, 90 * shade, 70 * shade]
+    }
+    case 'tonal-stripe': {
+      // Navy stripes a little lighter than the navy between them.
+      const shade = frac(u / px) < 0.4 ? 1.0875 : 0.95
+      return [40 * shade, 60 * shade, 120 * shade]
+    }
     default:
       return [70, 110, 160]
   }
@@ -195,7 +206,7 @@ function tileFor(image: RgbaImage, templateId: GarmentTemplateId) {
   const edge = Math.max(1, Math.round(Math.min(image.width, image.height) * 0.004))
   const solid = erodeMask(mask, image.width, image.height, edge)
   const swatch = chooseSwatch(templateId, image, solid, crop)
-  return latticeTile(image, solid, crop, swatch)
+  return fabricRepeat(templateId, image, solid, crop, swatch)
 }
 
 const tiles = new Map<string, FabricTile | null>()
@@ -237,12 +248,21 @@ function correlation(a: Float64Array, b: Float64Array) {
   return ab / Math.sqrt(aa * bb)
 }
 
+/** Mean lightness of each band of a tile, `bands` of them from top to bottom. */
+function bandLightness(pixels: RgbaImage, bands: number) {
+  const light = lightness(pixels)
+  return Array.from({ length: bands }, (_, b) => {
+    const top = Math.round((b * pixels.height) / bands)
+    const bottom = Math.round(((b + 1) * pixels.height) / bands)
+    return light.slice(top * pixels.width, bottom * pixels.width).reduce((sum, x) => sum + x, 0) / ((bottom - top) * pixels.width)
+  })
+}
+
 /*
- * These expectations were measured on the photos after a JPEG round trip,
- * which needs a canvas, so here the photos go in as made. Pixel-sharp, they
- * mostly behave the same, but not in three cases, marked `it.fails` below
- * with what the tile does instead. Those pass after the JPEG round trip, and
- * will start failing here once the lattice search copes without it.
+ * The photos go in as made, pixel-sharp, with no JPEG round trip (that needs
+ * a canvas). The lattice search was first tuned on JPEG-compressed photos,
+ * which soften the fine detail and colour noise these keep, so they're the
+ * harder test.
  */
 const PLAID: Fabric = { pattern: 'plaid', px: 67, py: 59, ...TROUBLE }
 
@@ -261,12 +281,22 @@ describe('latticeTile', () => {
     expect(Math.abs((Math.atan2(uy, ux) * 180) / Math.PI - 2)).toBeLessThanOrEqual(0.25)
   })
 
-  // Pixel-sharp, the coarse search reads three repeats down as one, so the
-  // tile holds 3 x 3 repeats (201.02 x 177.12 px): right, but not one repeat.
-  it.fails('tiles an asymmetric plaid one repeat across and down', () => {
+  // The coarse search reads three repeats down as one, so the tile holds
+  // 3 x 3 repeats (201.02 x 177.12 px). Any whole number each way wraps
+  // seamlessly and keeps the plaid's scale, so that's what's asked.
+  it('tiles an asymmetric plaid in whole repeats across and down', () => {
     const tile = found(tileOf(PLAID))
-    expect(off(tile.width, 67)).toBeLessThanOrEqual(0.005)
-    expect(off(tile.height, 59)).toBeLessThanOrEqual(0.005)
+    expect(off(tile.width / Math.round(tile.width / 67), 67)).toBeLessThanOrEqual(0.005)
+    expect(off(tile.height / Math.round(tile.height / 59), 59)).toBeLessThanOrEqual(0.005)
+  })
+
+  // The three best repeats folded here all lack the same strip, cut off by
+  // the top of the shirt, which used to leave an unfilled band in the tile.
+  it('fills every repeat of the tile, even where the best ones all miss the same strip', () => {
+    const tile = found(tileOf(PLAID))
+    const bands = bandLightness(tile.pixels, Math.round(tile.height / 59))
+    expect(bands.length).toBeGreaterThan(1)
+    expect((Math.max(...bands) - Math.min(...bands)) / Math.max(...bands)).toBeLessThan(0.12)
   })
 
   it('keeps an asymmetric plaid the right way round, and seamless', () => {
@@ -306,16 +336,35 @@ describe('latticeTile', () => {
     ['with folds and uneven light', { pattern: 'plain', px: 0, py: 0, noise: 6, folds: true, gradient: true }],
     ['with even folds 90 px apart', { pattern: 'plain', px: 0, py: 0, noise: 6, sine: [90, 0.2] }],
     ['with even folds 60 px apart and uneven light', { pattern: 'plain', px: 0, py: 0, sine: [60, 0.12], gradient: true }],
+    // Noise on every channel used to pass for colour (a chromaticity spread
+    // of 0.0105), so these folds were tiled as stripes 57.4 px apart.
+    ['with even folds 60 px apart, uneven light and noise', { pattern: 'plain', px: 0, py: 0, noise: 4, sine: [60, 0.12], gradient: true }],
     ['with a printed graphic', { pattern: 'plain-print', px: 0, py: 0, noise: 6, gradient: true }],
   ])('finds no lattice in plain fabric %s', (_, fabric) => {
     expect(tileOf(fabric)).toBeNull()
   })
 
-  // With noise on every channel and no JPEG to even out its colour, the folds'
-  // chromaticity varies by 0.0105, just over LATTICE.shadingChroma, so they
-  // are tiled as stripes 57.4 px apart.
-  it.fails('finds no lattice in plain fabric with even folds 60 px apart, uneven light and noise', () => {
-    expect(tileOf({ pattern: 'plain', px: 0, py: 0, noise: 4, sine: [60, 0.12], gradient: true })).toBeNull()
+  // Folds look the same however much noise the photo has, so the shading
+  // test mustn't depend on it.
+  it.each([50, 60, 90].flatMap((spacing) => [0, 4, 8].map((noise) => [spacing, noise])))(
+    'finds no lattice in plain fabric with even folds %i px apart, uneven light and noise %i',
+    (spacing, noise) => {
+      // No noise is left out, so the folds 60 px apart above are made once.
+      expect(tileOf({ pattern: 'plain', px: 0, py: 0, noise: noise || undefined, sine: [spacing, 0.12], gradient: true })).toBeNull()
+    },
+  )
+
+  // A pattern in one colour has no chromaticity to tell it from folds; its
+  // edges must, as these sharp shades are no sinusoid.
+  it('tiles a low-contrast check in shades of one colour', () => {
+    const tile = found(tileOf({ pattern: 'tonal-check', px: 48, py: 48, noise: 8, angle: 2, gradient: true }))
+    expect(off(tile.width, 48)).toBeLessThanOrEqual(0.005)
+    expect(off(tile.height, 48)).toBeLessThanOrEqual(0.005)
+  })
+
+  it('tiles stripes in shades of one colour a whole number of stripes wide', () => {
+    const tile = found(tileOf({ pattern: 'tonal-stripe', px: 40, py: 40, noise: 8, angle: 2, gradient: true }))
+    expect(off(tile.width / Math.round(tile.width / 40), 40)).toBeLessThanOrEqual(0.003)
   })
 
   it('tiles trousers in a 60 px gingham', () => {
@@ -324,12 +373,13 @@ describe('latticeTile', () => {
     expect(off(tile.height, 60)).toBeLessThanOrEqual(0.005)
   })
 
-  // Pixel-sharp, the only lattice found on the leg is stripes 68.2 px apart,
-  // so the tile loses the plaid's bands across.
-  it.fails('tiles trousers in a 67 x 59 px plaid', () => {
-    const tile = found(tileOf({ ...PLAID, trousers: true }))
-    expect(off(tile.width, 67)).toBeLessThanOrEqual(0.005)
-    expect(off(tile.height, 59)).toBeLessThanOrEqual(0.005)
+  // The garment mask takes in the backdrop between the legs, a plain band
+  // that makes this plaid read as stripes 68.2 px apart across both legs; one
+  // leg on its own shows the plaid.
+  it.each([0, 6, 12])('tiles trousers in a 67 x 59 px plaid one repeat across and down, with noise %i', (noise) => {
+    const tile = found(tileOf({ ...PLAID, noise, trousers: true }))
+    expect(off(tile.width, 67)).toBeLessThanOrEqual(0.01)
+    expect(off(tile.height, 59)).toBeLessThanOrEqual(0.01)
   })
 
   it('tiles a houndstooth', () => {

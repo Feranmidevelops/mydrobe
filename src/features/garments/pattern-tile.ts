@@ -30,6 +30,8 @@ export interface FabricTile {
   wrap: 'repeat' | 'mirror'
   /** For a repeat tile: where its corner sat in the photo, and the photo vectors its edges span. */
   placement?: { origin: Vec; u: Vec; v: Vec }
+  /** True for stripes, which repeat one way only, rather than a check, plaid or other grid. */
+  stripes?: boolean
 }
 
 /**
@@ -90,7 +92,11 @@ export const LATTICE = {
   minVerify: 0.25,
   /** The first search when sharpening a repeat vector, as a share of its length. */
   refineShare: 0.1,
-  /** A window this similar to itself moved one way, but at least 0.3 less similar moved another, holds stripes. */
+  /**
+   * A window at least this similar to itself moved one way, but moved
+   * another no more similar than this less 0.3 (so 0.55), may hold stripes
+   * read at a slant.
+   */
   stripeNcc: 0.85,
   /** Repeats shorter than this many photo pixels are grouped into a larger cell. */
   cellTarget: 48,
@@ -127,13 +133,18 @@ export const LATTICE = {
   minKeep: 0.7,
   /**
    * A tile is soft folds rather than a pattern if its repeat is at least
-   * shadingRepeat photo pixels, its chromaticity varies less than
-   * shadingChroma and its fundamental holds more than shadingShare of its
-   * variation. This rejects evenly spaced folds 60 and 90 px apart.
+   * shadingRepeat photo pixels, and over its first shadingHarmonics
+   * harmonics each way its chromaticity varies less than shadingChroma and
+   * its fundamental holds more than shadingShare of its variation. Even
+   * folds 40 to 120 px apart, 0.1 to 0.3 deep, with noise up to 12, score
+   * at most 0.0067 and at least 0.991. Checks and stripes in shades of one
+   * colour can score as much as 0.96, so for them the chroma matters too; the flannel about 0.011 and 0.74 to 0.89; the
+   * red plaid 0.11 to 0.13 and up to 0.974, so its colour alone keeps it.
    */
   shadingChroma: 0.01,
   shadingShare: 0.97,
   shadingRepeat: 24,
+  shadingHarmonics: 4,
   /** A sample with less lightness spread than this share of the tile's is plain: the tile came from something else. */
   plainShare: 0.35,
 }
@@ -1831,6 +1842,11 @@ interface Layers {
   /** For each layer and texel: linear red, green and blue, then a weight that is 0 off the garment. */
   store: Float32Array
   count: number
+  /**
+   * How many leading layers, the best cells' repeats, each texel is folded
+   * from. The layers after them only stand in for texels none of those have.
+   */
+  core: number
   /** Texels in the base cell. */
   texels: number
 }
@@ -1848,19 +1864,25 @@ let layerScratch = new Float32Array(0)
  * Resamples each base repeat of the `sources` cells onto a Bw x Bh base cell,
  * in linear light: by Catmull-Rom inside solid garment, so fine lines keep
  * their contrast, and bilinearly between garment pixels near its edge. Each
- * texel's weight is its garment share times its cell's weight.
+ * texel's weight is its garment share times its cell's weight. Given `from`,
+ * the layers of the sources before it are kept as they are and only the
+ * rest are sampled, after them.
  */
-function sampleRepeats(region: Region, sources: Cell[], lattice: Lattice, Bw: number, Bh: number): Layers {
+function sampleRepeats(region: Region, sources: Cell[], lattice: Lattice, Bw: number, Bh: number, from = 0): Layers {
   const { frame, ku, kv } = lattice
   const { U, V } = frame
   const P = Bw * Bh
   const count = sources.length * ku * kv
-  if (layerScratch.length < count * P * 4) layerScratch = new Float32Array(count * P * 4)
+  if (layerScratch.length < count * P * 4) {
+    const grown = new Float32Array(count * P * 4)
+    grown.set(layerScratch.subarray(0, Math.min(layerScratch.length, from * ku * kv * P * 4)))
+    layerScratch = grown
+  }
   const store = layerScratch.subarray(0, count * P * 4)
   const { width: RW, height: RH, garment } = region
   const [R0, R1, R2] = region.channels
-  let layer = 0
-  for (const cell of sources) {
+  let layer = from * ku * kv
+  for (const cell of sources.slice(from)) {
     for (let b = 0; b < kv; b++) {
       for (let a = 0; a < ku; a++, layer++) {
         const [px0, py0] = cellPoint(frame, cell.i, cell.j, (a + 0.5 / Bw) / ku, (b + 0.5 / Bh) / kv, cell.shift)
@@ -1935,15 +1957,56 @@ function sampleRepeats(region: Region, sources: Cell[], lattice: Lattice, Bw: nu
       }
     }
   }
-  return { store, count, texels: P }
+  return { store, count, core: count, texels: P }
+}
+
+/** For each texel, 1 if none of the core layers has it on garment, so it's left to the stand-ins. */
+function uncoveredTexels({ store, core, texels: P }: Layers): Uint8Array {
+  const missing = new Uint8Array(P).fill(1)
+  for (let n = 0; n < core; n++) {
+    for (let k = 0; k < P; k++) if (store[(n * P + k) * 4 + 3] > 0) missing[k] = 0
+  }
+  return missing
+}
+
+/**
+ * The best cells' repeats, ready to fold. The best cells can all miss the
+ * same corner (where the garment's edge or a sleeve cuts them alike), which
+ * would leave a hole in the tile, so the next best cells are added one at a
+ * time to stand in there until every texel is seen. Null if none can.
+ */
+function repeatsToFold(region: Region, ranked: Cell[], lattice: Lattice, Bw: number, Bh: number): Layers | null {
+  let taken = Math.min(LATTICE.topK, ranked.length)
+  let layers = sampleRepeats(region, ranked.slice(0, taken), lattice, Bw, Bh)
+  const core = layers.count
+  const missing = uncoveredTexels(layers)
+  let holes = missing.reduce((sum, m) => sum + m, 0)
+  while (holes > 0 && taken < ranked.length) {
+    layers = sampleRepeats(region, ranked.slice(0, ++taken), lattice, Bw, Bh, taken - 1)
+    const { store, count, texels: P } = layers
+    for (let n = count - lattice.ku * lattice.kv; n < count; n++) {
+      for (let k = 0; k < P; k++) {
+        if (missing[k] && store[(n * P + k) * 4 + 3] > 0) {
+          missing[k] = 0
+          holes--
+        }
+      }
+    }
+  }
+  return holes > 0 ? null : { ...layers, core }
 }
 
 /**
  * Folds the layers into one cell: a weighted mean per texel and then, given
  * at least three layers, two rounds of a Cauchy-robust mean, so a crease or
- * a button in one repeat is outvoted by the others.
+ * a button in one repeat is outvoted by the others. Each texel is folded
+ * from the core layers, or from the stand-ins where none of those has it.
  */
-function foldRepeats({ store, count: layers, texels: P }: Layers): Float64Array[] {
+function foldRepeats(layered: Layers): Float64Array[] {
+  const { store, count, core, texels: P } = layered
+  const standIn = uncoveredTexels(layered)
+  const first = (k: number) => (standIn[k] ? core : 0)
+  const end = (k: number) => (standIn[k] ? count : core)
   const channels = [new Float64Array(P), new Float64Array(P), new Float64Array(P)]
   const [c0, c1, c2] = channels
   const fold = (robust: number) => {
@@ -1953,7 +2016,7 @@ function foldRepeats({ store, count: layers, texels: P }: Layers): Float64Array[
       let r = 0
       let g = 0
       let b = 0
-      for (let n = 0; n < layers; n++) {
+      for (let n = first(k); n < end(k); n++) {
         const o = (n * P + k) * 4
         let wt = store[o + 3]
         if (wt <= 0) continue
@@ -1976,11 +2039,11 @@ function foldRepeats({ store, count: layers, texels: P }: Layers): Float64Array[
     }
   }
   fold(0)
-  if (layers >= 3) {
+  if (core >= 3) {
     // Outliers are weighed down on a scale of a multiple of the typical residual.
     const residuals: number[] = []
     for (let k = 0; k < P; k += 7) {
-      for (let n = 0; n < layers; n++) {
+      for (let n = first(k); n < end(k); n++) {
         const o = (n * P + k) * 4
         if (store[o + 3] <= 0) continue
         const d0 = store[o] - c0[k]
@@ -2032,56 +2095,117 @@ function keptSpread({ store, count: layers, texels: P }: Layers, [c0, c1, c2]: F
   return layerCount ? foldSd / (layerSd / layerCount) : 1
 }
 
+/** Side of the grid the cell's first few harmonics are sampled back on: plenty for nothing finer than a quarter of the cell. */
+const LOW_SIDE = 32
+
+/**
+ * A transformed Bw x Bh cell (`re`, `im`) with only its first few harmonics
+ * each way, sampled back on a LOW_SIDE x LOW_SIDE grid over the cell. Those
+ * harmonics are symmetric, so two real signals packed into one transform
+ * come back whole in their own parts.
+ */
+function lowHarmonicsOf(re: Float64Array, im: Float64Array, Bw: number, Bh: number): [Float64Array, Float64Array] {
+  const H = LATTICE.shadingHarmonics
+  const outRe = new Float64Array(LOW_SIDE * LOW_SIDE)
+  const outIm = new Float64Array(LOW_SIDE * LOW_SIDE)
+  // The small inverse divides by its own size, not the cell's.
+  const scale = (LOW_SIDE * LOW_SIDE) / (Bw * Bh)
+  for (let fy = -H; fy <= H; fy++) {
+    for (let fx = -H; fx <= H; fx++) {
+      const from = ((fy + Bh) % Bh) * Bw + ((fx + Bw) % Bw)
+      const to = ((fy + LOW_SIDE) % LOW_SIDE) * LOW_SIDE + ((fx + LOW_SIDE) % LOW_SIDE)
+      outRe[to] = re[from] * scale
+      outIm[to] = im[from] * scale
+    }
+  }
+  fft2(outRe, outIm, LOW_SIDE, LOW_SIDE, true)
+  return [outRe, outIm]
+}
+
+/** How much the cell's chromaticity varies, weighted by brightness so near-black texels don't add noise. Colours must not be negative. */
+function chromaSpread([c0, c1, c2]: Float64Array[]): number {
+  const P = c0.length
+  let wsum = 0
+  let mr = 0
+  let mg = 0
+  for (let k = 0; k < P; k++) {
+    const light = 0.299 * c0[k] + 0.587 * c1[k] + 0.114 * c2[k]
+    const sum = c0[k] + c1[k] + c2[k] + 1e-6
+    wsum += light
+    mr += (light * c0[k]) / sum
+    mg += (light * c1[k]) / sum
+  }
+  mr /= Math.max(1e-6, wsum)
+  mg /= Math.max(1e-6, wsum)
+  let vr = 0
+  for (let k = 0; k < P; k++) {
+    const light = 0.299 * c0[k] + 0.587 * c1[k] + 0.114 * c2[k]
+    const sum = c0[k] + c1[k] + c2[k] + 1e-6
+    vr += light * ((c0[k] / sum - mr) ** 2 + (c1[k] / sum - mg) ** 2)
+  }
+  return Math.sqrt(vr / Math.max(1e-6, wsum))
+}
+
+/** Light can't be negative, but Catmull-Rom (and a cut-off transform) can undershoot just below zero beside a sharp edge. */
+function nonNegative(channel: Float64Array) {
+  const out = new Float64Array(channel.length)
+  for (let k = 0; k < channel.length; k++) out[k] = channel[k] > 0 ? channel[k] : 0
+  return out
+}
+
 /**
  * Whether a folded Bw x Bh cell is soft folds or creases rather than a
  * pattern. Folds only change brightness, so the colour's chromaticity stays
  * put, and they're smooth, so nearly all their variation is in the
  * fundamental. A woven or printed pattern changes colour, or has edges, or
- * both.
+ * both. Both are judged on the cell's first few harmonics, so the noise of
+ * the photo doesn't pass for colour.
  */
-function looksLikeShading([c0, c1, c2]: Float64Array[], Bw: number, Bh: number): boolean {
+function looksLikeShading(channels: Float64Array[], Bw: number, Bh: number): boolean {
   const P = Bw * Bh
+  const [red, green, blue] = channels.map(nonNegative)
   const light = new Float64Array(P)
-  let wsum = 0
-  let mr = 0
-  let mg = 0
-  for (let k = 0; k < P; k++) {
-    light[k] = 0.299 * c0[k] + 0.587 * c1[k] + 0.114 * c2[k]
-    const sum = c0[k] + c1[k] + c2[k] + 1e-6
-    wsum += light[k]
-    mr += (light[k] * c0[k]) / sum
-    mg += (light[k] * c1[k]) / sum
-  }
-  mr /= wsum
-  mg /= wsum
-  // Chromaticity spread, weighted by brightness so near-black pixels don't add noise.
-  let vr = 0
-  for (let k = 0; k < P; k++) {
-    const sum = c0[k] + c1[k] + c2[k] + 1e-6
-    vr += light[k] * ((c0[k] / sum - mr) ** 2 + (c1[k] / sum - mg) ** 2)
-  }
-  const chroma = Math.sqrt(vr / Math.max(1e-6, wsum))
-  let mean = 0
-  for (let k = 0; k < P; k++) mean += light[k]
-  mean /= P
-  const im = new Float64Array(P)
-  for (let k = 0; k < P; k++) light[k] -= mean
-  fft2(light, im, Bw, Bh, false)
+  for (let k = 0; k < P; k++) light[k] = 0.299 * red[k] + 0.587 * green[k] + 0.114 * blue[k]
+  // Two real signals to each complex transform: from here the four arrays
+  // hold red + i green, and blue + i lightness, transformed.
+  fft2(red, green, Bw, Bh, false)
+  fft2(blue, light, Bw, Bh, false)
+  const chroma = chromaSpread([...lowHarmonicsOf(red, green, Bw, Bh), lowHarmonicsOf(blue, light, Bw, Bh)[0]].map(nonNegative))
   // The fundamental's share of the first few harmonics: about 0.9 for a
-  // square wave, nearly 1 for a smooth fold.
+  // square wave, nearly 1 for a smooth fold. Noise adds about the same to
+  // every harmonic, which would make shallow folds look less smooth than
+  // they are, so the typical level of the next few harmonics out (a median,
+  // which a pattern's few strong ones there don't move) is taken off each.
+  const H = LATTICE.shadingHarmonics
   let low = 0
+  let lowCount = 0
   let fundamental = 0
-  for (let ky = 0; ky < Bh; ky++) {
-    for (let kx = 0; kx < Bw; kx++) {
-      const fx = kx > Bw / 2 ? kx - Bw : kx
-      const fy = ky > Bh / 2 ? ky - Bh : ky
-      if (Math.abs(fx) > 4 || Math.abs(fy) > 4) continue
-      const e = light[ky * Bw + kx] ** 2 + im[ky * Bw + kx] ** 2
-      low += e
-      if (Math.abs(fx) <= 1 && Math.abs(fy) <= 1) fundamental += e
+  let fundamentalCount = 0
+  const beyond: number[] = []
+  const bin = (fx: number, fy: number) => ((fy + Bh) % Bh) * Bw + ((fx + Bw) % Bw)
+  for (let fy = Math.max(-2 * H, 1 - Bh / 2); fy <= Math.min(2 * H, Bh / 2); fy++) {
+    for (let fx = Math.max(-2 * H, 1 - Bw / 2); fx <= Math.min(2 * H, Bw / 2); fx++) {
+      // The mean doesn't count, only how the lightness varies.
+      if (!fx && !fy) continue
+      // Lightness's own power, unpacked from blue + i lightness: |T(f) - conj T(-f)|^2 / 4.
+      const k = bin(fx, fy)
+      const mirror = bin(-fx, -fy)
+      const e = ((blue[k] - blue[mirror]) ** 2 + (light[k] + light[mirror]) ** 2) / 4
+      if (Math.abs(fx) <= H && Math.abs(fy) <= H) {
+        low += e
+        lowCount++
+        if (Math.abs(fx) <= 1 && Math.abs(fy) <= 1) {
+          fundamental += e
+          fundamentalCount++
+        }
+      } else beyond.push(e)
     }
   }
-  const share = low > 0 ? fundamental / low : 1
+  beyond.sort((a, b) => a - b)
+  // A harmonic's power from noise alone is spread exponentially, whose median is ln 2 of its mean.
+  const noise = beyond.length ? beyond[beyond.length >> 1] / Math.LN2 : 0
+  const signal = low - lowCount * noise
+  const share = signal > 0 ? Math.min(1, Math.max(0, fundamental - fundamentalCount * noise) / signal) : 1
   return chroma < LATTICE.shadingChroma && share > LATTICE.shadingShare
 }
 
@@ -2174,7 +2298,8 @@ function repeatCell(srgb: Float32Array[], Bw: number, Bh: number, width: number,
 /**
  * Checks a candidate lattice at full resolution and, if it holds up, folds
  * it into a tile. Null when a check fails: the repeats can't be sharpened,
- * too few cells line up, the lattice explains too little of the window, the
+ * too few cells line up, the lattice explains too little of the window,
+ * part of the cell is on no repeat, the
  * fold washes the pattern out, or the "pattern" is folds or came from beside
  * plain cloth. A grid that turns out to be stripes read at a slant is tried
  * again as stripes.
@@ -2238,8 +2363,8 @@ function verify(source: Source, found: Found, detectWin: Rect, scale: number, as
   // side by side again, exactly alike.
   const Bw = Math.max(16, Math.min(256, nextPow2(Math.round(0.75 * lengthOf(u)))))
   const Bh = Math.max(16, Math.min(256, nextPow2(Math.round(0.75 * lengthOf(v)))))
-  const sources = [...used].sort((a, b) => b.match - a.match).slice(0, LATTICE.topK)
-  const layers = sampleRepeats(region, sources, lattice, Bw, Bh)
+  const layers = repeatsToFold(region, [...used].sort((a, b) => b.match - a.match), lattice, Bw, Bh)
+  if (!layers) return null
   const channels = foldRepeats(layers)
   if (keptSpread(layers, channels) < LATTICE.minKeep) return null
   const repeat = Math.min(lengthOf(u), stripes ? Infinity : lengthOf(v), stripes ? lengthOf(vertical ? u : v) : Infinity)
@@ -2261,5 +2386,6 @@ function verify(source: Source, found: Found, detectWin: Rect, scale: number, as
     height: lengthOf(V) * rv,
     wrap: 'repeat',
     placement: { origin: [origin[0] + rx, origin[1] + ry], u: scaled(U, ru), v: scaled(V, rv) },
+    stripes,
   }
 }

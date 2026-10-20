@@ -53,6 +53,34 @@ export interface PhotoAnalysis {
   tile: FabricTile
 }
 
+/** The leg of a pair of trousers that the plain sample came from, stopping short of the gap between the legs. */
+function legAround(crop: Rect, swatch: Rect): Rect {
+  const width = Math.floor(crop.width * 0.45)
+  const onLeft = swatch.x + swatch.width / 2 < crop.x + crop.width / 2
+  return { x: onLeft ? crop.x : crop.x + crop.width - width, y: crop.y, width, height: crop.height }
+}
+
+/**
+ * A tile of the fabric's repeat, if it has one (see latticeTile). Tidying the
+ * mask fills in the gap between a pair of trousers' legs, and that band of
+ * plain backdrop can make a check read as stripes. So when trousers come out
+ * as stripes, the leg the plain sample came from is searched on its own as
+ * well, and a check found there wins. The whole crop goes first, as one leg
+ * is too narrow to hold a large check's repeat.
+ */
+export function fabricRepeat(
+  templateId: GarmentTemplateId,
+  image: RgbaImage,
+  solid: Uint8Array,
+  crop: Rect,
+  swatch: Rect,
+): FabricTile | null {
+  const tile = latticeTile(image, solid, crop, swatch)
+  if (templateId !== 'trousers-straight' || !tile?.stripes) return tile
+  const inLeg = latticeTile(image, solid, legAround(crop, swatch), swatch)
+  return inLeg && !inLeg.stripes ? inLeg : tile
+}
+
 export function analyseGarmentPhoto(
   image: RgbaImage,
   templateId: GarmentTemplateId,
@@ -71,7 +99,7 @@ export function analyseGarmentPhoto(
   const swatch = chooseSwatch(templateId, image, solid, crop)
   const fabric = averageColor(image, solid, swatch)
   const swatchPixels = flattenLighting(cropAndFill(image, solid, swatch, fabric))
-  const tile: FabricTile = latticeTile(image, solid, crop, swatch) ?? {
+  const tile: FabricTile = fabricRepeat(templateId, image, solid, crop, swatch) ?? {
     pixels: swatchPixels,
     width: swatch.width,
     height: swatch.height,
