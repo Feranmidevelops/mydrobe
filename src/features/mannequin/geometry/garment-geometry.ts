@@ -39,7 +39,6 @@ export const NECKBAND_RISE = 0.006
 /** From this height the shirt's ease closes in towards the neck. */
 const NECK_TAPER_Y = 1.43
 const HIP_Y = 0.95
-const KNEE_D = 0.36
 
 const FRONT_HALF = { thetaStart: 0, thetaLength: Math.PI }
 const BACK_HALF = { thetaStart: Math.PI, thetaLength: Math.PI }
@@ -152,16 +151,34 @@ export function neckFacing(shape: BodyShape, neckline: Ring): BufferGeometry {
   return buildLoft([onNeck, neckline], { radialSegments: 80, uv: torsoSwatchUv })
 }
 
+/**
+ * A straight trouser leg, rings from the hem up: going up it never narrows
+ * until the thigh's widest point, so it falls from the thigh past the knee to
+ * the hem instead of pinching in above the knee and stepping out below it.
+ * The corner where the thigh takes over is softened across a ring either side.
+ * Above the widest point it follows the thigh into the hip.
+ */
+function straightLeg(rings: Ring[]): Ring[] {
+  const widest = rings.reduce((best, ring, i) => (ring.rx > rings[best].rx ? i : best), 0)
+  let rx = 0
+  let rz = 0
+  const straight = rings.map((ring, i) => {
+    if (i > widest) return ring
+    rx = Math.max(rx, ring.rx)
+    rz = Math.max(rz, ring.rz)
+    return { ...ring, rx, rz }
+  })
+  return straight.map((ring, i) => {
+    if (i === 0 || i >= widest) return ring
+    const [below, above] = [straight[i - 1], straight[i + 1]]
+    const soften = (key: 'rx' | 'rz') => (below[key] + 2 * ring[key] + above[key]) / 4
+    return { ...ring, rx: soften('rx'), rz: soften('rz') }
+  })
+}
+
 export function trouserLegRings(shape: BodyShape): Ring[] {
   const hemD = shape.leg.length - 0.04
-  const rings = inflateRings(sliceRings(shape.leg.rings, -hemD, 0, 26), TROUSER_EASE)
-  // Straight leg: below the knee the trouser never narrows past the calf.
-  const lower = rings.filter((ring) => -ring.y >= KNEE_D)
-  const rx = Math.max(...lower.map((ring) => ring.rx))
-  const rz = Math.max(...lower.map((ring) => ring.rz))
-  return rings.map((ring) =>
-    -ring.y >= KNEE_D ? { ...ring, rx: Math.max(ring.rx, rx), rz: Math.max(ring.rz, rz) } : ring,
-  )
+  return straightLeg(inflateRings(sliceRings(shape.leg.rings, -hemD, 0, 26), TROUSER_EASE))
 }
 
 /** How far a sleeve's cap sits above the top of the shoulder; fabric lies flat there, with no ease. */

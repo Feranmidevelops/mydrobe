@@ -356,6 +356,20 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
     }
   })
 
+  it('lets each trouser leg fall straight from the thigh past the knee, never narrowing on the way up', () => {
+    const rings = trouserLegRings(shape)
+    const widest = rings.reduce((best, ring, i) => (ring.rx > rings[best].rx ? i : best), 0)
+    for (let i = 1; i <= widest; i++) {
+      expect(rings[i].rx).toBeGreaterThanOrEqual(rings[i - 1].rx - 0.0005)
+      expect(rings[i].rz).toBeGreaterThanOrEqual(rings[i - 1].rz - 0.0005)
+    }
+    for (const ring of rings) {
+      const leg = ringAt(shape.leg.rings, ring.y)
+      expect(ring.rx - leg.rx).toBeGreaterThan(0.008)
+      expect(ring.rz - leg.rz).toBeGreaterThan(0.008)
+    }
+  })
+
   it.each(['long', 'short'] as const)('lets a %s-sleeve shirt hem hang over the trouser legs', (sleeve) => {
     // Untucked shirts must stay outside the trousers where the two overlap.
     const hemY = SHIRT_HEM_Y[sleeve]
