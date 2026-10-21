@@ -147,6 +147,52 @@ describe('garmentMask and maskBounds', () => {
     expect(mask[25 * 60 + 25]).toBe(1)
   })
 
+  describe('on a coloured backdrop', () => {
+    const PINK: Rgb = [211, 131, 153]
+    const SHADOW: Rgb = [140, 80, 98]
+    const BLUE: Rgb = [121, 150, 194]
+    const garment = { x: 80, y: 40, width: 100, height: 160 }
+
+    /** Paints a shadow of the backdrop's colour over `rect`, deepening over `fade` px in from its left and top edges. */
+    function paintShadow(image: RgbaImage, rect: Rect, fade: number) {
+      for (let y = rect.y; y < rect.y + rect.height; y++) {
+        for (let x = rect.x; x < rect.x + rect.width; x++) {
+          const depth = Math.min(1, (x - rect.x) / fade, (y - rect.y) / fade)
+          const color = PINK.map((c, k) => Math.round(c + (SHADOW[k] - c) * depth)) as Rgb
+          image.data.set([...color, 255], (y * image.width + x) * 4)
+        }
+      }
+    }
+
+    it('counts the garment’s cast shadow as backdrop', () => {
+      const image = blank(240, 240, PINK)
+      // The shadow falls down and to the left, from under the garment.
+      paintShadow(image, { x: 50, y: 60, width: 40, height: 160 }, 12)
+      paint(image, garment, BLUE)
+      const mask = garmentMask(image, estimateBackground(image))
+      expect(maskBounds(mask, 240, 240)).toEqual(garment)
+      expect(mask[150 * 240 + 75]).toBe(0)
+    })
+
+    it('keeps a garment in a darker shade of the backdrop, whose edge is sharp', () => {
+      const image = blank(240, 240, PINK)
+      paint(image, garment, SHADOW)
+      expect(maskBounds(garmentMask(image, estimateBackground(image)), 240, 240)).toEqual(garment)
+    })
+  })
+
+  it('keeps a grey garment on a grey backdrop', () => {
+    const image = blank(240, 240, [150, 150, 150])
+    for (let x = 50; x < 80; x++) {
+      const v = Math.round(150 - ((x - 50) / 29) * 78)
+      paint(image, { x, y: 40, width: 1, height: 160 }, [v, v, v])
+    }
+    const garment = { x: 80, y: 40, width: 100, height: 160 }
+    paint(image, garment, [70, 70, 70])
+    // A ramp leads the backdrop down to the garment's grey, but no hue says the garment is a shadow.
+    expect(maskBounds(garmentMask(image, estimateBackground(image)), 240, 240)!.width).toBeGreaterThanOrEqual(100)
+  })
+
   it('finds nothing in an empty photo', () => {
     const image = blank(30, 30)
     expect(maskBounds(garmentMask(image, WHITE), 30, 30)).toBeNull()

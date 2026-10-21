@@ -383,6 +383,50 @@ function growBackdrop(image: RgbaImage, inRange: Uint8Array, step: number, block
   return isBackground
 }
 
+/** How saturated (as in HSV) a backdrop must be for its shadows to be known by their colour. */
+const COLOURED_BACKDROP = 0.25
+
+/** The least brightness, out of 255, at which a backdrop's colour is told reliably. */
+const READABLE_BACKDROP = 64
+
+/** How far a shadow's chromaticity may stray from the backdrop's hue. */
+const SHADOW_HUE = 0.03
+
+/** The darkest a shadow is taken to be, as a share of the backdrop's lightness. */
+const DARKEST_SHADOW = 0.45
+
+/**
+ * A test for the backdrop's own shadows, such as the one a folded shirt casts
+ * on a pink sheet: a darker copy of the backdrop's colour. On a coloured
+ * backdrop a shadow keeps its hue and, lit by light the backdrop itself
+ * coloured, gets more saturated, never greyer; so a pixel counts if its
+ * chromaticity (each channel's share of r + g + b) lies on the line from grey
+ * out through the backdrop's, up to twice as far out, and it's between
+ * DARKEST_SHADOW and 1 times the backdrop's lightness. A garment of a
+ * duller or different hue isn't taken for a shadow, and one in a darker shade
+ * of the backdrop's colour is still held back by its sharp edge, which the
+ * backdrop can't step across. Null for a near-grey or very dark backdrop,
+ * whose hue says nothing (a grey garment on grey would be eaten).
+ */
+function shadowTest(background: Rgb): ((color: Rgb) => boolean) | null {
+  const [r, g, b] = background
+  const brightest = Math.max(r, g, b)
+  if (brightest < READABLE_BACKDROP || (brightest - Math.min(r, g, b)) / brightest < COLOURED_BACKDROP) return null
+  const light = r + g + b
+  const [hueR, hueG] = [r / light, g / light]
+  // How far out from grey the backdrop's chromaticity lies, and which way.
+  const saturation = Math.hypot(hueR - 1 / 3, hueG - 1 / 3)
+  const [outR, outG] = [(hueR - 1 / 3) / saturation, (hueG - 1 / 3) / saturation]
+  return ([pr, pg, pb]) => {
+    const sum = pr + pg + pb
+    if (sum < light * DARKEST_SHADOW || sum > light) return false
+    const [dr, dg] = [pr / sum - hueR, pg / sum - hueG]
+    const along = dr * outR + dg * outG
+    const across = Math.abs(dr * outG - dg * outR)
+    return across <= SHADOW_HUE && along >= -SHADOW_HUE && along <= saturation
+  }
+}
+
 /**
  * Marks garment pixels with 1. The background is grown inwards from the
  * photo's edges: it steps across gentle changes (a shadow, a gradient
@@ -426,9 +470,12 @@ export function garmentMask(
   const { spread, roughness } = backdropVariation(image, background)
   const step = Math.max(tolerance / 3, roughness * 3)
   const range = Math.max(tolerance * 2, spread * 1.25)
+  // A shadow on a coloured backdrop can be darker than the range allows, but it's still the backdrop's colour.
+  const shadow = shadowTest(background)
   const inRange = new Uint8Array(total)
   for (let i = 0; i < total; i++) {
-    if (colorDistance([data[i * 4], data[i * 4 + 1], data[i * 4 + 2]], background) <= range) inRange[i] = 1
+    const color: Rgb = [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]
+    if (colorDistance(color, background) <= range || shadow?.(color)) inRange[i] = 1
   }
   const backdrop = growBackdrop(image, inRange, step, null)
   const byColour = largestComponent(garment(backdrop), width, height)
