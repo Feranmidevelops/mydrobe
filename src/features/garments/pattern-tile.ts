@@ -2282,6 +2282,26 @@ function removeSmoothPart(channels: Float64Array[], w: number, h: number) {
   }
 }
 
+/**
+ * Evens a folded Bw x Bh stripe cell out along the stripes, which run down
+ * its columns if `vertical` and along its rows if not: each line along them
+ * takes its mean. Stripes have no pattern along their length, but a fold or
+ * the light can leave a little in the few repeats folded, and repeated
+ * exactly cell after cell, that shows as faint bars across the stripes.
+ */
+function evenAlongStripes(channels: Float64Array[], Bw: number, Bh: number, vertical: boolean) {
+  const lines = vertical ? Bw : Bh
+  const length = vertical ? Bh : Bw
+  const at = (line: number, t: number) => (vertical ? t * Bw + line : line * Bw + t)
+  for (const channel of channels) {
+    for (let line = 0; line < lines; line++) {
+      let sum = 0
+      for (let t = 0; t < length; t++) sum += channel[at(line, t)]
+      for (let t = 0; t < length; t++) channel[at(line, t)] = sum / length
+    }
+  }
+}
+
 /** Standard deviation of a list of numbers. */
 function standardDeviation(values: number[]) {
   const mean = values.reduce((a, b) => a + b, 0) / Math.max(1, values.length)
@@ -2395,6 +2415,7 @@ function verify(source: Source, found: Found, detectWin: Rect, scale: number, as
   if (keptSpread(layers, channels) < LATTICE.minKeep) return null
   const repeat = Math.min(lengthOf(u), stripes ? Infinity : lengthOf(v), stripes ? lengthOf(vertical ? u : v) : Infinity)
   if (repeat >= LATTICE.shadingRepeat && looksLikeShading(channels, Bw, Bh)) return null
+  if (stripes) evenAlongStripes(channels, Bw, Bh, vertical)
   removeSmoothPart(channels, Bw, Bh)
   const srgb = channels.map((channel) => Float32Array.from(channel, toSrgb))
   if (sampleIsPlainer(source, srgb)) return null
