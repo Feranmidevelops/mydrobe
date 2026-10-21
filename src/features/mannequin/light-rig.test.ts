@@ -1,7 +1,7 @@
 import { Euler, Vector3 } from 'three'
 import { describe, expect, it } from 'vitest'
 import { homePose, VIEW_AZIMUTH } from './camera-views'
-import { cameraAzimuth, RIM_LIGHT, KEY_LIGHT, lightPosition } from './light-rig'
+import { cameraAzimuth, KEY_LIGHT, lightPosition, RIM_LIGHT, shareFacing, UNDER_LIGHT } from './light-rig'
 
 /** Where the camera sits at an azimuth round the mannequin, at the home view's distance and height. */
 function cameraAt(azimuth: number) {
@@ -48,6 +48,14 @@ describe('lightPosition', () => {
     }
   })
 
+  it('keeps the low fill in front of the mannequin and below it, from every side', () => {
+    for (const azimuth of AZIMUTHS) {
+      const seen = asSeenFromCamera(new Vector3(...lightPosition(UNDER_LIGHT, azimuth)), cameraAt(azimuth))
+      expect(seen.angle).toBeLessThan(Math.PI / 4)
+      expect(seen.height).toBeLessThan(0)
+    }
+  })
+
   it('turns a light the way scene.environmentRotation turns the environment', () => {
     for (const azimuth of AZIMUTHS) {
       const turned = new Vector3(...lightPosition(KEY_LIGHT, 0)).applyEuler(new Euler(0, azimuth, 0))
@@ -56,5 +64,15 @@ describe('lightPosition', () => {
       expect(turned.y).toBeCloseTo(y)
       expect(turned.z).toBeCloseTo(z)
     }
+  })
+})
+
+describe('shareFacing', () => {
+  it('keeps cloth facing down under the bust or a fuller belly at least half as bright as cloth facing the camera', () => {
+    expect(shareFacing(-45) / shareFacing(0)).toBeGreaterThan(0.45)
+  })
+
+  it('still lights cloth facing up more than cloth facing down, so the body reads as round', () => {
+    expect(shareFacing(30)).toBeGreaterThan(1.3 * shareFacing(-30))
   })
 })
