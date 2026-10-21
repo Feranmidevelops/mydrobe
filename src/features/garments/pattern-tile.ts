@@ -183,17 +183,23 @@ interface Grid {
   garment: Float64Array
 }
 
-/** Summed-area tables of garment colour over part of the photo, so the mean over any box is four lookups. */
+/**
+ * Summed-area tables of garment colour over part of the photo, so the mean
+ * over any box is four lookups. The totals are whole numbers, so they're
+ * kept exactly in Int32s, a quarter of the memory of Float64s, wherever the
+ * largest (255 for every pixel) fits: up to about 8.4 million pixels, far
+ * more than the windows looked in ever cover.
+ */
 interface ColourSums {
   x: number
   y: number
   width: number
   height: number
   /** Garment pixel counts, then red, green and blue totals, each (width + 1) x (height + 1). */
-  count: Float64Array
-  red: Float64Array
-  green: Float64Array
-  blue: Float64Array
+  count: Int32Array | Float64Array
+  red: Int32Array | Float64Array
+  green: Int32Array | Float64Array
+  blue: Int32Array | Float64Array
 }
 
 /** Summed-area tables of the garment's colour over `rect`, clipped to the photo. */
@@ -202,13 +208,15 @@ function colourSums(image: RgbaImage, mask: Uint8Array, rect: Rect): ColourSums 
   const y0 = Math.max(0, rect.y)
   const x1 = Math.min(image.width, rect.x + rect.width)
   const y1 = Math.min(image.height, rect.y + rect.height)
-  const W = x1 - x0
-  const H = y1 - y0
+  const W = Math.max(0, x1 - x0)
+  const H = Math.max(0, y1 - y0)
   const stride = W + 1
-  const count = new Float64Array(stride * (H + 1))
-  const red = new Float64Array(stride * (H + 1))
-  const green = new Float64Array(stride * (H + 1))
-  const blue = new Float64Array(stride * (H + 1))
+  const size = stride * (H + 1)
+  const table = W * H * 255 < 2 ** 31 ? () => new Int32Array(size) : () => new Float64Array(size)
+  const count = table()
+  const red = table()
+  const green = table()
+  const blue = table()
   const { data, width } = image
   for (let y = 0; y < H; y++) {
     let rowCount = 0
@@ -925,16 +933,42 @@ export function latticeTile(image: RgbaImage, solid: Uint8Array, crop: Rect, swa
   const source: Source = { image, solid, crop, swatch }
   const cx = swatch.x + swatch.width / 2
   const cy = swatch.y + swatch.height / 2
-  // Colour sums over the crop and a margin, shared by every coarse grid.
-  const sums = colourSums(image, solid, { x: crop.x - 16, y: crop.y - 16, width: crop.width + 32, height: crop.height + 32 })
   const side = Math.min(Math.round(Math.min(crop.width, crop.height) * LATTICE.window), LATTICE.maxWindow)
+  const large = squareIn(crop, cx, cy, side)
+  const fine = squareIn(crop, cx, cy, LATTICE.fineWindow)
+  const medium = Math.round(side * LATTICE.mediumShare)
+  const inward = cx < crop.x + crop.width / 2 ? 1 : -1
+  const fallbacks = [
+    [0, 0],
+    [inward, -1],
+    [inward, 1],
+  ].map(([ox, oy]) => squareIn(crop, cx + (ox * medium) / 3, cy + (oy * medium) / 4, medium))
+  const scaleFor = (win: Rect) => Math.max(1, Math.ceil(win.width / LATTICE.grid))
+  // Colour sums shared by every coarse grid, over just what their samples
+  // reach: each window and a grid step round it. (Over the whole crop they
+  // ran to tens of megabytes for a full-frame photo.)
+  const reached = [large, ...fallbacks].filter((win) => scaleFor(win) > 1)
+  const sumsX = Math.min(...reached.map((win) => win.x - scaleFor(win)))
+  const sumsY = Math.min(...reached.map((win) => win.y - scaleFor(win)))
+  const sums = colourSums(
+    image,
+    solid,
+    reached.length
+      ? {
+          x: sumsX,
+          y: sumsY,
+          width: Math.max(...reached.map((win) => win.x + win.width + scaleFor(win))) - sumsX,
+          height: Math.max(...reached.map((win) => win.y + win.height + scaleFor(win))) - sumsY,
+        }
+      : { x: crop.x, y: crop.y, width: 0, height: 0 },
+  )
   const candidates: Candidate[] = []
   const looked = new Set<string>()
   const lookIn = (win: Rect) => {
     const key = `${win.x},${win.y},${win.width}`
     if (looked.has(key)) return
     looked.add(key)
-    const scale = Math.max(1, Math.ceil(win.width / LATTICE.grid))
+    const scale = scaleFor(win)
     for (const found of detect(image, solid, win, scale, sums)) candidates.push({ found, win, scale })
   }
   // At most LATTICE.maxVerify candidates are checked over both rounds.
@@ -950,20 +984,12 @@ export function latticeTile(image: RgbaImage, solid: Uint8Array, crop: Rect, swa
     return null
   }
 
-  lookIn(squareIn(crop, cx, cy, side))
-  lookIn(squareIn(crop, cx, cy, LATTICE.fineWindow))
+  lookIn(large)
+  lookIn(fine)
   const tile = firstTile(candidates)
   if (tile) return tile
   const before = candidates.length
-  const medium = Math.round(side * LATTICE.mediumShare)
-  const inward = cx < crop.x + crop.width / 2 ? 1 : -1
-  for (const [ox, oy] of [
-    [0, 0],
-    [inward, -1],
-    [inward, 1],
-  ]) {
-    lookIn(squareIn(crop, cx + (ox * medium) / 3, cy + (oy * medium) / 4, medium))
-  }
+  for (const win of fallbacks) lookIn(win)
   return firstTile(candidates.slice(before))
 }
 
