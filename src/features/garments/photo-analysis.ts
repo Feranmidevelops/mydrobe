@@ -1,5 +1,6 @@
 import { extractPalette } from './garment.colors'
 import type { GarmentTemplateId } from './garment.types'
+import { latticeTile, type FabricTile } from './pattern-tile'
 import {
   averageColor,
   chooseSwatch,
@@ -9,6 +10,7 @@ import {
   DEFAULT_BACKGROUND_TOLERANCE,
   erodeMask,
   estimateBackground,
+  evenTileBrightness,
   flattenLighting,
   frontCrop,
   garmentMask,
@@ -35,7 +37,7 @@ export interface PhotoAnalysis {
   bounds: Rect
   /** Part of the photo projected onto the template's front. */
   crop: Rect
-  /** Fabric sample tiled over the back and sleeves. */
+  /** The plain fabric sample, also where the tile below is looked for. */
   swatch: Rect
   fabric: Rgb
   /** Share of the crop that is garment rather than background. */
@@ -43,7 +45,45 @@ export interface PhotoAnalysis {
   /** The garment's main colours, most common first. */
   palette: Rgb[]
   front: RgbaImage
+  /** The plain fabric sample's pixels, evened out. The same object as `tile.pixels` when no repeat was found. */
   swatchPixels: RgbaImage
+  /**
+   * What tiles over the back, sleeves, collar and caps: one repeat of a
+   * check, plaid or stripe, or else the plain sample, mirrored.
+   */
+  tile: FabricTile
+}
+
+/** The leg of a pair of trousers that the plain sample came from, stopping short of the gap between the legs. */
+function legAround(crop: Rect, swatch: Rect): Rect {
+  const width = Math.floor(crop.width * 0.45)
+  const onLeft = swatch.x + swatch.width / 2 < crop.x + crop.width / 2
+  return { x: onLeft ? crop.x : crop.x + crop.width - width, y: crop.y, width, height: crop.height }
+}
+
+/** Stripes at least this far apart (photo pixels) on trousers may really be a check, read across both legs. */
+const COARSE_STRIPES = 30
+
+/**
+ * A tile of the fabric's repeat, if it has one (see latticeTile). Tidying the
+ * mask fills in the gap between a pair of trousers' legs, and that band of
+ * plain backdrop can make a check read as broad stripes, a check's width
+ * apart. So when trousers come out as broad stripes, the leg the plain sample
+ * came from is searched on its own as well, and a check found there wins.
+ * Pinstripes are left alone. The whole crop goes first, as one leg is too
+ * narrow to hold a large check's repeat.
+ */
+export function fabricRepeat(
+  templateId: GarmentTemplateId,
+  image: RgbaImage,
+  solid: Uint8Array,
+  crop: Rect,
+  swatch: Rect,
+): FabricTile | null {
+  const tile = latticeTile(image, solid, crop, swatch)
+  if (templateId !== 'trousers-straight' || !tile?.stripes || tile.stripes < COARSE_STRIPES) return tile
+  const inLeg = latticeTile(image, solid, legAround(crop, swatch), swatch)
+  return inLeg && !inLeg.stripes ? inLeg : tile
 }
 
 export function analyseGarmentPhoto(
@@ -64,12 +104,19 @@ export function analyseGarmentPhoto(
   const swatch = chooseSwatch(templateId, image, solid, crop)
   const fabric = averageColor(image, solid, swatch)
   const swatchPixels = flattenLighting(cropAndFill(image, solid, swatch, fabric))
-  // Gaps in the front take the tiled fabric sample, so patterns carry on.
-  const filled = cropAndFill(image, solid, crop, swatchPixels)
+  const repeat = fabricRepeat(templateId, image, solid, crop, swatch)
+  const tile: FabricTile = (repeat && evenTileBrightness(repeat, image, solid)) ?? {
+    pixels: swatchPixels,
+    width: swatch.width,
+    height: swatch.height,
+    wrap: 'mirror',
+  }
+  // Gaps in the front take the tiled fabric, so patterns carry on through them.
+  const filled = cropAndFill(image, solid, crop, tile)
   const front =
     templateId === 'trousers-straight'
       ? filled
-      : coverNeckOpening(filled, neckBand(mask, image.width, bounds, crop), swatchPixels, fabric, background)
+      : coverNeckOpening(filled, neckBand(mask, image.width, bounds, crop), tile, fabric, background, [crop.x, crop.y])
   return {
     image,
     mask,
@@ -82,5 +129,6 @@ export function analyseGarmentPhoto(
     palette: extractPalette(image, solid, bounds),
     front,
     swatchPixels,
+    tile,
   }
 }

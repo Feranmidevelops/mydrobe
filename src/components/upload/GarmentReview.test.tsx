@@ -27,6 +27,7 @@ function navyAnalysis(bounds: Rect = { x: 20, y: 10, width: 60, height: 80 }): P
     palette: [[36, 55, 94]],
     front: pixels(1, 1),
     swatchPixels: pixels(1, 1),
+    tile: { pixels: pixels(1, 1), width: 10, height: 10, wrap: 'mirror' },
   }
 }
 

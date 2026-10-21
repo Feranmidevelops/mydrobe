@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analysisTemplateFor, fadeBackground, reviewWarnings, templateFor } from './upload-review'
+import { analysisTemplateFor, fabricOutline, fadeBackground, reviewWarnings, templateFor } from './upload-review'
 
 describe('templateFor', () => {
   it('matches shirts and trousers to their 3D templates', () => {
@@ -66,5 +66,28 @@ describe('fadeBackground', () => {
 
     expect([...faded.data]).toEqual([200, 40, 40, 255, 180, 180, 180, 255, 240, 240, 240, 255])
     expect(image.data[4]).toBe(0)
+  })
+})
+
+describe('fabricOutline', () => {
+  const swatch = { x: 40, y: 50, width: 10, height: 10 }
+
+  it('outlines the plain sample when the fabric has no repeat', () => {
+    expect(fabricOutline({ swatch, tile: {} })).toEqual([
+      [40, 50],
+      [50, 50],
+      [50, 60],
+      [40, 60],
+    ])
+  })
+
+  it('outlines one repeat of the pattern, at its slant', () => {
+    const tile = { placement: { origin: [10, 20] as [number, number], u: [8, 1] as [number, number], v: [-1, 6] as [number, number] } }
+    expect(fabricOutline({ swatch, tile })).toEqual([
+      [10, 20],
+      [18, 21],
+      [17, 27],
+      [9, 26],
+    ])
   })
 })

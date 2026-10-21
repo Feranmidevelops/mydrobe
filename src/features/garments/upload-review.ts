@@ -1,4 +1,5 @@
 import type { GarmentCategory, GarmentTemplateId } from './garment.types'
+import type { FabricTile, Vec } from './pattern-tile'
 import { DEFAULT_BACKGROUND_TOLERANCE, type Rect, type Rgb, type RgbaImage } from './photo-mapping'
 
 export type Sleeves = 'long' | 'short'
@@ -67,4 +68,28 @@ export function fadeBackground(image: RgbaImage, mask: Uint8Array, tint: Rgb, st
     data[offset + 3] = 255
   }
   return { data, width: image.width, height: image.height }
+}
+
+/**
+ * The corners, in photo pixels, of the fabric that covers the back and
+ * sleeves: one repeat of the pattern where one was found, which can sit at a
+ * slant, or else the plain sample.
+ */
+export function fabricOutline({ swatch, tile }: { swatch: Rect; tile: Pick<FabricTile, 'placement'> }): Vec[] {
+  if (tile.placement) {
+    const { origin: [x, y], u, v } = tile.placement
+    return [
+      [x, y],
+      [x + u[0], y + u[1]],
+      [x + u[0] + v[0], y + u[1] + v[1]],
+      [x + v[0], y + v[1]],
+    ]
+  }
+  const { x, y, width, height } = swatch
+  return [
+    [x, y],
+    [x + width, y],
+    [x + width, y + height],
+    [x, y + height],
+  ]
 }
