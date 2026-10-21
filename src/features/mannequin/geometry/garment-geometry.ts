@@ -2,7 +2,7 @@ import { BufferGeometry, Float32BufferAttribute, SphereGeometry } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { GarmentTemplateId } from '../../garments/garment.types'
 import { limbTransform, SHOULDER_SQUASH, SIDES, type BodyShape, type Side } from '../body-shape'
-import { buildLoft, inflateRings, sliceRings, type LoftUv, type Ring } from './loft'
+import { buildLoft, inflateRings, ringAt, sliceRings, type LoftUv, type Ring } from './loft'
 
 /** The body-space rectangle a front-facing garment image is projected onto. */
 export interface FrontPanel {
@@ -32,7 +32,12 @@ export const SHIRT_HEM_FLARE = 0.012
 export const TROUSER_EASE = 0.012
 export const TROUSER_WAIST_EASE = 0.01
 export const TROUSER_WAIST_Y = 1.08
-const NECK_BASE_Y = 1.455
+/** How far a shirt's neckline stands off the neck, and its shoulders off the top of the torso. */
+export const NECK_EASE = 0.004
+/** How far up the neck a shirt's neckband reaches above the top of the torso. */
+export const NECKBAND_RISE = 0.006
+/** From this height the shirt's ease closes in towards the neck. */
+const NECK_TAPER_Y = 1.43
 const HIP_Y = 0.95
 const KNEE_D = 0.36
 
@@ -92,14 +97,43 @@ export function hang(rings: Ring[], slope = SHIRT_DRAPE): TorsoProfile {
   return { front, back }
 }
 
+/**
+ * The shirt's neckline: a short band up the neck from the top of the torso,
+ * standing just off it, so the shirt closes round the neck like a crew neck.
+ */
+function shirtNeckline(shape: BodyShape): Ring {
+  const y = shape.torso[shape.torso.length - 1].y + NECKBAND_RISE
+  return inflateRings([ringAt(shape.neck, y)], NECK_EASE)[0]
+}
+
+/**
+ * A shirt's torso from the hem up to its neckline. Over the body it stands
+ * SHIRT_EASE clear, closing in over the top of the shoulders to NECK_EASE,
+ * so it meets the neck instead of leaving the top of the torso bare.
+ */
 export function shirtTorsoRings(shape: BodyShape, sleeve: 'long' | 'short'): TorsoProfile {
   const hemY = SHIRT_HEM_Y[sleeve]
-  const { front, back } = hang(sliceRings(shape.torso, hemY, NECK_BASE_Y, 30))
-  const loosen = (ring: Ring) => {
-    const flare = SHIRT_HEM_FLARE * smoothstep(HIP_Y, hemY, ring.y)
-    return inflateRings([ring], SHIRT_EASE + flare)[0]
-  }
-  return { front: front.map(loosen), back: back.map(loosen) }
+  const topY = shape.torso[shape.torso.length - 1].y
+  const body = sliceRings(shape.torso, hemY, topY, 30).map((ring) => {
+    const ease = SHIRT_EASE + (NECK_EASE - SHIRT_EASE) * smoothstep(NECK_TAPER_Y, topY, ring.y)
+    return inflateRings([ring], ease)[0]
+  })
+  const { front, back } = hang([...body, shirtNeckline(shape)])
+  const flare = (ring: Ring) => inflateRings([ring], SHIRT_HEM_FLARE * smoothstep(HIP_Y, hemY, ring.y))[0]
+  return { front: front.map(flare), back: back.map(flare) }
+}
+
+/**
+ * The inside of a shirt's neckband: it turns in from the top edge and down
+ * onto the neck, closing the gap between them, so the top of the torso never
+ * shows through it, even looking down from above. `neckline` is the shirt's top ring.
+ */
+export function neckFacing(shape: BodyShape, neckline: Ring): BufferGeometry {
+  // Down to halfway between the neckline and the top of the torso, just inside the neck.
+  const y = neckline.y - NECKBAND_RISE / 2
+  const [onNeck] = inflateRings([ringAt(shape.neck, y)], -0.001)
+  // As many points round as the shirt's front and back together, so the edges meet exactly.
+  return buildLoft([onNeck, neckline], { radialSegments: 80, uv: torsoSwatchUv })
 }
 
 export function trouserLegRings(shape: BodyShape): Ring[] {
@@ -166,22 +200,31 @@ export function shoulderCap(shape: BodyShape, side: Side, sleeveTop: Ring): Buff
     .applyMatrix4(limbTransform(shape.arm, side))
 }
 
-/** Where a shirt collar starts on the neck (hidden inside the shirt), and how high it reaches. */
-export const COLLAR = { baseY: 1.43, backTopY: 1.49, frontTopY: 1.465 } as const
+/** How far a shirt collar stands above the neckline at the back and, were it closed, at the front. */
+export const COLLAR = { backRise: 0.035, frontRise: 0.01 } as const
 /** Half the angle a collar leaves open at the front, where the photo shows the real collar. */
 export const COLLAR_OPENING = 0.45
 
 /**
- * A shirt collar: a band round the back and sides of the neck that stands
- * tallest at the back and slopes down towards the front, where it opens.
+ * A shirt collar: a band round the back and sides of the neck that rises
+ * from the shirt's neckline, so the two share an edge, stands tallest at the
+ * back and slopes down towards the front, where it opens. Going up it follows
+ * the neck forward and stands a little further off it. `neckline` is the shirt's top ring.
  */
-export function shirtCollar(shape: BodyShape): BufferGeometry {
-  const backHeight = COLLAR.backTopY - COLLAR.baseY
-  const rings = sliceRings(shape.neck, COLLAR.baseY, COLLAR.backTopY, 4).map((ring, i) => ({
-    ...ring,
-    rx: ring.rx + 0.012 + i * 0.002,
-    rz: ring.rz + 0.012 + i * 0.002,
-  }))
+export function shirtCollar(shape: BodyShape, neckline: Ring): BufferGeometry {
+  const baseY = neckline.y
+  const backHeight = COLLAR.backRise
+  const lean = (y: number) => (ringAt(shape.neck, y).cz ?? 0) - (ringAt(shape.neck, baseY).cz ?? 0)
+  const rings = Array.from({ length: 4 }, (_, i) => {
+    const y = baseY + (backHeight * i) / 3
+    return {
+      ...neckline,
+      y,
+      rx: neckline.rx + i * 0.002,
+      rz: neckline.rz + i * 0.002,
+      cz: (neckline.cz ?? 0) + lean(y),
+    }
+  })
   const collar = buildLoft(rings, {
     radialSegments: 32,
     thetaStart: Math.PI / 2 + COLLAR_OPENING,
@@ -192,8 +235,8 @@ export function shirtCollar(shape: BodyShape): BufferGeometry {
   for (let i = 0; i < position.count; i++) {
     // 0 at the centre back, 1 at the front.
     const towardsFront = (Math.sin(Math.atan2(position.getZ(i), position.getX(i))) + 1) / 2
-    const height = backHeight + (COLLAR.frontTopY - COLLAR.backTopY) * towardsFront
-    position.setY(i, COLLAR.baseY + (position.getY(i) - COLLAR.baseY) * (height / backHeight))
+    const height = backHeight + (COLLAR.frontRise - COLLAR.backRise) * towardsFront
+    position.setY(i, baseY + (position.getY(i) - baseY) * (height / backHeight))
   }
   return collar
 }
@@ -203,7 +246,9 @@ function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeome
   const front = [buildLoft(torso.front, { radialSegments: 40, ...FRONT_HALF })]
   const rest = [buildLoft(torso.back, { radialSegments: 40, ...BACK_HALF, uv: torsoSwatchUv })]
 
-  if (sleeve === 'long') rest.push(shirtCollar(shape))
+  const neckline = torso.back[torso.back.length - 1]
+  rest.push(neckFacing(shape, neckline))
+  if (sleeve === 'long') rest.push(shirtCollar(shape, neckline))
 
   const rings = sleeveRings(shape, sleeve)
   for (const side of SIDES) {
