@@ -45,6 +45,16 @@ export const ENVIRONMENT_FACE_ON_SHARE = 0.13 * ENVIRONMENT_INTENSITY
 
 export const RIG_LIGHTS: readonly RigLight[] = [KEY_LIGHT, RIM_LIGHT, UNDER_LIGHT]
 
+/*
+ * The mannequin and plinth have no photo to match, so their colours are set by
+ * how they look under this rig: a soft grey a clear step darker than the warm
+ * stage behind them, as they looked before the studio was calibrated. Lit to
+ * the full colour of the old ivory (#ebe5db), the head vanished into the
+ * backdrop's pale centre.
+ */
+export const MANNEQUIN_COLOR = '#c3bfba'
+export const PLINTH_COLOR = '#c6c3bf'
+
 /** How far from the mannequin a directional light is placed; only its direction matters. */
 const LIGHT_DISTANCE = 5
 

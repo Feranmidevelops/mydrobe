@@ -1,6 +1,6 @@
 import { Color, ShaderChunk } from 'three'
 import { describe, expect, it } from 'vitest'
-import { ENVIRONMENT_FACE_ON_SHARE, faceOnShare } from './light-rig'
+import { ENVIRONMENT_FACE_ON_SHARE, faceOnShare, MANNEQUIN_COLOR } from './light-rig'
 import { installStudioToneMapping, SHOULDER_START, STUDIO_EXPOSURE, studioToneMap, type LinearRgb } from './studio-tone-mapping'
 
 /** A colour as three.js works with it: linear RGB from an sRGB hex. */
@@ -67,5 +67,12 @@ describe('the studio calibration', () => {
     const grey = linear('#808080')
     const [level] = studioToneMap(grey.map((channel) => channel * gain) as LinearRgb)
     expect(Math.abs(toScreen(level) * 255 - 128)).toBeLessThan(12)
+  })
+
+  it("keeps the mannequin a clear step darker than the stage's pale centre behind it", () => {
+    // The stage's radial gradient starts from #f7f0e8 (FittingRoomPage.tsx), at about head height.
+    const luma = ([r, g, b]: LinearRgb) => 255 * toScreen(0.2126 * r + 0.7152 * g + 0.0722 * b)
+    const mannequin = studioToneMap(linear(MANNEQUIN_COLOR).map((channel) => channel * gain) as LinearRgb)
+    expect(luma(linear('#f7f0e8')) - luma(mannequin)).toBeGreaterThan(25)
   })
 })
