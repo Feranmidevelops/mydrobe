@@ -4,6 +4,7 @@ import { cropAndFill } from '../garments/photo-mapping'
 import type { FabricTile } from '../garments/pattern-tile'
 import {
   fabricTransform,
+  frontFit,
   frontLayout,
   frontScale,
   mirroredTile,
@@ -177,21 +178,53 @@ describe('mirroredTile', () => {
   })
 })
 
+describe('frontFit', () => {
+  const crop = { width: 455, height: 905 }
+  const panel = { width: 0.414, height: 0.645 }
+
+  it('keeps a top in shape, at the scale it shows on the panel', () => {
+    const { layout, pxPerMetre } = frontFit('shirt-long-sleeve', crop, panel)
+    expect(layout).toEqual(frontLayout(crop, panel, frontScale(crop, panel.height)))
+    expect(crop.width / layout.width).toBeCloseTo(pxPerMetre, 9)
+    expect(crop.height / layout.height).toBeCloseTo(pxPerMetre, 9)
+  })
+
+  it('spreads a pair of trousers over the whole panel, so the legs land on the legs', () => {
+    const trousers = { width: 334, height: 762 }
+    const { layout, pxPerMetre } = frontFit('trousers-straight', trousers, { width: 0.4, height: 1.04 })
+    expect(layout).toEqual({ x: 0, y: 0, width: 0.4, height: 1.04 })
+    expect(pxPerMetre).toBeCloseTo(762 / 1.04, 9)
+  })
+})
+
 describe('tileRepeat', () => {
   // A 454 x 905 px crop on a 0.42 x 0.65 m front panel.
   const crop = { width: 454, height: 905 }
   const panel = { width: 0.42, height: 0.65 }
 
-  it('repeats a whole repeat of a pattern at the scale the front shows it, across and down', () => {
-    const { wrap, repeat } = tileRepeat({ width: 116.3, height: 121.1, wrap: 'repeat' }, crop, panel)
+  it('repeats a whole repeat of a pattern at one scale across and down, the one the front shows it at', () => {
+    const pxPerMetre = frontScale(crop, panel.height)
+    const square = { width: 120, height: 120, wrap: 'repeat' as const }
+    const { wrap, repeat } = tileRepeat(square, crop, panel, pxPerMetre)
     expect(wrap).toBe(RepeatWrapping)
     // Turned over left to right, as the back and sleeves run the other way round to the front.
-    expect(repeat[0]).toBeCloseTo(-454 / (116.3 * 0.42), 6)
-    expect(repeat[1]).toBeCloseTo(905 / (121.1 * 0.65), 6)
+    expect(repeat[0]).toBeLessThan(0)
+    // A square check is square on the back too.
+    expect(-repeat[0]).toBeCloseTo(repeat[1], 9)
+    // And the same size as on the front: one tile is as many metres as its photo pixels take up there.
+    const front = frontLayout(crop, panel, pxPerMetre)
+    expect(1 / repeat[1]).toBeCloseTo((120 / crop.height) * front.height, 9)
+    expect(-1 / repeat[0]).toBeCloseTo((120 / crop.width) * front.width, 9)
+  })
+
+  it('sizes each way of an oblong repeat by its own length in the photo', () => {
+    const { repeat } = tileRepeat({ width: 116.3, height: 121.1, wrap: 'repeat' }, crop, panel, 1400)
+    expect(repeat[0]).toBeCloseTo(-1400 / 116.3, 9)
+    expect(repeat[1]).toBeCloseTo(1400 / 121.1, 9)
   })
 
   it('mirrors a plain sample at the scale of the crop width, as before', () => {
-    const { wrap, repeat } = tileRepeat({ width: 91, height: 91, wrap: 'mirror' }, crop, panel)
+    const { wrap, repeat } = tileRepeat({ width: 91, height: 91, wrap: 'mirror' }, crop, panel, 1400)
     expect(wrap).toBe(MirroredRepeatWrapping)
     expect(repeat[0]).toBeCloseTo(1 / ((91 / 454) * 0.42), 6)
     expect(repeat[1]).toBeCloseTo(repeat[0], 9)

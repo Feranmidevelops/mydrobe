@@ -90,6 +90,25 @@ export function frontLayout(crop: Size, panel: Size, pxPerMetre: number): PanelR
   return { x: (panel.width - width) / 2, y: 0, width, height }
 }
 
+/**
+ * Where a garment's crop goes on its front panel, and how many photo pixels
+ * it shows to the metre down the panel. A top keeps its shape (see
+ * frontScale and frontLayout). A pair of trousers is spread over the whole
+ * panel, so the legs in the photo land on the mannequin's legs; down the legs
+ * it shows the photo's full length.
+ */
+export function frontFit(
+  templateId: GarmentTemplateId,
+  crop: Size,
+  panel: Size,
+): { layout: PanelRect; pxPerMetre: number } {
+  if (templateId === 'trousers-straight') {
+    return { layout: { x: 0, y: 0, width: panel.width, height: panel.height }, pxPerMetre: crop.height / panel.height }
+  }
+  const pxPerMetre = frontScale(crop, panel.height)
+  return { layout: frontLayout(crop, panel, pxPerMetre), pxPerMetre }
+}
+
 /** A 2D affine transform, [a, b, c, d, e, f] as DOMMatrix takes them: x' = a x + c y + e, y' = b x + d y + f. */
 export type Affine = [number, number, number, number, number, number]
 
@@ -217,42 +236,36 @@ function drawFront(analysis: PhotoAnalysis, layout: PanelRect, panel: Size, pxPe
  * metres. A plain sample is mirrored, which hides its edges, at the scale the
  * crop's width had on the panel, as it always was.
  *
- * A whole repeat of a pattern wraps plainly, at the scale the front panel
- * shows the photo across and down, so its checks are the same size front and
- * back. It's also turned over left to right: round the back and sleeves the
- * fabric's coordinates run the other way to the front's, which mirrored
- * tiling never showed, but a plaid or houndstooth would read backwards.
+ * A whole repeat of a pattern wraps plainly at `pxPerMetre`, the scale the
+ * front shows the photo at, the same across and down, so its checks keep
+ * their shape and are the same size front and back. It's also turned over
+ * left to right: round the back and sleeves the fabric's coordinates run the
+ * other way to the front's, which mirrored tiling never showed, but a plaid
+ * or houndstooth would read backwards.
  */
 export function tileRepeat(
   tile: Pick<FabricTile, 'width' | 'height' | 'wrap'>,
   crop: Size,
   panel: Size,
+  pxPerMetre: number,
 ): { wrap: Wrapping; repeat: [number, number] } {
   if (tile.wrap !== 'repeat') {
     const perMetre = crop.width / (tile.width * panel.width)
     return { wrap: MirroredRepeatWrapping, repeat: [perMetre, crop.width / (tile.height * panel.width)] }
   }
-  return {
-    wrap: RepeatWrapping,
-    repeat: [-crop.width / (tile.width * panel.width), crop.height / (tile.height * panel.height)],
-  }
+  return { wrap: RepeatWrapping, repeat: [-pxPerMetre / tile.width, pxPerMetre / tile.height] }
 }
 
 /**
- * Builds the template's textures from an analysed photo. A top's crop keeps
- * its shape on the front panel (see frontScale and frontLayout), padded out
- * with the fabric where it doesn't reach. A pair of trousers is still spread
- * over the whole panel, so the legs in the photo land on the mannequin's
- * legs. The fabric tile repeats at the scale it had in the photo (see
- * tileRepeat).
+ * Builds the template's textures from an analysed photo: the crop laid on
+ * the front panel as frontFit says, padded out with the fabric where it
+ * doesn't reach, and the fabric tile repeating at the scale it had in the
+ * photo (see tileRepeat).
  */
 export function photoTextures(analysis: PhotoAnalysis, panel: FrontPanel, templateId: GarmentTemplateId): GarmentTextures {
   const size = { width: panel.maxX - panel.minX, height: panel.maxY - panel.minY }
   const pxPerMm = Math.min(FRONT_PX_PER_MM, MAX_TEXTURE_PX / (size.width * 1000), MAX_TEXTURE_PX / (size.height * 1000))
-  const layout =
-    templateId === 'trousers-straight'
-      ? { x: 0, y: 0, ...size }
-      : frontLayout(analysis.crop, size, frontScale(analysis.crop, size.height))
+  const { layout, pxPerMetre } = frontFit(templateId, analysis.crop, size)
 
   const front = new CanvasTexture(drawFront(analysis, layout, size, pxPerMm * 1000))
   front.colorSpace = SRGBColorSpace
@@ -265,7 +278,7 @@ export function photoTextures(analysis: PhotoAnalysis, panel: FrontPanel, templa
       ? pixelsToCanvas(resampleTile(tile.pixels, SWATCH_PX, 'repeat'))
       : drawScaled(pixelsToCanvas(tile.pixels), SWATCH_PX, SWATCH_PX),
   )
-  const { wrap, repeat } = tileRepeat(tile, analysis.crop, size)
+  const { wrap, repeat } = tileRepeat(tile, analysis.crop, size, pxPerMetre)
   swatch.colorSpace = SRGBColorSpace
   swatch.anisotropy = 8
   swatch.wrapS = wrap
