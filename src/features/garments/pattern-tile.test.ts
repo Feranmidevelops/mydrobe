@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { GarmentTemplateId } from './garment.types'
-import type { FabricTile } from './pattern-tile'
+import { latticeTile, type FabricTile } from './pattern-tile'
 import { fabricRepeat } from './photo-analysis'
 import {
   chooseSwatch,
@@ -21,7 +21,7 @@ import {
  */
 
 interface Fabric {
-  pattern: 'buffalo' | 'plaid' | 'stripe' | 'gingham' | 'houndstooth' | 'tonal-check' | 'tonal-stripe' | 'plain' | 'plain-print'
+  pattern: 'buffalo' | 'plaid' | 'stripe' | 'hstripe' | 'gingham' | 'houndstooth' | 'tonal-check' | 'tonal-stripe' | 'plain' | 'plain-print'
   /** The true repeat across (u) and down (v) the fabric, in pixels. */
   px: number
   py: number
@@ -100,6 +100,8 @@ function fabricColor(fabric: Fabric, u: number, v: number): Rgb {
       return twill ? sett(PLAID_WARP, frac(u / px)) : sett(PLAID_WEFT, frac(v / py))
     case 'stripe':
       return frac(u / px) < 0.28 ? [235, 238, 245] : [60, 95, 170]
+    case 'hstripe':
+      return frac(v / py) < 0.28 ? [235, 238, 245] : [60, 95, 170]
     case 'gingham': {
       const a = frac(u / px) < 0.5
       const b = frac(v / py) < 0.5
@@ -197,8 +199,8 @@ function synthGarment(fabric: Fabric): RgbaImage {
 /** Noise, a 2 degree turn, light falling across and soft folds: everything a real photo has. */
 const TROUBLE = { noise: 12, angle: 2, gradient: true, folds: true }
 
-/** The photo pipeline up to the plain sample, as analyseGarmentPhoto runs it, then the lattice tile. */
-function tileFor(image: RgbaImage, templateId: GarmentTemplateId) {
+/** The photo pipeline up to the plain sample, as analyseGarmentPhoto runs it. */
+function sampleOf(image: RgbaImage, templateId: GarmentTemplateId) {
   const mask = garmentMask(image, estimateBackground(image))
   const bounds = maskBounds(mask, image.width, image.height)
   if (!bounds) throw new Error('No garment in the synthetic photo.')
@@ -206,6 +208,12 @@ function tileFor(image: RgbaImage, templateId: GarmentTemplateId) {
   const edge = Math.max(1, Math.round(Math.min(image.width, image.height) * 0.004))
   const solid = erodeMask(mask, image.width, image.height, edge)
   const swatch = chooseSwatch(templateId, image, solid, crop)
+  return { solid, crop, swatch }
+}
+
+/** The lattice tile for a photo, as analyseGarmentPhoto finds it. */
+function tileFor(image: RgbaImage, templateId: GarmentTemplateId) {
+  const { solid, crop, swatch } = sampleOf(image, templateId)
   return fabricRepeat(templateId, image, solid, crop, swatch)
 }
 
@@ -246,6 +254,47 @@ function correlation(a: Float64Array, b: Float64Array) {
     bb += (b[k] - mb) ** 2
   }
   return ab / Math.sqrt(aa * bb)
+}
+
+/**
+ * How far, in degrees, the stripes in a stripe tile lean off the fabric's
+ * own, given how far the fabric is turned. The tile's edge along the stripes
+ * (v for stripes down the photo, u for stripes across it) is where it lays
+ * them.
+ */
+function stripeLean(tile: FabricTile, fabric: Fabric) {
+  const across = fabric.pattern === 'hstripe'
+  const [x, y] = across ? tile.placement!.u : tile.placement!.v
+  return (Math.atan2(y, x) * 180) / Math.PI - (fabric.angle ?? 0) - (across ? 0 : 90)
+}
+
+/** The largest step in any channel between a texel and the one at the start of its line along the stripes. */
+function unevenAlongStripes({ data, width, height }: RgbaImage, acrossPhoto: boolean) {
+  let largest = 0
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const first = acrossPhoto ? y * width : x
+      for (let c = 0; c < 3; c++) largest = Math.max(largest, Math.abs(data[(y * width + x) * 4 + c] - data[first * 4 + c]))
+    }
+  }
+  return largest
+}
+
+/** A 1200 x 1200 close-up the plaid fills, bar a thin rim of backdrop. */
+function fullFramePhoto(): RgbaImage {
+  const W = 1200
+  const H = 1200
+  const data = new Uint8ClampedArray(W * H * 4)
+  const rnd = random(11)
+  const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd())
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const rim = x < 10 || y < 10 || x >= W - 10 || y >= H - 10
+      const color = rim ? [205, 205, 210] : fabricColor(PLAID, x + 1000, y + 1000).map((c) => c + gauss() * 6)
+      data.set([...color, 255], (y * W + x) * 4)
+    }
+  }
+  return { data, width: W, height: H }
 }
 
 /** Mean lightness of each band of a tile, `bands` of them from top to bottom. */
@@ -327,8 +376,82 @@ describe('latticeTile', () => {
     expect(off(tile.width / Math.round(tile.width / 7.3), 7.3)).toBeLessThanOrEqual(0.003)
   })
 
-  it('leaves stripes 3.6 px apart to the plain sample, as folding them washes them out', () => {
-    expect(tileOf({ pattern: 'stripe', px: 3.6, py: 3.6, ...TROUBLE })).toBeNull()
+  // These were once left to the plain sample: their cells were lined up a
+  // few degrees off the stripes, which washed the fold out (it kept 0.59 of
+  // their contrast). Lined up straight, it keeps 0.88.
+  it('tiles stripes 3.6 px apart straight, a whole number of stripes wide', () => {
+    const fabric: Fabric = { pattern: 'stripe', px: 3.6, py: 3.6, ...TROUBLE }
+    const tile = found(tileOf(fabric))
+    expect(off(tile.width / Math.round(tile.width / 3.6), 3.6)).toBeLessThanOrEqual(0.003)
+    expect(Math.abs(stripeLean(tile, fabric))).toBeLessThanOrEqual(0.5)
+  })
+
+  // Stripes a few pixels apart look alike moved straight along them or a
+  // stripe over, so their direction is measured rather than picked from a
+  // few trial shifts. Picked, ties went to the first of 82.5, 90 and 97.5
+  // degrees, and these came out leaning 1.4 to 15 degrees: diagonal or
+  // sawtooth stripes on the back and sleeves.
+  it.each<[string, Fabric]>([
+    ['4 px apart', { pattern: 'stripe', px: 4, py: 4, ...TROUBLE }],
+    ['9 px apart', { pattern: 'stripe', px: 9, py: 9, ...TROUBLE }],
+    ['9 px apart across the shirt', { pattern: 'hstripe', px: 9, py: 9, ...TROUBLE }],
+  ])('keeps fine stripes %s, turned 2 degrees, straight in the tile', (_, fabric) => {
+    const tile = found(tileOf(fabric))
+    expect(off(tile.stripes! / Math.round(tile.stripes! / fabric.px), fabric.px)).toBeLessThanOrEqual(0.005)
+    expect(Math.abs(stripeLean(tile, fabric))).toBeLessThanOrEqual(0.5)
+  })
+
+  // The coarse search reads these as a grid 54 px across, the stripes' own
+  // lattice with a slanted edge. The check for stripes read at a slant used
+  // to look at lightness softened for that 54 px repeat, which wiped the
+  // stripes out, so the slanted grid passed.
+  it('takes stripes 7.7 px apart, turned 1 degree, as stripes rather than a slanted grid', () => {
+    const fabric: Fabric = { pattern: 'stripe', px: 7.7, py: 7.7, noise: 6, angle: 1, gradient: true, folds: true }
+    const tile = found(tileOf(fabric))
+    expect(tile.stripes).toBeDefined()
+    expect(off(tile.stripes!, 7.7)).toBeLessThanOrEqual(0.005)
+    expect(Math.abs(stripeLean(tile, fabric))).toBeLessThanOrEqual(0.5)
+  })
+
+  // Stripes have no pattern along them. A fold or the light can leave a
+  // little in the few repeats folded, and repeated exactly cell after cell it
+  // showed as faint bars across the stripes.
+  it.each<[string, Fabric]>([
+    ['down the photo', { pattern: 'stripe', px: 7.3, py: 7.3, ...TROUBLE }],
+    ['across it', { pattern: 'hstripe', px: 9, py: 9, ...TROUBLE }],
+  ])('lays a stripe tile out alike all along its stripes, for stripes %s', (_, fabric) => {
+    const tile = found(tileOf(fabric))
+    expect(unevenAlongStripes(tile.pixels, fabric.pattern === 'hstripe')).toBeLessThanOrEqual(1)
+  })
+
+  // The colour sums behind the coarse grids used to cover the whole crop: on
+  // a close-up, four tables of 11 MB each, though every window looked in sits
+  // within 480 px or so of the sample.
+  it('keeps its working arrays smaller than the crop when the garment fills the photo', () => {
+    const image = fullFramePhoto()
+    const { solid, crop, swatch } = sampleOf(image, 'shirt-long-sleeve')
+    let largest = 0
+    for (const name of ['Float64Array', 'Float32Array', 'Int32Array'] as const) {
+      const Base = globalThis[name] as unknown as new (...args: unknown[]) => { byteLength: number }
+      vi.stubGlobal(
+        name,
+        class extends Base {
+          constructor(...args: unknown[]) {
+            super(...args)
+            largest = Math.max(largest, this.byteLength)
+          }
+        },
+      )
+    }
+    let tile: FabricTile | null
+    try {
+      tile = latticeTile(image, solid, crop, swatch)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    expect(crop.width * crop.height).toBeGreaterThan(1000 * 1000)
+    found(tile)
+    expect(largest).toBeLessThan((crop.width + 1) * (crop.height + 1) * Int32Array.BYTES_PER_ELEMENT)
   })
 
   it.each<[string, Fabric]>([

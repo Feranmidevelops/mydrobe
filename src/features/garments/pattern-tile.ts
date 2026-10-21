@@ -127,8 +127,9 @@ export const LATTICE = {
   topK: 3,
   /**
    * The folded tile must keep this share of its cells' lightness spread.
-   * Good tiles keep 0.805 to 0.994; washed-out folds, such as stripes 3.6 px
-   * apart, 0.14 to 0.57.
+   * Good tiles keep 0.805 to 0.994 (stripes 3.6 px apart, lined up straight,
+   * 0.88); washed-out folds of cells that don't truly line up 0.14 to 0.59,
+   * such as those stripes lined up a few degrees off them.
    */
   minKeep: 0.7,
   /**
@@ -1003,6 +1004,12 @@ interface Region {
   channels: Float32Array[]
   /** Lightness for matching repeats against each other, filled in (and softened) by flattenRegion. */
   lightness: Float32Array
+  /**
+   * The same lightness before softening. The softening suits the repeat
+   * being checked, and stripes much finer than it, which a grid can be read
+   * off at a slant, would vanish in it.
+   */
+  detail: Float32Array
   /** 1 on garment, 0 off it. */
   garment: Float32Array
 }
@@ -1038,7 +1045,7 @@ function regionOf(image: RgbaImage, mask: Uint8Array, rect: Rect): Region {
       garment[k] = mask[i] ? 1 : 0
     }
   }
-  return { width: w, height: h, channels, lightness: new Float32Array(w * h), garment }
+  return { width: w, height: h, channels, lightness: new Float32Array(w * h), detail: new Float32Array(w * h), garment }
 }
 
 /**
@@ -1047,7 +1054,7 @@ function regionOf(image: RgbaImage, mask: Uint8Array, rect: Rect): Region {
  * box of whole repeats, the pattern inside it is the same everywhere, so only
  * light and shadow change it. Then works out the lightness used for
  * matching, softened by a share of the `repeat` so the weave's grain doesn't
- * drown the pattern.
+ * drown the pattern, and keeps it unsoftened too.
  */
 function flattenRegion(region: Region, bx: number, by: number, repeat: number) {
   const { width: w, height: h, channels, garment, lightness } = region
@@ -1142,11 +1149,16 @@ function flattenRegion(region: Region, bx: number, by: number, repeat: number) {
       lightness[k] = 16 * Math.sqrt(0.2126 * c0[k] + 0.7152 * c1[k] + 0.0722 * c2[k])
     }
   }
+  region.detail.set(lightness)
+  lightness.set(softenedFor(region, region.detail, repeat))
+}
+
+/** The region's lightness `values` softened over the garment by a share of the `repeat` (or `values` itself if that's nothing). */
+function softenedFor(region: Region, values: Float32Array, repeat: number): Float32Array {
   const soften = Math.max(0, Math.min(4, Math.round(repeat / 12)))
-  if (soften > 0) {
-    const blurred = blurMasked(Float64Array.from(lightness), Float64Array.from(garment), w, h, soften, 1)
-    for (let k = 0; k < w * h; k++) lightness[k] = blurred[k]
-  }
+  if (!soften) return values
+  const { width: w, height: h, garment } = region
+  return Float32Array.from(blurMasked(Float64Array.from(values), Float64Array.from(garment), w, h, soften, 1))
 }
 
 /**
@@ -1200,9 +1212,24 @@ function steadyNcc(region: Region, points: Int32Array, sx: number, sy: number) {
   return va > 1e-6 && vb > 1e-6 ? cov / Math.sqrt(va * vb) : -1
 }
 
-/** Correlation of the window's lightness with itself moved by a whole-pixel shift, over garment pixels every `stride`. */
-function shiftNcc(region: Region, win: Rect, sx: number, sy: number, stride: number) {
-  const { width: w, height: h, lightness, garment } = region
+/**
+ * Correlation of the window's lightness (or `values`) with itself moved by
+ * (sx, sy), over garment pixels every `stride`. A shift between whole pixels
+ * reads the moved lightness bilinearly, from garment pixels only.
+ */
+function shiftNcc(region: Region, win: Rect, sx: number, sy: number, stride: number, values = region.lightness) {
+  const { width: w, height: h, garment } = region
+  const ix = Math.floor(sx)
+  const iy = Math.floor(sy)
+  const fx = sx - ix
+  const fy = sy - iy
+  // The neighbours a fractional shift reads from as well: 1 to the right or below, or none.
+  const nx = fx > 0 ? 1 : 0
+  const ny = fy > 0 ? w : 0
+  const w00 = (1 - fx) * (1 - fy)
+  const w10 = fx * (1 - fy)
+  const w01 = (1 - fx) * fy
+  const w11 = fx * fy
   let n = 0
   let sa = 0
   let sb = 0
@@ -1210,16 +1237,16 @@ function shiftNcc(region: Region, win: Rect, sx: number, sy: number, stride: num
   let sbb = 0
   let sab = 0
   for (let y = win.y; y < win.y + win.height; y += stride) {
-    const ty = y + sy
-    if (ty < 0 || ty >= h) continue
+    const ty = y + iy
+    if (ty < 0 || ty + (ny ? 1 : 0) >= h) continue
     for (let x = win.x; x < win.x + win.width; x += stride) {
-      const tx = x + sx
-      if (tx < 0 || tx >= w) continue
+      const tx = x + ix
+      if (tx < 0 || tx + nx >= w) continue
       const i = y * w + x
       const j = ty * w + tx
-      if (!garment[i] || !garment[j]) continue
-      const a = lightness[i]
-      const b = lightness[j]
+      if (!garment[i] || !garment[j] || !garment[j + nx] || !garment[j + ny] || !garment[j + nx + ny]) continue
+      const a = values[i]
+      const b = nx || ny ? values[j] * w00 + values[j + nx] * w10 + values[j + ny] * w01 + values[j + nx + ny] * w11 : values[j]
       n++
       sa += a
       sb += b
@@ -1238,15 +1265,17 @@ function shiftNcc(region: Region, win: Rect, sx: number, sy: number, stride: num
 /**
  * Sharpens a repeat vector: the shift by n repeats is found to the pixel for
  * growing n, so the error in one repeat shrinks to a fraction of a pixel.
- * `match` is how well one repeat matched (-1 if it didn't hold up at all).
+ * The first shift is searched `radius` pixels round `start`, the later ones
+ * `later` pixels round where the vector so far puts them. `match` is how well
+ * one repeat matched (-1 if it didn't hold up at all).
  */
-function refineVector(region: Region, win: Rect, start: Vec, radius: number): { vector: Vec; match: number } {
+function refineVector(region: Region, win: Rect, start: Vec, radius: number, later = 2): { vector: Vec; match: number } {
   const stride = Math.max(2, Math.round(Math.min(win.width, win.height) / 110))
   let vector = start
   let first = -1
   const maxN = Math.max(1, Math.floor((0.55 * Math.min(win.width, win.height)) / lengthOf(start)))
   for (let n = 1; n <= maxN; n++) {
-    const R = n === 1 ? radius : 2
+    const R = n === 1 ? radius : later
     const cx = Math.round(vector[0] * n)
     const cy = Math.round(vector[1] * n)
     const scores = new Map<number, number>()
@@ -1299,11 +1328,118 @@ function refineVector(region: Region, win: Rect, start: Vec, radius: number): { 
   return { vector, match: first }
 }
 
+/** Width of the bins a window's lightness is profiled in across a direction, in photo pixels. */
+const PROFILE_BIN = 0.5
+
+/**
+ * How much of the detail lightness in `box` is explained by its profile
+ * across the direction `angle` alone, from 0 to 1 (and 0 with too little
+ * garment to tell). Each garment pixel, every `stride`, is binned by how far
+ * across that direction it lies, and the variation between bins is set
+ * against the whole, less what that many bins would explain by chance. Along
+ * stripes every bin holds one shade and it's near 1; turned off them by even
+ * a little, each bin mixes light stripes with dark down the box, and it falls
+ * away. `sums` and `counts` are scratch, long enough for the box's diagonal.
+ */
+function profileShare(region: Region, box: Rect, stride: number, angle: number, sums: Float64Array, counts: Float64Array) {
+  const { width: w, garment, detail } = region
+  const nx = -Math.sin(angle)
+  const ny = Math.cos(angle)
+  const cx = box.x + box.width / 2
+  const cy = box.y + box.height / 2
+  const half = Math.hypot(box.width, box.height) / 2
+  const bins = Math.ceil((2 * half) / PROFILE_BIN) + 1
+  sums.fill(0, 0, bins)
+  counts.fill(0, 0, bins)
+  let n = 0
+  let total = 0
+  let squares = 0
+  for (let y = box.y; y < box.y + box.height; y += stride) {
+    const offset = (y - cy) * ny + half
+    for (let x = box.x; x < box.x + box.width; x += stride) {
+      const k = y * w + x
+      if (!garment[k]) continue
+      const b = Math.floor(((x - cx) * nx + offset) / PROFILE_BIN)
+      const value = detail[k]
+      sums[b] += value
+      counts[b]++
+      total += value
+      squares += value * value
+      n++
+    }
+  }
+  if (n < 50) return 0
+  let between = 0
+  let used = 0
+  for (let b = 0; b < bins; b++) {
+    if (!counts[b]) continue
+    between += (sums[b] * sums[b]) / counts[b]
+    used++
+  }
+  const variance = squares - (total * total) / n
+  between -= (total * total) / n
+  if (n <= used || !(variance > 1e-6)) return 0
+  const within = (variance - between) / (n - used)
+  return (between - (used - 1) * within) / variance
+}
+
+/**
+ * The direction stripes run in through the window, in radians, searched
+ * `span` either side of `around`: the one whose profile across them explains
+ * most of the detail lightness (profileShare). Unlike trial shifts of a few
+ * pixels, which can only point a few ways and read stripes a few pixels apart
+ * alike along several of them, it has no favoured directions and no aliases.
+ * It runs coarse to fine: first in a small box at the window's centre, whose
+ * peak is broad enough to find in large steps, then in boxes twice the size
+ * round the best so far, each in steps half as large, up to the whole window.
+ */
+function stripeAngle(region: Region, local: Rect, around: number, span: number): number {
+  const full = Math.min(local.width, local.height)
+  const cx = local.x + local.width / 2
+  const cy = local.y + local.height / 2
+  const sums = new Float64Array(Math.ceil((Math.SQRT2 * full) / PROFILE_BIN) + 2)
+  const counts = new Float64Array(sums.length)
+  let lo = around - span
+  let hi = around + span
+  for (let side = Math.min(full, 48); ; side = Math.min(full, 2 * side)) {
+    const box = squareIn(local, cx, cy, side)
+    let cover = 0
+    for (let y = box.y; y < box.y + box.height; y++) {
+      for (let x = box.x; x < box.x + box.width; x++) cover += region.garment[y * region.width + x]
+    }
+    // A box mostly off the garment can't tell; the next, larger one looks instead.
+    if (side < full && cover < 0.5 * side * side) continue
+    const stride = side > 200 ? 2 : 1
+    // About the turn that moves a stripe 1.5 px across the box, which blurs
+    // out stripes 3 px apart: the finest the search must not step over.
+    const count = Math.max(2, Math.ceil((hi - lo) / (1.5 / side)))
+    const step = (hi - lo) / count
+    const shares = new Float64Array(count + 1)
+    let top = 0
+    for (let k = 0; k <= count; k++) {
+      shares[k] = profileShare(region, box, stride, lo + k * step, sums, counts)
+      if (shares[k] > shares[top]) top = k
+    }
+    const best = lo + (top + (top > 0 && top < count ? parabolaPeak(shares[top - 1], shares[top], shares[top + 1]) : 0)) * step
+    if (side >= full) return best
+    lo = best - 2 * step
+    hi = best + 2 * step
+  }
+}
+
+/** How far a stripe candidate's direction is searched either side when it's measured at full resolution. */
+const STRIPE_TURN = (12 * Math.PI) / 180
+
 /**
  * Sharpens a candidate's repeat vectors at full resolution. For stripes any
  * shift along them is a repeat, so only their direction and the spacing
  * across them are sharpened, and a cell is kept short along them so a stripe
  * that wanders stays sharp. Null if the repeats don't hold up.
+ *
+ * A shift down stripes a few pixels apart that lands one stripe over matches
+ * as well as one straight down, so the stripes' direction is first measured
+ * from their profile (stripeAngle), and the shift along them is then
+ * sharpened only a pixel or two either way, never as far as the next stripe.
  */
 function refineLattice(region: Region, local: Rect, found: Found, scale: number): { u: Vec; v: Vec } | null {
   let u: Vec
@@ -1318,8 +1454,31 @@ function refineLattice(region: Region, local: Rect, found: Found, scale: number)
   } else {
     const vertical = found.across === 'u'
     const across = vertical ? found.u : found.v
-    const alongStart = scaled(vertical ? found.v : found.u, Math.max(LATTICE.cellTarget, lengthOf(across)))
-    const ra = refineVector(region, local, alongStart, scale + 2)
+    const rough = vertical ? found.v : found.u
+    const angle = stripeAngle(region, local, Math.atan2(rough[1], rough[0]), STRIPE_TURN)
+    const sign = Math.cos(angle) * rough[0] + Math.sin(angle) * rough[1] < 0 ? -1 : 1
+    const direction: Vec = [sign * Math.cos(angle), sign * Math.sin(angle)]
+    // The stripes need only hold along as far as a cell reaches (fine ones on
+    // a folded shirt can wander off a straight line within 48 px). The shift
+    // is matched in whole pixels, and the nearest can be half a pixel across,
+    // a good share of a fine stripe, which would understate the match; so it's
+    // taken at the length near that where it lands nearest a whole pixel.
+    const usual = Math.min(Math.max(LATTICE.cellTarget, lengthOf(across)), Math.max(LATTICE.stripeCell, 3 * lengthOf(across)))
+    let alongStart = scaled(direction, usual)
+    let offLine = Infinity
+    for (let length = Math.round(usual * 0.85); length <= Math.round(usual * 1.15); length++) {
+      const w = scaled(direction, length)
+      const off = Math.abs((Math.round(w[0]) - w[0]) * direction[1] - (Math.round(w[1]) - w[1]) * direction[0])
+      if (off < offLine - 1e-9) {
+        offLine = off
+        alongStart = w
+      }
+    }
+    // The direction is measured, so a pixel or two either way is all the
+    // shift needs, and never more than half a spacing. (The spacing found on
+    // the coarse grid can be two stripes or more, so that alone is no bound.)
+    const reach = Math.max(1, Math.min(2, Math.floor(lengthOf(across) / 2)))
+    const ra = refineVector(region, local, alongStart, reach, reach)
     const rc = refineVector(region, local, across, scale + 1)
     const along = scaled(ra.vector, 1 / lengthOf(ra.vector))
     const normal: Vec = [along[1], -along[0]]
@@ -1336,48 +1495,65 @@ function refineLattice(region: Region, local: Rect, found: Found, scale: number)
 
 /**
  * Stripes repeat along any shift down them, so a grid can be read off their
- * ridges at a slant. If the window barely changes when moved one way but
- * does when moved another, it holds stripes: returns the angle they run at,
- * else null.
+ * ridges at a slant. If the window barely changes when moved along the
+ * direction its stripes would run in (stripeAngle) but does when moved
+ * another way, it holds stripes: returns that direction, in radians, and the
+ * lightness they showed in, else null.
+ *
+ * The softened lightness suits the grid's repeat and is tried first. A grid
+ * can be the lattice of stripes far finer than its repeat, which that
+ * softening wipes out, so the detail lightness is tried next, softened only
+ * as it would be for stripes at their own spacing.
  */
-function stripeDirection(region: Region, local: Rect, u: Vec, v: Vec): number | null {
+function stripeDirection(region: Region, local: Rect, u: Vec, v: Vec): { angle: number; values: Float32Array } | null {
   const reach = Math.max(2, Math.round(0.35 * Math.min(lengthOf(u), lengthOf(v))))
   const stride = Math.max(2, Math.round(Math.min(local.width, local.height) / 110))
-  let bestAngle = 0
-  let bestNcc = -2
-  let worst = 2
-  for (let deg = 0; deg < 180; deg += 7.5) {
-    const a = (deg * Math.PI) / 180
-    const value = shiftNcc(region, local, Math.round(reach * Math.cos(a)), Math.round(reach * Math.sin(a)), stride)
-    if (value > bestNcc) {
-      bestNcc = value
-      bestAngle = a
+  const angle = stripeAngle(region, local, Math.PI / 2, Math.PI / 2)
+  const holdsStripes = (values: Float32Array) => {
+    if (shiftNcc(region, local, reach * Math.cos(angle), reach * Math.sin(angle), stride, values) < LATTICE.stripeNcc) return false
+    let worst = 2
+    for (let deg = 0; deg < 180; deg += 7.5) {
+      const a = (deg * Math.PI) / 180
+      worst = Math.min(worst, shiftNcc(region, local, Math.round(reach * Math.cos(a)), Math.round(reach * Math.sin(a)), stride, values))
     }
-    worst = Math.min(worst, value)
+    return worst <= LATTICE.stripeNcc - 0.3
   }
-  return bestNcc >= LATTICE.stripeNcc && worst <= LATTICE.stripeNcc - 0.3 ? bestAngle : null
+  if (holdsStripes(region.lightness)) return { angle, values: region.lightness }
+  const spacing = stripeSpacing(region, local, angle, region.detail)
+  if (!Number.isFinite(spacing)) return null
+  const fine = softenedFor(region, region.detail, spacing)
+  return holdsStripes(fine) ? { angle, values: fine } : null
 }
 
 /**
- * The stripes running at `angle`, spaced by the first clear repeat of the
- * window moved straight across them. Null if there's no clear repeat or
- * they lean too far off the photo's axes.
+ * How far apart stripes running at `angle` are: the first clear repeat of
+ * the window's lightness `values` moved straight across them, or Infinity if
+ * there's none.
  */
-function stripesAlong(region: Region, local: Rect, angle: number, strength: number): Found | null {
+function stripeSpacing(region: Region, local: Rect, angle: number, values: Float32Array): number {
   const normal: Vec = [-Math.sin(angle), Math.cos(angle)]
   const stride = Math.max(2, Math.round(Math.min(local.width, local.height) / 110))
-  const at = (t: number) => shiftNcc(region, local, Math.round(t * normal[0]), Math.round(t * normal[1]), stride)
-  let spacing = Infinity
+  const at = (t: number) => shiftNcc(region, local, Math.round(t * normal[0]), Math.round(t * normal[1]), stride, values)
   let lowest = Infinity
   const maxT = Math.floor(0.4 * Math.min(local.width, local.height))
   for (let t = Math.max(2, LATTICE.minPeriodPx); t < maxT; t++) {
     const value = at(t)
     lowest = Math.min(lowest, value)
     if (value >= 0.25 && value - lowest >= LATTICE.dip && value >= at(t - 1) && value >= at(t + 1)) {
-      spacing = t + parabolaPeak(at(t - 1), value, at(t + 1))
-      break
+      return t + parabolaPeak(at(t - 1), value, at(t + 1))
     }
   }
+  return Infinity
+}
+
+/**
+ * The stripes running at `angle`, spaced as stripeSpacing finds them in the
+ * lightness `values`. Null if there's no clear repeat or they lean too far
+ * off the photo's axes.
+ */
+function stripesAlong(region: Region, local: Rect, angle: number, strength: number, values: Float32Array): Found | null {
+  const normal: Vec = [-Math.sin(angle), Math.cos(angle)]
+  const spacing = stripeSpacing(region, local, angle, values)
   if (!Number.isFinite(spacing) || Math.max(Math.abs(normal[0]), Math.abs(normal[1])) < axisCosine()) return null
   return stripesAcross(normal, spacing, strength)
 }
@@ -1648,7 +1824,15 @@ function alignCells(region: Region, local: Rect, u: Vec, v: Vec, stripes: boolea
     }
   }
 
-  const R = Math.max(2, Math.min(LATTICE.alignMax, Math.ceil(LATTICE.alignShare * Math.max(lengthOf(frame.U), lengthOf(frame.V)))))
+  // A stripe cell moved a whole spacing across matches as well as one left
+  // in place, so stripes are searched no further than half a spacing either
+  // way: hops of a stripe from cell to cell would read as a drift and turn
+  // the cells off the stripes.
+  const spacing = stripes ? lengthOf(vertical ? u : v) : Infinity
+  const R = Math.min(
+    Math.max(2, Math.min(LATTICE.alignMax, Math.ceil(LATTICE.alignShare * Math.max(lengthOf(frame.U), lengthOf(frame.V))))),
+    Math.max(1, Math.floor(spacing / 2)),
+  )
   let reach = R
   const scratch = new Float32Array(size)
   // Each cell's scores by shift, kept by offset from where its search
@@ -1778,7 +1962,7 @@ function alignCells(region: Region, local: Rect, u: Vec, v: Vec, stripes: boolea
     if (!layCells()) return false
     if (template) {
       // A small correction: the cells sit nearly in place against the pattern found so far.
-      reach = Math.max(2, Math.ceil(R / 2))
+      reach = Math.min(R, Math.max(2, Math.ceil(R / 2)))
       alignAll(template)
     } else {
       alignAll(new Float32Array(cells[0].samples))
@@ -2386,9 +2570,9 @@ function verify(source: Source, found: Found, detectWin: Rect, scale: number, as
   const refined = refineLattice(region, local, found, scale)
   if (!refined) return null
   if (!stripes && !asStripes) {
-    const angle = stripeDirection(region, local, refined.u, refined.v)
-    if (angle !== null) {
-      const lines = stripesAlong(region, local, angle, found.strength)
+    const slant = stripeDirection(region, local, refined.u, refined.v)
+    if (slant) {
+      const lines = stripesAlong(region, local, slant.angle, found.strength, slant.values)
       return lines ? verify(source, lines, detectWin, scale, true) : null
     }
   }
