@@ -1,10 +1,16 @@
-import type { Vector3Tuple } from 'three'
+import { Color, type Vector3Tuple } from 'three'
 
 /*
  * The studio's lights are placed relative to the camera, not the room, like a
  * turntable studio: whichever side of the mannequin faces the viewer is lit
  * the way the front is. Angles are measured from the camera, so the numbers
  * below read as if the camera were at the front (+z) looking at the mannequin.
+ *
+ * The intensities are calibrated so that cloth facing the camera comes out the
+ * colour of its photo, for the tone mapping and exposure in
+ * studio-tone-mapping.ts: the lights add up to about the light of an even white
+ * sky (an irradiance of π), with the key doing most of it so the body still
+ * reads as round.
  */
 
 /** A directional light, placed by where it sits as seen from the mannequin. */
@@ -17,10 +23,22 @@ export interface RigLight {
   color: string
 }
 
-/** The main light: high, and off to the viewer's left. */
-export const KEY_LIGHT: RigLight = { azimuth: -40, elevation: 46, intensity: 1.5, color: '#ffffff' }
+/** The main light: a classic three-quarter key, high and off to the viewer's left. */
+export const KEY_LIGHT: RigLight = { azimuth: -35, elevation: 35, intensity: 2.8, color: '#ffffff' }
 /** A warm light from behind, on the viewer's right, picking out that edge. */
-export const FILL_LIGHT: RigLight = { azimuth: 135, elevation: 30, intensity: 0.7, color: '#fff6ea' }
+export const RIM_LIGHT: RigLight = { azimuth: 135, elevation: 30, intensity: 0.8, color: '#fff6ea' }
+
+/** Soft light from everywhere: white from above, the warm floor's colour from below. */
+export const HEMISPHERE = { sky: '#ffffff', ground: '#d8d0c3', intensity: 1 }
+
+/**
+ * The baked soft boxes (Lightformers in StudioLighting.tsx), as scene.environmentIntensity.
+ * Rendered on their own they light cloth facing the camera to about 13% of its colour.
+ */
+export const ENVIRONMENT_INTENSITY = 1
+export const ENVIRONMENT_FACE_ON_SHARE = 0.13 * ENVIRONMENT_INTENSITY
+
+export const RIG_LIGHTS: readonly RigLight[] = [KEY_LIGHT, RIM_LIGHT]
 
 /** How far from the mannequin a directional light is placed; only its direction matters. */
 const LIGHT_DISTANCE = 5
@@ -49,4 +67,25 @@ export function lightPosition(light: RigLight, azimuth: number, distance = LIGHT
     distance * Math.sin(up),
     distance * Math.cos(up) * Math.cos(around),
   ]
+}
+
+const luminance = (hex: string) => {
+  const { r, g, b } = new Color(hex)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/**
+ * The share of its own colour that an upright piece of matt cloth facing the
+ * camera reflects from the hemisphere and directional lights, before tone
+ * mapping: Lambert's cosine law, with the hemisphere's sky and ground meeting
+ * halfway on an upright surface. Add ENVIRONMENT_FACE_ON_SHARE for the whole rig.
+ */
+export function faceOnShare(lights: readonly RigLight[] = RIG_LIGHTS, hemisphere = HEMISPHERE): number {
+  const sky = (hemisphere.intensity * (luminance(hemisphere.sky) + luminance(hemisphere.ground))) / 2
+  const direct = lights.reduce(
+    (sum, light) =>
+      sum + light.intensity * luminance(light.color) * Math.max(0, Math.cos(light.elevation * DEGREE) * Math.cos(light.azimuth * DEGREE)),
+    0,
+  )
+  return (sky + direct) / Math.PI
 }

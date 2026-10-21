@@ -58,7 +58,13 @@ export default function FittingRoom({ onContextLost }: FittingRoomProps) {
         const stopWatching = addAfterEffect(() => {
           if (gl.info.render.frame === 0) return
           stopWatching()
-          mark(PERF_MARKS.firstFrame, { calls: gl.info.render.calls, triangles: gl.info.render.triangles })
+          // The tone mapping it was drawn with, so a test can see the studio's is in place.
+          mark(PERF_MARKS.firstFrame, {
+            calls: gl.info.render.calls,
+            triangles: gl.info.render.triangles,
+            toneMapping: gl.toneMapping,
+            exposure: gl.toneMappingExposure,
+          })
         })
         gl.domElement.addEventListener('webglcontextlost', (event) => {
           // Let the page offer a restart rather than leave a frozen picture.

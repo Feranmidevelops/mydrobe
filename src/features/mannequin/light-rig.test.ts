@@ -1,7 +1,7 @@
 import { Euler, Vector3 } from 'three'
 import { describe, expect, it } from 'vitest'
 import { homePose, VIEW_AZIMUTH } from './camera-views'
-import { cameraAzimuth, FILL_LIGHT, KEY_LIGHT, lightPosition } from './light-rig'
+import { cameraAzimuth, RIM_LIGHT, KEY_LIGHT, lightPosition } from './light-rig'
 
 /** Where the camera sits at an azimuth round the mannequin, at the home view's distance and height. */
 function cameraAt(azimuth: number) {
@@ -28,7 +28,7 @@ describe('lightPosition', () => {
 
   it.each([
     ['key', KEY_LIGHT],
-    ['fill', FILL_LIGHT],
+    ['rim', RIM_LIGHT],
   ])('keeps the %s light in the same place relative to the camera all the way round', (_, light) => {
     const front = asSeenFromCamera(new Vector3(...lightPosition(light, 0)), cameraAt(0))
     for (const azimuth of AZIMUTHS) {
