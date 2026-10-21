@@ -50,8 +50,19 @@ const torsoSwatchUv: LoftUv = (world, theta, ring) => [
   world.y,
 ]
 
-/** Sleeve and leg fabric: arc length round the limb, and position along it. */
-const limbSwatchUv: LoftUv = (_, theta, ring) => [(theta * (ring.rx + ring.rz)) / 2, ring.y]
+/**
+ * Sleeve and leg fabric. Across: arc length round the limb from a centre
+ * line at angle `centre`, so that line keeps one place in the fabric however
+ * much the limb narrows, and the narrowing gathers at the far side, at the
+ * seam. `offset` places the line in the fabric. Along: the distance down the
+ * limb, or for a trouser leg the height in the world, as on the seat.
+ */
+function limbSwatchUv(centre: number, along: 'limb' | 'height', offset = 0): LoftUv {
+  return (world, theta, ring) => [
+    offset + ((theta - centre) * (ring.rx + ring.rz)) / 2,
+    along === 'limb' ? ring.y : world.y,
+  ]
+}
 
 function smoothstep(edge0: number, edge1: number, x: number) {
   const t = Math.min(Math.max((x - edge0) / (edge1 - edge0), 0), 1)
@@ -61,6 +72,11 @@ function smoothstep(edge0: number, edge1: number, x: number) {
 /** Puts the sleeve seam on the side facing the body. */
 function seamTowardsBody(side: Side) {
   return side > 0 ? Math.PI : 0
+}
+
+/** A sleeve's centre line in the fabric: the outer line of the arm, facing away from the body. */
+function outerLine(side: Side) {
+  return seamTowardsBody(side) + Math.PI
 }
 
 /** How far fabric can slope inwards below a fuller part of the body, in metres per metre of drop. */
@@ -176,7 +192,7 @@ function arcUp(r: number, h: number, elevation: number) {
  * A shirt's cap over one shoulder: a dome on top of the sleeve, tilted with
  * the arm and sharing the sleeve's opening, so the two meet without a ledge.
  * Its fabric runs on from the sleeve's: the same way round the arm, from the
- * same seam, and measured over the dome in metres, so a check or stripe
+ * same outer line, and measured over the dome in metres, so a check or stripe
  * carries on across the join unstretched. `sleeveTop` is the sleeve's top
  * ring, in the arm's own frame.
  */
@@ -192,7 +208,7 @@ export function shoulderCap(shape: BodyShape, side: Side, sleeveTop: Ring): Buff
     // The angle round the arm the sleeve's loft would give this point.
     const theta = seam + Math.PI * 2 * (1 - uv.getX(i))
     const elevation = Math.asin(Math.min(1, position.getY(i)))
-    uv.setXY(i, theta * radius, sleeveTop.y + arcUp(radius, height, elevation))
+    uv.setXY(i, (theta - outerLine(side)) * radius, sleeveTop.y + arcUp(radius, height, elevation))
   }
   return dome
     .scale(sleeveTop.rx, height, sleeveTop.rz)
@@ -257,7 +273,7 @@ function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeome
         radialSegments: 24,
         thetaStart: seamTowardsBody(side),
         transform: limbTransform(shape.arm, side),
-        uv: limbSwatchUv,
+        uv: limbSwatchUv(outerLine(side), 'limb'),
       }),
       shoulderCap(shape, side, rings[rings.length - 1]),
     )
@@ -277,7 +293,10 @@ function trousersGeometry(shape: BodyShape): GarmentGeometry {
   for (const side of SIDES) {
     const transform = limbTransform(shape.leg, side)
     front.push(buildLoft(leg, { radialSegments: 28, ...FRONT_HALF, transform }))
-    rest.push(buildLoft(leg, { radialSegments: 28, ...BACK_HALF, transform, uv: limbSwatchUv }))
+    // Measured from the centre of the back of the leg, placed where that line
+    // sits across the body, so the leg's fabric lines up with the seat's.
+    const uv = limbSwatchUv(1.5 * Math.PI, 'height', side * shape.leg.joint[0])
+    rest.push(buildLoft(leg, { radialSegments: 28, ...BACK_HALF, transform, uv }))
   }
 
   return finish(front, rest)

@@ -10,7 +10,7 @@ import {
 import { describe, expect, it } from 'vitest'
 import { GARMENT_TEMPLATES } from '../../garments/garment.templates'
 import type { GarmentTemplateId } from '../../garments/garment.types'
-import { createBodyShape, limbTransform, SHOULDER_SQUASH } from '../body-shape'
+import { createBodyShape, limbTransform, SHOULDER_SQUASH, SIDES } from '../body-shape'
 import { BODY_PRESETS } from '../viewer.types'
 import {
   buildGarmentGeometry,
@@ -298,12 +298,61 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
       }
     }
     for (let point = 1; point < 24; point++) {
-      // Round the rim, the fabric sits where the sleeve's own does: the right arm's seam faces the body.
+      // Round the rim, the fabric sits where the sleeve's own does: measured
+      // from the outer line of the arm (+x on the right arm), whose seam faces the body.
       const local = where(at(8, point)).applyMatrix4(toArm)
       let theta = Math.atan2(local.z / top.rz, local.x / top.rx)
       while (theta < Math.PI) theta += Math.PI * 2
-      expect(uv.getX(at(8, point))).toBeCloseTo(theta * radius, 4)
+      expect(uv.getX(at(8, point))).toBeCloseTo((theta - Math.PI * 2) * radius, 4)
       expect(uv.getY(at(8, point))).toBeCloseTo(top.y, 6)
+    }
+  })
+
+  it.each(['long', 'short'] as const)(
+    'runs the %s-sleeve fabric straight down the outer line of each arm',
+    (sleeve) => {
+      // Arc length round the arm is measured from its outer line, so however
+      // much the sleeve narrows, that line keeps the same place in the fabric.
+      const { rest } = buildGarmentGeometry(sleeve === 'long' ? 'shirt-long-sleeve' : 'shirt-short-sleeve', shape)
+      const position = rest.getAttribute('position')
+      const uv = rest.getAttribute('uv')
+      const length = -sleeveRings(shape, sleeve)[0].y
+      for (const side of SIDES) {
+        const toArm = limbTransform(shape.arm, side).invert()
+        let found = 0
+        for (let i = 0; i < position.count; i++) {
+          const local = new Vector3().fromBufferAttribute(position, i).applyMatrix4(toArm)
+          // Not the very top of the cap, where every angle meets.
+          const onOuterLine = Math.abs(local.z) < 1e-5 && local.x * side > 1e-4 && local.x * side < 0.1
+          if (!onOuterLine || local.y < -length - 1e-4) continue
+          expect(Math.abs(uv.getX(i))).toBeLessThan(0.001)
+          found++
+        }
+        // Every ring of the sleeve and of its cap has a point on the line.
+        expect(found).toBeGreaterThanOrEqual(sleeveRings(shape, sleeve).length + 8)
+      }
+    },
+  )
+
+  it('runs the trouser fabric straight down the back of each leg, level with the seat', () => {
+    // Arc length round the leg is measured from the centre of its back, so
+    // that line keeps the same place in the fabric from the top of the leg to
+    // the hem, and the height in the fabric is the height in the world, as on the seat.
+    const { rest } = buildGarmentGeometry('trousers-straight', shape)
+    const position = rest.getAttribute('position')
+    const uv = rest.getAttribute('uv')
+    for (const side of SIDES) {
+      const toLeg = limbTransform(shape.leg, side).invert()
+      const us: number[] = []
+      for (let i = 0; i < position.count; i++) {
+        const world = new Vector3().fromBufferAttribute(position, i)
+        const local = world.clone().applyMatrix4(toLeg)
+        if (Math.abs(local.x) > 1e-5 || local.z > -0.02 || local.y > 1e-4) continue
+        us.push(uv.getX(i))
+        expect(uv.getY(i)).toBeCloseTo(world.y, 5)
+      }
+      expect(us.length).toBeGreaterThanOrEqual(trouserLegRings(shape).length)
+      expect(Math.max(...us) - Math.min(...us)).toBeLessThan(0.001)
     }
   })
 
