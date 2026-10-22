@@ -1,7 +1,8 @@
 import { MirroredRepeatWrapping, RepeatWrapping } from 'three'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cropAndFill } from '../garments/photo-mapping'
 import type { FabricTile } from '../garments/pattern-tile'
+import type { PhotoAnalysis } from '../garments/photo-analysis'
 import {
   fabricTransform,
   frontFit,
@@ -9,6 +10,7 @@ import {
   frontScale,
   mirroredTile,
   paddedSides,
+  photoTextures,
   tileRepeat,
   TYPICAL_FRONT_ASPECT,
   type Affine,
@@ -228,5 +230,58 @@ describe('tileRepeat', () => {
     expect(wrap).toBe(MirroredRepeatWrapping)
     expect(repeat[0]).toBeCloseTo(1 / ((91 / 454) * 0.42), 6)
     expect(repeat[1]).toBeCloseTo(repeat[0], 9)
+  })
+})
+
+describe('photoTextures', () => {
+  afterEach(() => {
+    // Back to the test setup's canvas, which has no context, as jsdom has none.
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation(() => null)
+    vi.unstubAllGlobals()
+  })
+
+  /** Draws through a pretend 2D context, noting where each image lands, as [x, y, width, height]. */
+  function recordDrawing() {
+    const draws: number[][] = []
+    const context = {
+      imageSmoothingQuality: 'low',
+      drawImage: (_image: unknown, ...rect: number[]) => draws.push(rect),
+      putImageData: () => {},
+    }
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation(
+      () => context as unknown as CanvasRenderingContext2D,
+    )
+    vi.stubGlobal(
+      'ImageData',
+      class {
+        data: Uint8ClampedArray
+        width: number
+        height: number
+        constructor(width: number, height: number) {
+          this.data = new Uint8ClampedArray(width * height * 4)
+          this.width = width
+          this.height = height
+        }
+      },
+    )
+    return draws
+  }
+
+  it('draws a photo that reaches past a narrow body at its own shape, trimmed, rather than squeezed in', () => {
+    const draws = recordDrawing()
+    // A 700 x 1000 px crop, a little wide for its length, on the long-sleeve Small panel.
+    const crop = { x: 0, y: 0, width: 700, height: 1000 }
+    const pixels = (width: number, height: number) => ({ data: new Uint8ClampedArray(width * height * 4), width, height })
+    const analysis = {
+      crop,
+      front: pixels(700, 1000),
+      tile: { pixels: pixels(10, 10), width: 10, height: 10, wrap: 'mirror' },
+    } as unknown as PhotoAnalysis
+    photoTextures(analysis, { minX: 0, maxX: 0.377, minY: 0, maxY: 0.645 }, 'shirt-long-sleeve')
+
+    // The front is drawn first: the photo, at its own shape, reaching past both sides of the canvas.
+    const [x, , width, height] = draws[0]
+    expect(width / height).toBeCloseTo(0.7, 3)
+    expect(x).toBeLessThan(0)
   })
 })

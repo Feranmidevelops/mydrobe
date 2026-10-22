@@ -214,12 +214,18 @@ function drawFront(analysis: PhotoAnalysis, layout: PanelRect, panel: Size, pxPe
   const drawn = { x: layout.x * sx, y: layout.y * sy, width: layout.width * sx, height: layout.height * sy }
   const photo = pixelsToCanvas(analysis.front)
   const sides = paddedSides(drawn, width, height)
-  if (!sides.left && !sides.right && !sides.top && !sides.bottom) return drawScaled(photo, width, height)
-
   const canvas = createCanvas(width, height)
   const ctx = canvas.getContext('2d')
   if (!ctx) return canvas
   ctx.imageSmoothingQuality = 'high'
+  // Where nothing needs padding, the photo still goes where its layout puts
+  // it: across the whole canvas for trousers, or reaching past the sides of a
+  // narrow body, which trims it, rather than being squeezed in.
+  if (!sides.left && !sides.right && !sides.top && !sides.bottom) {
+    ctx.drawImage(photo, drawn.x, drawn.y, drawn.width, drawn.height)
+    return canvas
+  }
+
   const { tile, crop } = analysis
   const pattern = ctx.createPattern(pixelsToCanvas(tile.wrap === 'mirror' ? mirroredTile(tile.pixels) : tile.pixels), 'repeat')
   if (pattern) {
