@@ -383,6 +383,50 @@ function growBackdrop(image: RgbaImage, inRange: Uint8Array, step: number, block
   return isBackground
 }
 
+/** How saturated (as in HSV) a backdrop must be for its shadows to be known by their colour. */
+const COLOURED_BACKDROP = 0.25
+
+/** The least brightness, out of 255, at which a backdrop's colour is told reliably. */
+const READABLE_BACKDROP = 64
+
+/** How far a shadow's chromaticity may stray from the backdrop's hue. */
+const SHADOW_HUE = 0.03
+
+/** The darkest a shadow is taken to be, as a share of the backdrop's lightness. */
+const DARKEST_SHADOW = 0.45
+
+/**
+ * A test for the backdrop's own shadows, such as the one a folded shirt casts
+ * on a pink sheet: a darker copy of the backdrop's colour. On a coloured
+ * backdrop a shadow keeps its hue and, lit by light the backdrop itself
+ * coloured, gets more saturated, never greyer; so a pixel counts if its
+ * chromaticity (each channel's share of r + g + b) lies on the line from grey
+ * out through the backdrop's, up to twice as far out, and it's between
+ * DARKEST_SHADOW and 1 times the backdrop's lightness. A garment of a
+ * duller or different hue isn't taken for a shadow, and one in a darker shade
+ * of the backdrop's colour is still held back by its sharp edge, which the
+ * backdrop can't step across. Null for a near-grey or very dark backdrop,
+ * whose hue says nothing (a grey garment on grey would be eaten).
+ */
+function shadowTest(background: Rgb): ((color: Rgb) => boolean) | null {
+  const [r, g, b] = background
+  const brightest = Math.max(r, g, b)
+  if (brightest < READABLE_BACKDROP || (brightest - Math.min(r, g, b)) / brightest < COLOURED_BACKDROP) return null
+  const light = r + g + b
+  const [hueR, hueG] = [r / light, g / light]
+  // How far out from grey the backdrop's chromaticity lies, and which way.
+  const saturation = Math.hypot(hueR - 1 / 3, hueG - 1 / 3)
+  const [outR, outG] = [(hueR - 1 / 3) / saturation, (hueG - 1 / 3) / saturation]
+  return ([pr, pg, pb]) => {
+    const sum = pr + pg + pb
+    if (sum < light * DARKEST_SHADOW || sum > light) return false
+    const [dr, dg] = [pr / sum - hueR, pg / sum - hueG]
+    const along = dr * outR + dg * outG
+    const across = Math.abs(dr * outG - dg * outR)
+    return across <= SHADOW_HUE && along >= -SHADOW_HUE && along <= saturation
+  }
+}
+
 /**
  * Marks garment pixels with 1. The background is grown inwards from the
  * photo's edges: it steps across gentle changes (a shadow, a gradient
@@ -391,7 +435,10 @@ function growBackdrop(image: RgbaImage, inRange: Uint8Array, step: number, block
  * garment's texture (see textureBarrier), so it can't seep through a check
  * whose dark squares match a dark backdrop. Anything it can't reach, such as
  * a dark check on a dark backdrop that the garment encloses, counts as
- * garment. Only the largest patch of garment is kept.
+ * garment. Tidying the mask fills notches along its edge, but a stretch of
+ * backdrop bigger than a notch that looks nothing like the garment goes back
+ * to being background (see reopenBackdrop). Only the largest patch of garment
+ * is kept.
  *
  * Which patch that is gets decided by colour alone: the barrier only fills in
  * what the colours wore away from it, so backdrop it holds back between props
@@ -409,7 +456,7 @@ export function garmentMask(
   const garment = (isBackground: Uint8Array) => {
     const mask = new Uint8Array(total)
     for (let i = 0; i < total; i++) mask[i] = isBackground[i] ? 0 : 1
-    return tidyMask(mask, width, height)
+    return reopenBackdrop(image, tidyMask(mask, width, height), isBackground)
   }
 
   if (!background) {
@@ -423,9 +470,12 @@ export function garmentMask(
   const { spread, roughness } = backdropVariation(image, background)
   const step = Math.max(tolerance / 3, roughness * 3)
   const range = Math.max(tolerance * 2, spread * 1.25)
+  // A shadow on a coloured backdrop can be darker than the range allows, but it's still the backdrop's colour.
+  const shadow = shadowTest(background)
   const inRange = new Uint8Array(total)
   for (let i = 0; i < total; i++) {
-    if (colorDistance([data[i * 4], data[i * 4 + 1], data[i * 4 + 2]], background) <= range) inRange[i] = 1
+    const color: Rgb = [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]
+    if (colorDistance(color, background) <= range || shadow?.(color)) inRange[i] = 1
   }
   const backdrop = growBackdrop(image, inRange, step, null)
   const byColour = largestComponent(garment(backdrop), width, height)
@@ -525,9 +575,79 @@ function morph(mask: Uint8Array, width: number, height: number, radius: number, 
  */
 export function tidyMask(mask: Uint8Array, width: number, height: number): Uint8Array {
   const thin = Math.max(1, Math.round(Math.min(width, height) * 0.008))
-  const gap = Math.max(1, Math.round(Math.max(width, height) * 0.025))
+  const gap = closingRadius(width, height)
   const opened = dilateMask(erodeMask(mask, width, height, thin), width, height, thin)
   return erodeMask(dilateMask(opened, width, height, gap), width, height, gap)
+}
+
+/** How far tidyMask's closing reaches, in pixels: it fills gaps up to about twice this wide. */
+function closingRadius(width: number, height: number) {
+  return Math.max(1, Math.round(Math.max(width, height) * 0.025))
+}
+
+/** The least share of a garment's pixels a colour (or one close to it) must make up to count as one of its own. */
+const OWN_COLOR = 0.01
+
+/**
+ * Sends back to background each patch of backdrop that tidyMask's closing
+ * filled in although the backdrop had reached it, such as the strip of wall
+ * between an arm and the body, the gap between trouser legs or the corner
+ * where a folded leg crosses the other. Left as garment, those would be
+ * copied onto the front as they are; as background, they get the fabric.
+ *
+ * A patch stays filled if it's no bigger than a notch, or if most of it shows
+ * colours the garment itself does: the dark squares of a check lost to a dark
+ * backdrop, or deep shadow in a fold, are part of the garment, and look it.
+ * In a cut-out, where `isBackground` is the transparent pixels, only the size
+ * counts.
+ */
+function reopenBackdrop(image: RgbaImage, tidied: Uint8Array, isBackground: Uint8Array): Uint8Array {
+  const { data, width, height } = image
+  const total = width * height
+  const notch = (closingRadius(width, height) / 2) ** 2
+  // The garment's own colours: those of the pixels the backdrop never reached.
+  const bins = new Uint32Array(4096)
+  let garment = 0
+  for (let i = 0; i < total; i++) {
+    if (!tidied[i] || isBackground[i]) continue
+    bins[colorBin(data, i * 4)]++
+    garment++
+  }
+  const enough = Math.max(1, garment * OWN_COLOR)
+  const ownBin = new Int8Array(4096).fill(-1)
+  const looksOwn = (i: number) => {
+    if (data[i * 4 + 3] < 128) return false
+    const bin = colorBin(data, i * 4)
+    if (ownBin[bin] < 0) ownBin[bin] = nearbyCount(bins, pixel(image, i % width, Math.floor(i / width))) >= enough ? 1 : 0
+    return ownBin[bin] === 1
+  }
+
+  const result = tidied.slice()
+  const seen = new Uint8Array(total)
+  const queue = new Int32Array(total)
+  const filledIn = (j: number) => tidied[j] === 1 && isBackground[j] === 1
+  for (let start = 0; start < total; start++) {
+    if (seen[start] || !filledIn(start)) continue
+    // The patch's pixels end up in queue[0, tail).
+    let head = 0
+    let tail = 0
+    let own = 0
+    seen[start] = 1
+    queue[tail++] = start
+    while (head < tail) {
+      const i = queue[head++]
+      if (looksOwn(i)) own++
+      forNeighbours(i, width, height, (j) => {
+        if (!seen[j] && filledIn(j)) {
+          seen[j] = 1
+          queue[tail++] = j
+        }
+      })
+    }
+    if (tail <= notch || own * 2 >= tail) continue
+    for (let k = 0; k < tail; k++) result[queue[k]] = 0
+  }
+  return result
 }
 
 /** The unbroken run of garment pixels on a row that contains, or is nearest to, `centre`. */
@@ -911,12 +1031,15 @@ export function neckBand(mask: Uint8Array, width: number, bounds: Rect, crop: Re
   return shoulderRow(mask, width, bounds, crop.width) - crop.y + Math.round(crop.height * NECKLINE_DIP)
 }
 
+/** The coarse bin, of 16 levels per channel, of the colour at offset `p` of `data`. */
+function colorBin(data: Uint8ClampedArray, p: number) {
+  return ((data[p] >> 4) << 8) | ((data[p + 1] >> 4) << 4) | (data[p + 2] >> 4)
+}
+
 /** Counts the colours in rows `from` onwards, in coarse bins of 16 levels per channel. */
 function colorBins(image: RgbaImage, from: number) {
   const bins = new Uint32Array(4096)
-  for (let i = from * image.width * 4; i < image.data.length; i += 4) {
-    bins[((image.data[i] >> 4) << 8) | ((image.data[i + 1] >> 4) << 4) | (image.data[i + 2] >> 4)]++
-  }
+  for (let i = from * image.width * 4; i < image.data.length; i += 4) bins[colorBin(image.data, i)]++
   return bins
 }
 
