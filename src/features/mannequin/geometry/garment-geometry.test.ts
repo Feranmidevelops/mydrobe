@@ -10,7 +10,7 @@ import {
 import { describe, expect, it } from 'vitest'
 import { GARMENT_TEMPLATES } from '../../garments/garment.templates'
 import type { GarmentTemplateId } from '../../garments/garment.types'
-import { createBodyShape, limbTransform, SHOULDER_SQUASH, SIDES } from '../body-shape'
+import { createBodyShape, limbTransform, SHOULDER_SQUASH, SIDES, type BodyShape } from '../body-shape'
 import { BODY_PRESETS } from '../viewer.types'
 import {
   buildGarmentGeometry,
@@ -22,12 +22,14 @@ import {
   shirtTorsoRings,
   sleeveRings,
   shoulderCap,
+  CROTCH_DROP,
+  seatBottomY,
   trouserLegRings,
-  TROUSER_WAIST_EASE,
+  trouserSeatRings,
   TROUSER_WAIST_Y,
   type TorsoProfile,
 } from './garment-geometry'
-import { buildLoft, inflateRings, ringAt, type Ring } from './loft'
+import { buildLoft, ringAt, type Ring } from './loft'
 
 const templateIds = Object.keys(GARMENT_TEMPLATES) as GarmentTemplateId[]
 
@@ -64,6 +66,34 @@ function shirtReach(torso: TorsoProfile, point: Vector3, margin = 0) {
   const front = ringAt(torso.front, point.y)
   const ring = point.z >= (front.cz ?? 0) ? front : ringAt(torso.back, point.y)
   return (point.x / (ring.rx - margin)) ** 2 + ((point.z - (ring.cz ?? 0)) / (ring.rz - margin)) ** 2
+}
+
+/**
+ * Where a point sits against a pair of trousers: below 1 is inside the seat
+ * or a leg, whichever it is deepest in.
+ */
+const trouserParts = new Map<BodyShape, ReturnType<typeof partsOf>>()
+const partsOf = (shape: BodyShape) => ({
+  seat: trouserSeatRings(shape),
+  leg: trouserLegRings(shape),
+  toLeg: SIDES.map((side) => limbTransform(shape.leg, side).invert()),
+})
+function trouserReach(shape: BodyShape, point: Vector3) {
+  if (!trouserParts.has(shape)) trouserParts.set(shape, partsOf(shape))
+  const { seat, leg, toLeg } = trouserParts.get(shape)!
+  const reaches = [
+    point.y >= seat.front[0].y && point.y <= topOf(seat.front).y ? shirtReach(seat, point) : Infinity,
+  ]
+  for (const [s, side] of SIDES.entries()) {
+    const local = point.clone().applyMatrix4(toLeg[s])
+    // The leg's top ring is levelled onto the seat's bottom edge, so anything
+    // below the seat but past the top of the tilted leg is measured against that ring.
+    if (local.y < leg.front[0].y || (local.y > topOf(leg.front).y && point.y >= seat.front[0].y)) continue
+    const front = ringAt(leg.front, local.y)
+    const ring = local.z >= (front.cz ?? 0) ? front : ringAt(leg.back, local.y)
+    reaches.push(((local.x - (ring.cx ?? 0) * side) / ring.rx) ** 2 + ((local.z - (ring.cz ?? 0)) / ring.rz) ** 2)
+  }
+  return Math.min(...reaches)
 }
 
 describe.each(BODY_PRESETS)('%s garments', (preset) => {
@@ -118,11 +148,11 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
 
   it.each(['long', 'short'] as const)('covers the trouser waist all the way round under a %s-sleeve shirt', (sleeve) => {
     const torso = shirtTorsoRings(shape, sleeve)
-    for (let y = SHIRT_HEM_Y[sleeve] + 0.005; y <= TROUSER_WAIST_Y; y += 0.01) {
-      const [waist] = inflateRings([ringAt(shape.torso, y)], TROUSER_WAIST_EASE)
+    const seat = trouserSeatRings(shape)
+    for (let y = Math.max(SHIRT_HEM_Y[sleeve] + 0.005, seat.front[0].y); y <= TROUSER_WAIST_Y; y += 0.01) {
       for (let i = 0; i < 64; i++) {
-        const theta = (i / 64) * Math.PI * 2
-        const point = new Vector3(waist.rx * Math.cos(theta), y, (waist.cz ?? 0) + waist.rz * Math.sin(theta))
+        const theta = ((i + 0.5) / 64) * Math.PI * 2
+        const point = pointOn(ringAt(Math.sin(theta) >= 0 ? seat.front : seat.back, y), theta)
         expect(shirtReach(torso, point, 0.003)).toBeLessThan(1)
       }
     }
@@ -344,49 +374,149 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
     for (const side of SIDES) {
       const toLeg = limbTransform(shape.leg, side).invert()
       const us: number[] = []
+      // Below where the legs part, where each is a plain leg round its own axis.
+      const partY = shape.torso[0].y - CROTCH_DROP + 1e-6
       for (let i = 0; i < position.count; i++) {
         const world = new Vector3().fromBufferAttribute(position, i)
         const local = world.clone().applyMatrix4(toLeg)
-        if (Math.abs(local.x) > 1e-5 || local.z > -0.02 || local.y > 1e-4) continue
+        if (Math.abs(local.x) > 1e-5 || local.z > -0.02 || world.y > partY) continue
         us.push(uv.getX(i))
         expect(uv.getY(i)).toBeCloseTo(world.y, 5)
       }
-      expect(us.length).toBeGreaterThanOrEqual(trouserLegRings(shape).length)
+      expect(us.length).toBeGreaterThanOrEqual(trouserLegRings(shape).back.filter((ring) => !ring.cx).length)
       expect(Math.max(...us) - Math.min(...us)).toBeLessThan(0.001)
     }
   })
 
   it('lets each trouser leg fall straight from the thigh past the knee, never narrowing on the way up', () => {
-    const rings = trouserLegRings(shape)
-    const widest = rings.reduce((best, ring, i) => (ring.rx > rings[best].rx ? i : best), 0)
-    for (let i = 1; i <= widest; i++) {
-      expect(rings[i].rx).toBeGreaterThanOrEqual(rings[i - 1].rx - 0.0005)
-      expect(rings[i].rz).toBeGreaterThanOrEqual(rings[i - 1].rz - 0.0005)
-    }
-    for (const ring of rings) {
-      const leg = ringAt(shape.leg.rings, ring.y)
-      expect(ring.rx - leg.rx).toBeGreaterThan(0.008)
-      expect(ring.rz - leg.rz).toBeGreaterThan(0.008)
+    const { front, back } = trouserLegRings(shape)
+    // Up to the seat's fullest ring: above it the leg tops sit just inside the seat.
+    const seatD = (shape.leg.joint[1] - seatBottomY(shape)) / Math.cos(shape.leg.abduction)
+    for (const rings of [front, back]) {
+      for (let i = 1; i < rings.length && rings[i].y <= -seatD; i++) {
+        expect(rings[i].rx).toBeGreaterThanOrEqual(rings[i - 1].rx - 0.0005)
+        expect(rings[i].rz).toBeGreaterThanOrEqual(rings[i - 1].rz - 0.0005)
+      }
+      for (const ring of rings) {
+        const leg = ringAt(shape.leg.rings, ring.y)
+        expect(ring.rx - leg.rx).toBeGreaterThan(0.008)
+        expect(ring.rz - leg.rz).toBeGreaterThan(0.008)
+      }
     }
   })
 
+  it('makes the trousers one surface, with no band or cap facing the floor', () => {
+    const { front, rest } = buildGarmentGeometry('trousers-straight', shape)
+    // No flat cap closes the seat from below.
+    for (const geometry of [front, rest]) {
+      const normal = geometry.getAttribute('normal')
+      for (let i = 0; i < normal.count; i++) expect(normal.getY(i)).toBeGreaterThan(-0.99)
+    }
+    // Every vertex that isn't tucked away inside another part (a leg top
+    // inside the seat, or a leg's inside crossing into the other leg) faces
+    // the floor no more steeply than a gentle slope. Only the crotch seam,
+    // where the legs meet down the middle (a fifth of the crotch's width),
+    // curves under more steeply, as on real trousers.
+    const seam = 0.2 * shape.torso[0].rx
+    let seen = 0
+    for (const geometry of [front, rest]) {
+      const position = geometry.getAttribute('position')
+      const normal = geometry.getAttribute('normal')
+      for (let i = 0; i < position.count; i++) {
+        const point = new Vector3().fromBufferAttribute(position, i)
+        if (point.y < shape.torso[0].y || point.y > TROUSER_WAIST_Y) continue
+        if (trouserReach(shape, point) < 0.998) continue
+        expect(normal.getY(i)).toBeGreaterThan(Math.abs(point.x) < seam ? -0.7 : -0.5)
+        seen++
+      }
+    }
+    expect(seen).toBeGreaterThan(500)
+  })
+
+  it('grows the leg tops into the seat without a step', () => {
+    const seat = trouserSeatRings(shape)
+    const seatY = seatBottomY(shape)
+    const { front, back } = trouserLegRings(shape)
+    const [jointX, jointY] = shape.leg.joint
+    const d = (jointY - seatY) / Math.cos(shape.leg.abduction)
+    const axis = jointX + d * Math.sin(shape.leg.abduction)
+    const [legFront, legBack] = [ringAt(front, -d), ringAt(back, -d)]
+    expect(seat.front[0].y).toBeCloseTo(seatY, 6)
+    // Seen from the front, the side; seen from the side, the front and back.
+    expect(Math.abs(axis + (legFront.cx ?? 0) + legFront.rx - seat.front[0].rx)).toBeLessThan(0.003)
+    expect(Math.abs(frontOf(legFront) - frontOf(seat.front[0]))).toBeLessThan(0.003)
+    expect(Math.abs(backOf(legBack) - backOf(seat.back[0]))).toBeLessThan(0.003)
+  })
+
+  it('keeps the mannequin’s hips, crotch and thighs inside the trousers', () => {
+    const crotch = shape.torso[0]
+    for (let y = crotch.y; y <= TROUSER_WAIST_Y; y += 0.005) {
+      const ring = ringAt(shape.torso, y)
+      for (let i = 0; i < 64; i++) {
+        expect(trouserReach(shape, pointOn(ring, ((i + 0.5) / 64) * Math.PI * 2))).toBeLessThan(1)
+      }
+    }
+    // The flat underside of the torso, between the thighs.
+    for (let i = -10; i <= 10; i++) {
+      for (let j = -10; j <= 10; j++) {
+        const [x, z] = [(i / 10) * crotch.rx, (crotch.cz ?? 0) + (j / 10) * crotch.rz]
+        if ((x / crotch.rx) ** 2 + ((z - (crotch.cz ?? 0)) / crotch.rz) ** 2 > 1) continue
+        expect(trouserReach(shape, new Vector3(x, crotch.y, z))).toBeLessThan(1)
+      }
+    }
+    for (const side of SIDES) {
+      const transform = limbTransform(shape.leg, side)
+      for (const ring of shape.leg.rings.filter((ring) => ring.y >= -0.4)) {
+        for (let i = 0; i < 32; i++) {
+          const point = pointOn(ring, ((i + 0.5) / 32) * Math.PI * 2).applyMatrix4(transform)
+          expect(trouserReach(shape, point)).toBeLessThan(1)
+        }
+      }
+    }
+  })
+
+  it('carries the seat’s fabric on into the legs without a jump', () => {
+    // Where the legs' top edges meet the seat's bottom edge, the back's fabric
+    // sits at the same place in the swatch on either side of the join.
+    const { rest } = buildGarmentGeometry('trousers-straight', shape)
+    const seatY = seatBottomY(shape)
+    const position = rest.getAttribute('position')
+    const uv = rest.getAttribute('uv')
+    const near: number[] = []
+    for (let i = 0; i < position.count; i++) {
+      if (Math.abs(position.getY(i) - seatY) < 1e-4 && position.getZ(i) < -0.04) near.push(i)
+    }
+    let pairs = 0
+    for (const a of near) {
+      for (const b of near) {
+        if (b <= a) continue
+        const apart = [position.getX(a) - position.getX(b), position.getZ(a) - position.getZ(b)]
+        if (Math.hypot(...apart) > 1e-5) continue
+        expect(Math.abs(uv.getX(a) - uv.getX(b))).toBeLessThan(0.002)
+        expect(Math.abs(uv.getY(a) - uv.getY(b))).toBeLessThan(1e-5)
+        pairs++
+      }
+    }
+    expect(pairs).toBeGreaterThanOrEqual(40)
+  })
+
   it.each(['long', 'short'] as const)('lets a %s-sleeve shirt hem hang over the trouser legs', (sleeve) => {
-    // Untucked shirts must stay outside the trousers where the two overlap.
+    // Untucked shirts must stay outside the trousers where the two overlap,
+    // from the hem up to where the leg tops meet the seat.
     const hemY = SHIRT_HEM_Y[sleeve]
     const torso = shirtTorsoRings(shape, sleeve)
     const leg = trouserLegRings(shape)
     const transform = limbTransform(shape.leg, 1)
-    const distance = (shape.leg.joint[1] - hemY - 0.005) / Math.cos(shape.leg.abduction)
-    const ring = ringAt(leg, -distance)
-
-    for (let i = 0; i < 32; i++) {
-      const theta = (i / 32) * Math.PI * 2
-      const point = new Vector3(
-        ring.rx * Math.cos(theta),
-        ring.y,
-        (ring.cz ?? 0) + ring.rz * Math.sin(theta),
-      ).applyMatrix4(transform)
-      expect(shirtReach(torso, point)).toBeLessThan(1)
+    for (let y = hemY + 0.005; y < seatBottomY(shape); y += 0.01) {
+      const distance = (shape.leg.joint[1] - y) / Math.cos(shape.leg.abduction)
+      for (let i = 0; i < 32; i++) {
+        const theta = ((i + 0.5) / 32) * Math.PI * 2
+        const point = pointOn(ringAt(Math.sin(theta) >= 0 ? leg.front : leg.back, -distance), theta)
+        // Only the parts of the leg that show: its inside crosses into the other leg.
+        const world = point.applyMatrix4(transform)
+        if (world.x < 0) continue
+        expect(shirtReach(torso, world)).toBeLessThan(1)
+      }
     }
   })
 })

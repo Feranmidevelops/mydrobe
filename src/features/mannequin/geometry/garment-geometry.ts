@@ -1,8 +1,8 @@
-import { BufferGeometry, Float32BufferAttribute, SphereGeometry } from 'three'
+import { BufferGeometry, Float32BufferAttribute, SphereGeometry, Vector3 } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { GarmentTemplateId } from '../../garments/garment.types'
 import { limbTransform, SHOULDER_SQUASH, SIDES, type BodyShape, type Side } from '../body-shape'
-import { buildLoft, inflateRings, ringAt, sliceRings, type LoftUv, type Ring } from './loft'
+import { buildLoft, inflateRings, ringAt, sliceRings, TAU, type LoftUv, type Ring } from './loft'
 
 /** The body-space rectangle a front-facing garment image is projected onto. */
 export interface FrontPanel {
@@ -53,12 +53,13 @@ const torsoSwatchUv: LoftUv = (world, theta, ring) => [
  * Sleeve and leg fabric. Across: arc length round the limb from a centre
  * line at angle `centre`, so that line keeps one place in the fabric however
  * much the limb narrows, and the narrowing gathers at the far side, at the
- * seam. `offset` places the line in the fabric. Along: the distance down the
- * limb, or for a trouser leg the height in the world, as on the seat.
+ * seam. `offset`, plus any shift of the ring's centre, places the line in
+ * the fabric. Along: the distance down the limb, or for a trouser leg the
+ * height in the world, as on the seat.
  */
 function limbSwatchUv(centre: number, along: 'limb' | 'height', offset = 0): LoftUv {
   return (world, theta, ring) => [
-    offset + ((theta - centre) * (ring.rx + ring.rz)) / 2,
+    offset + (ring.cx ?? 0) + ((theta - centre) * (ring.rx + ring.rz)) / 2,
     along === 'limb' ? ring.y : world.y,
   ]
 }
@@ -176,9 +177,220 @@ function straightLeg(rings: Ring[]): Ring[] {
   })
 }
 
-export function trouserLegRings(shape: BodyShape): Ring[] {
-  const hemD = shape.leg.length - 0.04
-  return straightLeg(inflateRings(sliceRings(shape.leg.rings, -hemD, 0, 26), TROUSER_EASE))
+/**
+ * Trousers hang closer than shirts (fabric may slope in faster below a belly
+ * or seat), so an untucked shirt always falls outside them.
+ */
+export const TROUSER_DRAPE = 0.25
+/** How far below the body's crotch the trouser legs finish parting, so the crotch stays covered. */
+export const CROTCH_DROP = 0.07
+/**
+ * Near the seat the two legs lie almost on one another. Each sits this much
+ * towards its own side, so the right leg always shows on the right and the
+ * left on the left, rather than the two flickering through each other.
+ */
+const LEG_SIDEWAYS = 0.001
+
+/** The height of the seat's fullest ring, below which the trousers part into legs. */
+export function seatBottomY(shape: BodyShape): number {
+  let fullest = shape.torso[0]
+  for (const ring of shape.torso) if (ring.y <= HIP_Y && ring.rx > fullest.rx) fullest = ring
+  return fullest.y
+}
+
+/**
+ * The trousers' seat and waist, from the seat's fullest ring up to the
+ * waistband, falling from the seat and belly instead of tucking in under them.
+ */
+export function trouserSeatRings(shape: BodyShape): TorsoProfile {
+  const rings = sliceRings(shape.torso, seatBottomY(shape), TROUSER_WAIST_Y, 14)
+  return hang(inflateRings(rings, TROUSER_WAIST_EASE), TROUSER_DRAPE)
+}
+
+/** A trouser's size at a height: its centre and half-width across, and how far its front and back reach. */
+interface Extents {
+  cz: number
+  rx: number
+  front: number
+  back: number
+}
+
+/** How far below the seat the legs carry on the seat's own slopes before levelling off. */
+const SEAT_RUN_ON = 0.04
+
+/**
+ * The seat's extents at a height. Below its fullest ring each one carries on
+ * the way the seat was going (in, falling from a belly, or out, still
+ * rounding over the seat), easing off over SEAT_RUN_ON, so the legs take
+ * over without a crease.
+ */
+function seatExtents(seat: TorsoProfile): (y: number) => Extents {
+  const extents = (front: Ring, back: Ring): Extents => ({
+    cz: front.cz ?? 0,
+    rx: front.rx,
+    front: (front.cz ?? 0) + front.rz,
+    back: (back.cz ?? 0) - back.rz,
+  })
+  const [bottom, above] = [0, 1].map((i) => extents(seat.front[i], seat.back[i]))
+  const [seatY, rise] = [seat.front[0].y, seat.front[1].y - seat.front[0].y]
+  return (y) => {
+    if (y >= seatY) return extents(ringAt(seat.front, y), ringAt(seat.back, y))
+    const fall = (SEAT_RUN_ON * (1 - Math.exp(-(seatY - y) / SEAT_RUN_ON))) / rise
+    const on = (key: keyof Extents) => bottom[key] + (bottom[key] - above[key]) * fall
+    return { cz: bottom.cz, rx: on('rx'), front: on('front'), back: on('back') }
+  }
+}
+
+/**
+ * Where a full figure's thigh bulges past the seat's outline, just below the
+ * hip, a leg ring widens round it instead of squeezing it: out to the side,
+ * where the bulge is, and only front to back if the thigh reaches past the
+ * ring's front or back. All in the leg's frame, `thigh` round its axis.
+ */
+function roomForThigh(thigh: Ring, ring: { cx: number; cz: number; rx: number; frontRz: number; backRz: number }) {
+  const { cx, cz, rx, frontRz, backRz } = ring
+  let [wide, deep] = [rx, 1]
+  for (let k = 0; k < 32; k++) {
+    const theta = (k / 32) * TAU
+    const [x, z] = [thigh.rx * Math.cos(theta), (thigh.cz ?? 0) + thigh.rz * Math.sin(theta)]
+    const across = ((z - cz) / (z >= cz ? frontRz : backRz)) ** 2
+    if (across < 0.9) wide = Math.max(wide, Math.abs(x - cx) / Math.sqrt(1 - across))
+    else deep = Math.max(deep, Math.sqrt(((x - cx) / rx) ** 2 + across))
+  }
+  return { rx: Math.max(wide, rx * deep), frontRz: frontRz * deep, backRz: backRz * deep }
+}
+
+/** Where the trouser legs finish parting, and where they meet the seat. */
+function legParting(shape: BodyShape) {
+  return { partY: shape.torso[0].y - CROTCH_DROP, seatY: seatBottomY(shape) }
+}
+
+/**
+ * How far a trouser leg ring, at a given distance down the leg, has grown
+ * into the seat: 0 where the legs have parted, 1 at the seat.
+ */
+function intoSeat(shape: BodyShape, d: number) {
+  const { partY, seatY } = legParting(shape)
+  return smoothstep(partY, seatY, shape.leg.joint[1] - d * Math.cos(shape.leg.abduction))
+}
+
+/**
+ * A leg's rings lie square to the leg, so they tilt with it; the seat's lie
+ * level. As a leg grows into the seat, its rings are levelled to match (by
+ * shearing each one round its centre), so the leg follows the seat at every
+ * point of a ring, not just at its centre. Normals and, on the back, the
+ * swatch's height follow. `leg` is the right leg's profile.
+ */
+function levelLeg(geometry: BufferGeometry, shape: BodyShape, leg: TorsoProfile, side: Side, swatch: boolean) {
+  const [jointX] = shape.leg.joint
+  const [cos, sin, tan] = [Math.cos, Math.sin, Math.tan].map((f) => f(shape.leg.abduction))
+  const toLeg = limbTransform(shape.leg, side).invert()
+  const position = geometry.getAttribute('position')
+  const normal = geometry.getAttribute('normal')
+  const uv = geometry.getAttribute('uv')
+  const point = new Vector3()
+  const facing = new Vector3()
+  for (let i = 0; i < position.count; i++) {
+    point.fromBufferAttribute(position, i)
+    const d = -point.clone().applyMatrix4(toLeg).y
+    const shear = tan * side * intoSeat(shape, d)
+    if (shear === 0) continue
+    // Where the ring's centre is across the body.
+    const centre = side * (jointX + d * sin + (ringAt(leg.front, -d).cx ?? 0) * cos)
+    position.setY(i, point.y - (point.x - centre) * shear)
+    facing.fromBufferAttribute(normal, i)
+    facing.x += shear * facing.y
+    facing.normalize()
+    normal.setXYZ(i, facing.x, facing.y, facing.z)
+    if (swatch) uv.setY(i, position.getY(i))
+  }
+}
+
+/**
+ * The right trouser leg in its own frame, rings from the hem up, as a front
+ * and a back half-profile. Below where the legs part it is a straight leg.
+ * From there up it grows smoothly into the seat: its side, front and back
+ * move out to the seat's, and its inside crosses over to the far side of the
+ * seat, so at the seat's fullest ring the leg is the seat, and the legs and
+ * seat make one surface with no ledge. Where the legs overlap, each one's
+ * inside is within the other leg, out of sight, and the notch between them
+ * deepens into the crotch. The top ring is the seat's bottom ring.
+ * The left leg is its mirror image: negate cx.
+ */
+export function trouserLegRings(shape: BodyShape): TorsoProfile {
+  const { leg } = shape
+  const [jointX, jointY] = leg.joint
+  const [cos, sin] = [Math.cos(leg.abduction), Math.sin(leg.abduction)]
+  const seat = trouserSeatRings(shape)
+  const { partY, seatY } = legParting(shape)
+  // Distance down the leg's axis to a height.
+  const down = (y: number) => (jointY - y) / cos
+  const plain = straightLeg(
+    inflateRings(
+      [
+        ...sliceRings(leg.rings, -(leg.length - 0.04), -down(partY), 20),
+        ...sliceRings(leg.rings, -down(partY), -down(seatY), 20).slice(1),
+      ],
+      TROUSER_EASE,
+    ),
+  )
+  const seatAt = seatExtents(seat)
+  // Each ring's height, where the leg's axis is across the body there, and
+  // its extents across the body (x) and front to back (z), on the way to the seat's.
+  const spans = plain.map((ring) => {
+    const d = -ring.y
+    const y = jointY - d * cos
+    const axis = jointX + d * sin
+    const t = smoothstep(partY, seatY, y)
+    const target = seatAt(y)
+    const toSeat = (own: number, to: number) => own + (to - own) * t
+    const cz = ring.cz ?? 0
+    return {
+      y,
+      axis,
+      t,
+      cz: toSeat(cz, target.cz),
+      outer: toSeat(axis + ring.rx, target.rx),
+      inner: toSeat(axis - ring.rx, -target.rx),
+      front: toSeat(cz + ring.rz, target.front),
+      back: toSeat(cz - ring.rz, target.back),
+    }
+  })
+  // Like the seat itself, the front and back fall from the seat and belly
+  // instead of tucking in under them.
+  for (let i = spans.length - 2; i >= 0; i--) {
+    const give = TROUSER_DRAPE * (spans[i + 1].y - spans[i].y)
+    spans[i].front = Math.max(spans[i].front, spans[i + 1].front - give)
+    spans[i].back = Math.min(spans[i].back, spans[i + 1].back + give)
+  }
+  const front: Ring[] = []
+  const back: Ring[] = []
+  // Up to the seat the leg never narrows on the way up.
+  let widest = { rx: 0, frontRz: 0, backRz: 0 }
+  plain.forEach((ring, i) => {
+    const { y, axis, t, cz, outer, inner } = spans[i]
+    const cx = ((outer + inner) / 2 - axis) / cos
+    const [thigh] = inflateRings([ringAt(leg.rings, ring.y)], TROUSER_EASE / 2)
+    const size = roomForThigh(thigh, {
+      cx,
+      cz,
+      rx: (outer - inner) / 2,
+      frontRz: spans[i].front - cz,
+      backRz: cz - spans[i].back,
+    })
+    if (y <= seatY) {
+      widest = {
+        rx: Math.max(widest.rx, size.rx),
+        frontRz: Math.max(widest.frontRz, size.frontRz),
+        backRz: Math.max(widest.backRz, size.backRz),
+      }
+      Object.assign(size, widest)
+    }
+    const shared = { y: ring.y, rx: size.rx, cx: cx + LEG_SIDEWAYS * t, cz }
+    front.push({ ...shared, rz: size.frontRz })
+    back.push({ ...shared, rz: size.backRz })
+  })
+  return { front, back }
 }
 
 /** How far a sleeve's cap sits above the top of the shoulder; fabric lies flat there, with no ease. */
@@ -299,21 +511,49 @@ function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeome
   return finish(front, rest)
 }
 
+/**
+ * Moves a leg loft's top ring onto the seat loft's bottom ring, point for
+ * point, so the two share an edge: no gap, overlap or ledge shows where the
+ * legs meet the seat. The leg's levelled top ring already lies there, to
+ * within rounding and the leg's slight step to its own side. On the back the
+ * swatch's fabric is carried across the join too, point for point.
+ */
+function meetSeat(leg: BufferGeometry, seat: BufferGeometry, swatch: boolean) {
+  const [legPosition, seatPosition] = [leg.getAttribute('position'), seat.getAttribute('position')]
+  const [legUv, seatUv] = [leg.getAttribute('uv'), seat.getAttribute('uv')]
+  const columns = TROUSER_SEGMENTS + 1
+  for (let j = 0; j < columns; j++) {
+    const i = legPosition.count - columns + j
+    legPosition.setXYZ(i, seatPosition.getX(j), seatPosition.getY(j), seatPosition.getZ(j))
+    if (swatch) legUv.setXY(i, seatUv.getX(j), seatUv.getY(j))
+  }
+}
+
+/** Points round each half of the trousers: the seat's and the legs' match, so their edges meet. */
+const TROUSER_SEGMENTS = 40
+
 function trousersGeometry(shape: BodyShape): GarmentGeometry {
-  const waist = inflateRings(sliceRings(shape.torso, shape.torso[0].y, TROUSER_WAIST_Y, 14), TROUSER_WAIST_EASE)
-  const front = [buildLoft(waist, { radialSegments: 40, ...FRONT_HALF, capStart: true })]
-  const rest = [
-    buildLoft(waist, { radialSegments: 40, ...BACK_HALF, capStart: true, uv: torsoSwatchUv }),
-  ]
+  const seat = trouserSeatRings(shape)
+  const seatFront = buildLoft(seat.front, { radialSegments: TROUSER_SEGMENTS, ...FRONT_HALF })
+  const seatBack = buildLoft(seat.back, { radialSegments: TROUSER_SEGMENTS, ...BACK_HALF, uv: torsoSwatchUv })
+  const front = [seatFront]
+  const rest = [seatBack]
 
   const leg = trouserLegRings(shape)
   for (const side of SIDES) {
     const transform = limbTransform(shape.leg, side)
-    front.push(buildLoft(leg, { radialSegments: 28, ...FRONT_HALF, transform }))
+    const mirror = (rings: Ring[]) => rings.map((ring) => ({ ...ring, cx: (ring.cx ?? 0) * side }))
+    const legFront = buildLoft(mirror(leg.front), { radialSegments: TROUSER_SEGMENTS, ...FRONT_HALF, transform })
     // Measured from the centre of the back of the leg, placed where that line
-    // sits across the body, so the leg's fabric lines up with the seat's.
+    // sits across the body, so the leg's fabric carries on from the seat's.
     const uv = limbSwatchUv(1.5 * Math.PI, 'height', side * shape.leg.joint[0])
-    rest.push(buildLoft(leg, { radialSegments: 28, ...BACK_HALF, transform, uv }))
+    const legBack = buildLoft(mirror(leg.back), { radialSegments: TROUSER_SEGMENTS, ...BACK_HALF, transform, uv })
+    levelLeg(legFront, shape, leg, side, false)
+    levelLeg(legBack, shape, leg, side, true)
+    meetSeat(legFront, seatFront, false)
+    meetSeat(legBack, seatBack, true)
+    front.push(legFront)
+    rest.push(legBack)
   }
 
   return finish(front, rest)
