@@ -512,20 +512,39 @@ function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeome
 }
 
 /**
- * Moves a leg loft's top ring onto the seat loft's bottom ring, point for
- * point, so the two share an edge: no gap, overlap or ledge shows where the
- * legs meet the seat. The leg's levelled top ring already lies there, to
- * within rounding and the leg's slight step to its own side. On the back the
- * swatch's fabric is carried across the join too, point for point.
+ * Moves each leg loft's top ring onto the seat loft's bottom ring, point for
+ * point, so they share an edge: no gap, overlap or ledge shows where the legs
+ * meet the seat. The legs' levelled top rings already lie there, to within
+ * rounding and each leg's slight step to its own side. On the back the
+ * swatch's fabric is carried across the join too.
+ * Each loft's normals along that edge lean only its own way, the seat's up and
+ * the legs' down, so the edge takes one normal shared by all of them, halfway
+ * between the seat's and that of the leg that shows there (the right leg on
+ * the right, the left on the left, both on the centre line), and the join
+ * doesn't show as a line in the light. `legs` follows SIDES.
  */
-function meetSeat(leg: BufferGeometry, seat: BufferGeometry, swatch: boolean) {
-  const [legPosition, seatPosition] = [leg.getAttribute('position'), seat.getAttribute('position')]
-  const [legUv, seatUv] = [leg.getAttribute('uv'), seat.getAttribute('uv')]
+function meetSeat(seat: BufferGeometry, legs: BufferGeometry[], swatch: boolean) {
+  const [seatPosition, seatNormal, seatUv] = ['position', 'normal', 'uv'].map((name) => seat.getAttribute(name))
   const columns = TROUSER_SEGMENTS + 1
+  const shared = new Vector3()
+  const legNormal = new Vector3()
+  const showing = new Vector3()
   for (let j = 0; j < columns; j++) {
-    const i = legPosition.count - columns + j
-    legPosition.setXYZ(i, seatPosition.getX(j), seatPosition.getY(j), seatPosition.getZ(j))
-    if (swatch) legUv.setXY(i, seatUv.getX(j), seatUv.getY(j))
+    const x = seatPosition.getX(j)
+    showing.set(0, 0, 0)
+    legs.forEach((leg, k) => {
+      const normal = leg.getAttribute('normal')
+      if (x * SIDES[k] >= -1e-6) showing.add(legNormal.fromBufferAttribute(normal, normal.count - columns + j))
+    })
+    shared.fromBufferAttribute(seatNormal, j).add(showing.normalize()).normalize()
+    seatNormal.setXYZ(j, shared.x, shared.y, shared.z)
+    for (const leg of legs) {
+      const [position, normal, uv] = ['position', 'normal', 'uv'].map((name) => leg.getAttribute(name))
+      const i = position.count - columns + j
+      position.setXYZ(i, x, seatPosition.getY(j), seatPosition.getZ(j))
+      normal.setXYZ(i, shared.x, shared.y, shared.z)
+      if (swatch) uv.setXY(i, seatUv.getX(j), seatUv.getY(j))
+    }
   }
 }
 
@@ -536,8 +555,8 @@ function trousersGeometry(shape: BodyShape): GarmentGeometry {
   const seat = trouserSeatRings(shape)
   const seatFront = buildLoft(seat.front, { radialSegments: TROUSER_SEGMENTS, ...FRONT_HALF })
   const seatBack = buildLoft(seat.back, { radialSegments: TROUSER_SEGMENTS, ...BACK_HALF, uv: torsoSwatchUv })
-  const front = [seatFront]
-  const rest = [seatBack]
+  const legFronts: BufferGeometry[] = []
+  const legBacks: BufferGeometry[] = []
 
   const leg = trouserLegRings(shape)
   for (const side of SIDES) {
@@ -550,13 +569,13 @@ function trousersGeometry(shape: BodyShape): GarmentGeometry {
     const legBack = buildLoft(mirror(leg.back), { radialSegments: TROUSER_SEGMENTS, ...BACK_HALF, transform, uv })
     levelLeg(legFront, shape, leg, side, false)
     levelLeg(legBack, shape, leg, side, true)
-    meetSeat(legFront, seatFront, false)
-    meetSeat(legBack, seatBack, true)
-    front.push(legFront)
-    rest.push(legBack)
+    legFronts.push(legFront)
+    legBacks.push(legBack)
   }
+  meetSeat(seatFront, legFronts, false)
+  meetSeat(seatBack, legBacks, true)
 
-  return finish(front, rest)
+  return finish([seatFront, ...legFronts], [seatBack, ...legBacks])
 }
 
 /** Projects the front surface straight on, the way a front photo of the garment was taken. */

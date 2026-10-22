@@ -500,6 +500,29 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
     expect(pairs).toBeGreaterThanOrEqual(40)
   })
 
+  it('shades the seat and the legs alike where they meet, so no line shows across the seat', () => {
+    // Every point the seat and legs share along the join faces the same way
+    // on all of them, front and back.
+    const seatY = seatBottomY(shape)
+    const { front, rest } = buildGarmentGeometry('trousers-straight', shape)
+    for (const geometry of [front, rest]) {
+      const position = geometry.getAttribute('position')
+      const normal = geometry.getAttribute('normal')
+      const near: number[] = []
+      for (let i = 0; i < position.count; i++) if (Math.abs(position.getY(i) - seatY) < 1e-4) near.push(i)
+      let pairs = 0
+      for (const a of near) {
+        for (const b of near) {
+          if (b <= a || Math.hypot(position.getX(a) - position.getX(b), position.getZ(a) - position.getZ(b)) > 1e-5) continue
+          const [na, nb] = [a, b].map((i) => new Vector3().fromBufferAttribute(normal, i))
+          expect(na.angleTo(nb)).toBeLessThan(0.005)
+          pairs++
+        }
+      }
+      expect(pairs).toBeGreaterThanOrEqual(100)
+    }
+  })
+
   it.each(['long', 'short'] as const)('lets a %s-sleeve shirt hem hang over the trouser legs', (sleeve) => {
     // Untucked shirts must stay outside the trousers where the two overlap,
     // from the hem up to where the leg tops meet the seat.
