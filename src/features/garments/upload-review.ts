@@ -25,10 +25,15 @@ export const SEPARATION_RANGE = { min: 20, max: 160, step: 5, initial: DEFAULT_B
 
 const LOW_COVERAGE = 0.75
 const SMALL_GARMENT = 0.08
+/**
+ * A top's front this wide for its length looks folded or cut short: whole
+ * tops measure about 0.5 on a hanger and up to about 0.75 laid flat.
+ */
+const FOLDED_ASPECT = 0.85
 
 /** Gentle notes about a photo that will still work, just not as well as it could. */
 export function reviewWarnings(
-  analysis: { image: Pick<RgbaImage, 'width' | 'height'>; bounds: Rect; coverage: number },
+  analysis: { image: Pick<RgbaImage, 'width' | 'height'>; bounds: Rect; crop: Rect; coverage: number },
   templateId: GarmentTemplateId | null,
 ): string[] {
   const { image, bounds } = analysis
@@ -40,6 +45,8 @@ export function reviewWarnings(
     bounds.y + bounds.height >= image.height - 1
   if (touchesEdge) {
     warnings.push('Part of the garment looks cut off at the edge of the photo. It works best fully in frame.')
+  } else if (templateId && templateId !== 'trousers-straight' && analysis.crop.width > analysis.crop.height * FOLDED_ASPECT) {
+    warnings.push('This looks folded or cut short, so only part of its front will show. A whole front, laid flat or on a hanger, works best.')
   }
   if ((bounds.width * bounds.height) / (image.width * image.height) < SMALL_GARMENT) {
     warnings.push('The garment is quite small in the photo. A closer shot will show more detail.')
