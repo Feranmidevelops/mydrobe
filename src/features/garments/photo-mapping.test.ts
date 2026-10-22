@@ -147,6 +147,52 @@ describe('garmentMask and maskBounds', () => {
     expect(mask[25 * 60 + 25]).toBe(1)
   })
 
+  describe('on a coloured backdrop', () => {
+    const PINK: Rgb = [211, 131, 153]
+    const SHADOW: Rgb = [140, 80, 98]
+    const BLUE: Rgb = [121, 150, 194]
+    const garment = { x: 80, y: 40, width: 100, height: 160 }
+
+    /** Paints a shadow of the backdrop's colour over `rect`, deepening over `fade` px in from its left and top edges. */
+    function paintShadow(image: RgbaImage, rect: Rect, fade: number) {
+      for (let y = rect.y; y < rect.y + rect.height; y++) {
+        for (let x = rect.x; x < rect.x + rect.width; x++) {
+          const depth = Math.min(1, (x - rect.x) / fade, (y - rect.y) / fade)
+          const color = PINK.map((c, k) => Math.round(c + (SHADOW[k] - c) * depth)) as Rgb
+          image.data.set([...color, 255], (y * image.width + x) * 4)
+        }
+      }
+    }
+
+    it('counts the garment’s cast shadow as backdrop', () => {
+      const image = blank(240, 240, PINK)
+      // The shadow falls down and to the left, from under the garment.
+      paintShadow(image, { x: 50, y: 60, width: 40, height: 160 }, 12)
+      paint(image, garment, BLUE)
+      const mask = garmentMask(image, estimateBackground(image))
+      expect(maskBounds(mask, 240, 240)).toEqual(garment)
+      expect(mask[150 * 240 + 75]).toBe(0)
+    })
+
+    it('keeps a garment in a darker shade of the backdrop, whose edge is sharp', () => {
+      const image = blank(240, 240, PINK)
+      paint(image, garment, SHADOW)
+      expect(maskBounds(garmentMask(image, estimateBackground(image)), 240, 240)).toEqual(garment)
+    })
+  })
+
+  it('keeps a grey garment on a grey backdrop', () => {
+    const image = blank(240, 240, [150, 150, 150])
+    for (let x = 50; x < 80; x++) {
+      const v = Math.round(150 - ((x - 50) / 29) * 78)
+      paint(image, { x, y: 40, width: 1, height: 160 }, [v, v, v])
+    }
+    const garment = { x: 80, y: 40, width: 100, height: 160 }
+    paint(image, garment, [70, 70, 70])
+    // A ramp leads the backdrop down to the garment's grey, but no hue says the garment is a shadow.
+    expect(maskBounds(garmentMask(image, estimateBackground(image)), 240, 240)!.width).toBeGreaterThanOrEqual(100)
+  })
+
   it('finds nothing in an empty photo', () => {
     const image = blank(30, 30)
     expect(maskBounds(garmentMask(image, WHITE), 30, 30)).toBeNull()
@@ -334,6 +380,51 @@ describe('tidyMask', () => {
     const mask = tidyMask(garmentMask(image, WHITE), 200, 200)
     expect(mask[176 * 200 + 72]).toBe(1)
     expect(torsoRect(mask, 200, maskBounds(mask, 200, 200)!).width).toBe(80)
+  })
+})
+
+describe('backdrop the tidying would fill in', () => {
+  it('leaves a gap between an arm and the body open, though it is narrower than the closing', () => {
+    // At 800 px the closing fills gaps up to 41 px wide; this one is 40.
+    const image = blank(800, 500)
+    paint(image, { x: 330, y: 80, width: 220, height: 380 }, NAVY) // body
+    paint(image, { x: 230, y: 80, width: 100, height: 60 }, NAVY) // shoulder
+    paint(image, { x: 230, y: 80, width: 60, height: 360 }, NAVY) // arm, hanging beside the body
+    const mask = garmentMask(image, WHITE)
+    for (const y of [150, 300, 430]) {
+      for (const x of [291, 310, 328]) expect(mask[y * 800 + x]).toBe(0)
+    }
+    expect(mask[300 * 800 + 260]).toBe(1)
+    expect(mask[300 * 800 + 400]).toBe(1)
+  })
+
+  it('leaves the gap between trouser legs open along its whole length', () => {
+    // At 400 px the closing fills gaps up to 21 px wide; this one is 20.
+    const image = blank(400, 400)
+    paint(image, { x: 120, y: 40, width: 160, height: 60 }, NAVY)
+    paint(image, { x: 120, y: 100, width: 70, height: 260 }, NAVY)
+    paint(image, { x: 210, y: 100, width: 70, height: 260 }, NAVY)
+    const mask = garmentMask(image, WHITE)
+    for (let y = 100; y < 360; y++) expect(mask[y * 400 + 200]).toBe(0)
+    expect(mask[99 * 400 + 200]).toBe(1)
+  })
+
+  it('keeps a dark square lost to a dark backdrop at the hem, when the garment shows that colour too', () => {
+    const BLACK: Rgb = [4, 4, 4]
+    const image = blank(400, 400, BLACK)
+    paint(image, { x: 100, y: 60, width: 200, height: 280 }, [130, 130, 130])
+    for (const [x, y] of [[140, 100], [220, 100], [140, 200], [220, 200]]) paint(image, { x, y, width: 30, height: 30 }, BLACK)
+    paint(image, { x: 180, y: 316, width: 18, height: 24 }, BLACK)
+    const mask = garmentMask(image, estimateBackground(image))
+    expect(mask[330 * 400 + 189]).toBe(1)
+    expect(mask[325 * 400 + 182]).toBe(1)
+  })
+
+  it('keeps a small notch filled', () => {
+    const image = blank(400, 400)
+    paint(image, { x: 100, y: 60, width: 200, height: 280 }, NAVY)
+    paint(image, { x: 190, y: 336, width: 4, height: 4 }, WHITE)
+    expect(garmentMask(image, WHITE)[338 * 400 + 192]).toBe(1)
   })
 })
 

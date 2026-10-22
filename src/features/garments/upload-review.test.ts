@@ -24,30 +24,56 @@ describe('analysisTemplateFor', () => {
 describe('reviewWarnings', () => {
   const image = { width: 1000, height: 1200 }
   const centred = { x: 200, y: 150, width: 600, height: 800 }
+  // A shirt's body on a hanger, about half as wide as it is long.
+  const crop = { x: 300, y: 160, width: 400, height: 780 }
 
   it('has nothing to say about a well-framed photo', () => {
-    expect(reviewWarnings({ image, bounds: centred, coverage: 0.95 }, 'shirt-long-sleeve')).toEqual([])
+    expect(reviewWarnings({ image, bounds: centred, crop, coverage: 0.95 }, 'shirt-long-sleeve')).toEqual([])
   })
 
   it('notices a garment running off the edge of the photo', () => {
     const cutOff = { ...centred, y: 0 }
-    expect(reviewWarnings({ image, bounds: cutOff, coverage: 0.95 }, 'shirt-long-sleeve')).toEqual([
+    expect(reviewWarnings({ image, bounds: cutOff, crop, coverage: 0.95 }, 'shirt-long-sleeve')).toEqual([
       expect.stringMatching(/cut off at the edge/),
     ])
   })
 
   it('suggests a closer shot for a tiny garment', () => {
     const tiny = { x: 450, y: 500, width: 100, height: 150 }
-    expect(reviewWarnings({ image, bounds: tiny, coverage: 0.95 }, 'trousers-straight')).toEqual([
+    expect(reviewWarnings({ image, bounds: tiny, crop: tiny, coverage: 0.95 }, 'trousers-straight')).toEqual([
       expect.stringMatching(/quite small/),
     ])
   })
 
   it('warns about background showing on the mannequin only when it will be worn', () => {
-    expect(reviewWarnings({ image, bounds: centred, coverage: 0.6 }, 'shirt-long-sleeve')).toEqual([
+    expect(reviewWarnings({ image, bounds: centred, crop, coverage: 0.6 }, 'shirt-long-sleeve')).toEqual([
       expect.stringMatching(/background may show/),
     ])
-    expect(reviewWarnings({ image, bounds: centred, coverage: 0.6 }, null)).toEqual([])
+    expect(reviewWarnings({ image, bounds: centred, crop, coverage: 0.6 }, null)).toEqual([])
+  })
+
+  it('notices a top that looks folded or cut short', () => {
+    const folded = { x: 220, y: 200, width: 555, height: 438 }
+    expect(reviewWarnings({ image, bounds: centred, crop: folded, coverage: 0.95 }, 'shirt-long-sleeve')).toEqual([
+      expect.stringMatching(/folded or cut short/),
+    ])
+    expect(reviewWarnings({ image, bounds: centred, crop: folded, coverage: 0.95 }, 'shirt-short-sleeve')).toHaveLength(1)
+  })
+
+  it('leaves a top laid flat, and trousers and 2D pieces of any shape, alone', () => {
+    const flat = { x: 250, y: 200, width: 540, height: 720 }
+    expect(reviewWarnings({ image, bounds: centred, crop: flat, coverage: 0.95 }, 'shirt-short-sleeve')).toEqual([])
+    const wide = { x: 220, y: 200, width: 555, height: 438 }
+    expect(reviewWarnings({ image, bounds: centred, crop: wide, coverage: 0.95 }, 'trousers-straight')).toEqual([])
+    expect(reviewWarnings({ image, bounds: centred, crop: wide, coverage: 0.95 }, null)).toEqual([])
+  })
+
+  it("doesn't add to the note about a garment running off the edge", () => {
+    const cutOff = { ...centred, y: 0 }
+    const short = { x: 220, y: 0, width: 510, height: 502 }
+    expect(reviewWarnings({ image, bounds: cutOff, crop: short, coverage: 0.95 }, 'shirt-long-sleeve')).toEqual([
+      expect.stringMatching(/cut off at the edge/),
+    ])
   })
 })
 
