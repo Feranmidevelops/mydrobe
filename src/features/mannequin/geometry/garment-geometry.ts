@@ -43,11 +43,29 @@ const HIP_Y = 0.95
 const FRONT_HALF = { thetaStart: 0, thetaLength: Math.PI }
 const BACK_HALF = { thetaStart: Math.PI, thetaLength: Math.PI }
 
-/** Torso fabric: arc length measured from the centre back, and height. */
-const torsoSwatchUv: LoftUv = (world, theta, ring) => [
-  ((theta - 1.5 * Math.PI) * (ring.rx + ring.rz)) / 2,
-  world.y,
-]
+/** The longest step, in radians, ellipseArc takes round an ellipse. */
+const ARC_STEP = Math.PI / 32
+
+/**
+ * The distance round an ellipse of half-width `rx` and half-depth `rz`, from
+ * the angle `from` to the angle `to`, negative going back. Round an oval the
+ * distance per radian isn't constant: it is rx where the ellipse crosses its
+ * depth axis, at the centre front and back, and rz at the sides, so fabric
+ * measured with one radius for the whole way round stretches over the wider
+ * parts and gathers over the narrower ones.
+ */
+export function ellipseArc(rx: number, rz: number, from: number, to: number): number {
+  // Simpson's rule: the curve is smooth, so a few steps per radian are plenty.
+  const steps = 2 * Math.max(1, Math.ceil(Math.abs(to - from) / ARC_STEP))
+  const h = (to - from) / steps
+  const speed = (t: number) => Math.hypot(rx * Math.sin(t), rz * Math.cos(t))
+  let sum = speed(from) + speed(to)
+  for (let i = 1; i < steps; i++) sum += (i % 2 ? 4 : 2) * speed(from + i * h)
+  return (sum * h) / 3
+}
+
+/** Torso fabric: the distance round each ring from the centre back, and height. */
+const torsoSwatchUv: LoftUv = (world, theta, ring) => [ellipseArc(ring.rx, ring.rz, 1.5 * Math.PI, theta), world.y]
 
 /**
  * Sleeve and leg fabric. Across: arc length round the limb from a centre
