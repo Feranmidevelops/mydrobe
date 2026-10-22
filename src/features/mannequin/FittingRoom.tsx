@@ -9,6 +9,7 @@ import { createBodyShape } from './body-shape'
 import { CameraRig } from './CameraRig'
 import { CAMERA_FOV } from './camera-views'
 import { GarmentMesh } from './GarmentMesh'
+import { PLINTH_COLOR } from './light-rig'
 import { Mannequin } from './Mannequin'
 import { StudioLighting } from './StudioLighting'
 
@@ -24,7 +25,7 @@ function Plinth() {
   return (
     <mesh position={[0, -0.018, 0]}>
       <cylinderGeometry args={[0.62, 0.64, 0.03, 96]} />
-      <meshStandardMaterial color="#efe5da" roughness={0.85} />
+      <meshStandardMaterial color={PLINTH_COLOR} roughness={0.85} />
     </mesh>
   )
 }
@@ -58,7 +59,13 @@ export default function FittingRoom({ onContextLost }: FittingRoomProps) {
         const stopWatching = addAfterEffect(() => {
           if (gl.info.render.frame === 0) return
           stopWatching()
-          mark(PERF_MARKS.firstFrame, { calls: gl.info.render.calls, triangles: gl.info.render.triangles })
+          // The tone mapping it was drawn with, so a test can see the studio's is in place.
+          mark(PERF_MARKS.firstFrame, {
+            calls: gl.info.render.calls,
+            triangles: gl.info.render.triangles,
+            toneMapping: gl.toneMapping,
+            exposure: gl.toneMappingExposure,
+          })
         })
         gl.domElement.addEventListener('webglcontextlost', (event) => {
           // Let the page offer a restart rather than leave a frozen picture.
