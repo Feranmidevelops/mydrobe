@@ -14,6 +14,7 @@ import {
   flattenLighting,
   frontCrop,
   garmentMask,
+  handsOverFront,
   largestComponent,
   maskBounds,
   resampleTile,
@@ -557,6 +558,103 @@ describe('flattenLighting', () => {
     const flat = flattenLighting(image)
     const spread = (pixels: RgbaImage) => colorAt(pixels, 30, 20)[0] - colorAt(pixels, 10, 20)[0]
     expect(Math.abs(spread(flat))).toBeLessThan(spread(image) / 3)
+  })
+})
+
+describe('hands holding a top up', () => {
+  const SKIN: Rgb = [205, 150, 125]
+  const CAMEL: Rgb = [185, 138, 94]
+  const STONE: Rgb = [200, 181, 147]
+  // The body of the top, as the front crop takes it.
+  const crop: Rect = { x: 30, y: 40, width: 60, height: 110 }
+
+  /** A top on white: shoulders and short sleeves across the top, and the body below. */
+  function top(color: Rgb) {
+    const image = blank(120, 160)
+    paint(image, { x: 15, y: 40, width: 90, height: 30 }, color)
+    paint(image, crop, color)
+    return image
+  }
+
+  /** Everything that isn't the white backdrop. */
+  function garmentOf(image: RgbaImage) {
+    const solid = new Uint8Array(image.width * image.height)
+    for (let i = 0; i < solid.length; i++) if (image.data[i * 4] !== 255 || image.data[i * 4 + 2] !== 255) solid[i] = 1
+    return solid
+  }
+
+  /** A hand reaching in across the body's right edge, its palm out past the garment. */
+  function withHand(image: RgbaImage, color = SKIN) {
+    paint(image, { x: 80, y: 85, width: 32, height: 14 }, color)
+    return image
+  }
+
+  const marked = (hands: Uint8Array, x: number, y: number) => hands[y * 120 + x]
+  const count = (hands: Uint8Array) => hands.reduce((sum, value) => sum + value, 0)
+
+  it('marks where a hand reaches into the front from outside the garment', () => {
+    const image = withHand(top(NAVY))
+    const hands = handsOverFront(image, garmentOf(image), crop)
+    expect(marked(hands, 85, 92)).toBe(1)
+    // A pixel of soft edge round it goes too, but not the rest of the front, nor the hand beyond the crop.
+    expect(marked(hands, 79, 92)).toBe(1)
+    expect(marked(hands, 60, 92)).toBe(0)
+    expect(marked(hands, 100, 92)).toBe(0)
+  })
+
+  it('marks both hands, which can’t vouch for each other’s colour', () => {
+    const image = withHand(top(NAVY))
+    paint(image, { x: 8, y: 110, width: 32, height: 14 }, SKIN)
+    const hands = handsOverFront(image, garmentOf(image), crop)
+    expect(marked(hands, 85, 92)).toBe(1)
+    expect(marked(hands, 35, 115)).toBe(1)
+  })
+
+  it('never takes a tan, camel or stone top’s own colour for a hand', () => {
+    for (const color of [CAMEL, STONE]) {
+      const image = withHand(top(color))
+      expect(count(handsOverFront(image, garmentOf(image), crop))).toBe(0)
+    }
+  })
+
+  it('leaves camel stripes on a navy top alone, though they run out along its sleeves', () => {
+    const image = top(NAVY)
+    // Laid flat with its sleeves spread out to the edges of the photo.
+    paint(image, { x: 0, y: 44, width: 120, height: 16 }, NAVY)
+    for (let y = 50; y < 150; y += 16) paint(image, { x: y < 60 ? 0 : 30, y, width: y < 60 ? 120 : 60, height: 5 }, CAMEL)
+    expect(count(handsOverFront(image, garmentOf(image), crop))).toBe(0)
+  })
+
+  it('leaves a skin-toned patch inside the front alone', () => {
+    const image = top(NAVY)
+    paint(image, { x: 50, y: 100, width: 10, height: 10 }, CAMEL)
+    expect(count(handsOverFront(image, garmentOf(image), crop))).toBe(0)
+  })
+
+  it('leaves a skin-toned print across the side seam alone, as the garment surrounds it', () => {
+    const image = top(NAVY)
+    paint(image, { x: 22, y: 50, width: 14, height: 10 }, CAMEL)
+    expect(count(handsOverFront(image, garmentOf(image), crop))).toBe(0)
+  })
+
+  it('leaves a skin-toned tab at the corner of the hem alone, as it lies on the front', () => {
+    const image = top(NAVY)
+    paint(image, { x: 80, y: 135, width: 10, height: 15 }, CAMEL)
+    expect(count(handsOverFront(image, garmentOf(image), crop))).toBe(0)
+  })
+
+  it('leaves a raglan sleeve in a skin tone alone, as it runs up to the collar', () => {
+    const image = top(NAVY)
+    paint(image, { x: 15, y: 40, width: 25, height: 30 }, CAMEL)
+    expect(count(handsOverFront(image, garmentOf(image), crop))).toBe(0)
+  })
+
+  it('leaves a skin tone the rest of the front shows, like the squares of a check', () => {
+    const image = withHand(top(NAVY))
+    for (let y = 75; y < 150; y += 20) {
+      for (let x = 34; x < 80; x += 20) paint(image, { x, y, width: 8, height: 8 }, SKIN)
+    }
+    expect(marked(handsOverFront(image, garmentOf(image), crop), 85, 92)).toBe(0)
   })
 })
 

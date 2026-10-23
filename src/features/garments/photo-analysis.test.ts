@@ -49,6 +49,25 @@ describe('analyseGarmentPhoto', () => {
     expect([...colors]).not.toContain(WOOD.join())
   })
 
+  it('keeps a hand holding a top up off its front, filling it with the fabric', () => {
+    const SKIN = [205, 150, 125]
+    const image = photo(120, 160)
+    const paint = (x: number, y: number, width: number, height: number, color = [150, 40, 40]) => {
+      for (let row = y; row < y + height; row++) {
+        for (let column = x; column < x + width; column++) image.data.set([...color, 255], (row * 120 + column) * 4)
+      }
+    }
+    paint(15, 40, 90, 30) // shoulders and sleeves
+    paint(30, 40, 60, 110) // body
+    paint(80, 85, 32, 14, SKIN) // a hand reaching in across the body's right edge
+
+    const { crop, front } = analyseGarmentPhoto(image, 'shirt-short-sleeve')
+    expect(crop.x + crop.width).toBeGreaterThan(80)
+    const colors = new Set<string>()
+    for (let i = 0; i < front.data.length; i += 4) colors.add(front.data.slice(i, i + 3).join())
+    expect([...colors]).toEqual(['150,40,40'])
+  })
+
   it('explains when there is no garment to find', () => {
     expect(() => analyseGarmentPhoto(photo(50, 50), 'trousers-straight')).toThrow(PhotoMappingError)
   })

@@ -14,6 +14,7 @@ import {
   flattenLighting,
   frontCrop,
   garmentMask,
+  handsOverFront,
   maskBounds,
   neckBand,
   type Rect,
@@ -86,6 +87,13 @@ export function fabricRepeat(
   return inLeg && !inLeg.stripes ? inLeg : tile
 }
 
+/** The garment pixels of `solid`, less those marked in `hands`. */
+function withoutHands(solid: Uint8Array, hands: Uint8Array): Uint8Array {
+  const shown = solid.slice()
+  for (let i = 0; i < shown.length; i++) if (hands[i]) shown[i] = 0
+  return shown
+}
+
 export function analyseGarmentPhoto(
   image: RgbaImage,
   templateId: GarmentTemplateId,
@@ -111,12 +119,13 @@ export function analyseGarmentPhoto(
     height: swatch.height,
     wrap: 'mirror',
   }
-  // Gaps in the front take the tiled fabric, so patterns carry on through them.
-  const filled = cropAndFill(image, solid, crop, tile)
-  const front =
-    templateId === 'trousers-straight'
-      ? filled
-      : coverNeckOpening(filled, neckBand(mask, image.width, bounds, crop), tile, fabric, background, [crop.x, crop.y])
+  // Gaps in the front take the tiled fabric, so patterns carry on through
+  // them. So do hands holding a top up, which aren't the garment either.
+  const top = templateId !== 'trousers-straight'
+  const band = top ? neckBand(mask, image.width, bounds, crop) : 0
+  const shown = top ? withoutHands(solid, handsOverFront(image, solid, crop, band)) : solid
+  const filled = cropAndFill(image, shown, crop, tile)
+  const front = top ? coverNeckOpening(filled, band, tile, fabric, background, [crop.x, crop.y]) : filled
   return {
     image,
     mask,

@@ -1116,6 +1116,137 @@ export function coverNeckOpening(
   return { data, width, height: front.height }
 }
 
+/** The hues, in degrees from red towards yellow, that skin takes in a photo. */
+const SKIN_HUE = [5, 45] as const
+
+/** The saturations (as in HSV) that skin takes in a photo. */
+const SKIN_SATURATION = [0.12, 0.7] as const
+
+/** The least red channel, out of 255, at which a colour's hue is read as skin. */
+const SKIN_BRIGHTNESS = 50
+
+/**
+ * Whether `color` could be skin: an orange-leaning red, moderately saturated
+ * and not too dark to tell. Tan, camel, beige and stone fabrics pass too, so
+ * this alone never decides that something is a hand.
+ */
+export function isSkinTone([r, g, b]: Rgb): boolean {
+  const spread = r - Math.min(g, b)
+  if (r < SKIN_BRIGHTNESS || g > r || b > g || spread === 0) return false
+  const hue = (60 * (g - b)) / spread
+  const saturation = spread / r
+  return hue >= SKIN_HUE[0] && hue <= SKIN_HUE[1] && saturation >= SKIN_SATURATION[0] && saturation <= SKIN_SATURATION[1]
+}
+
+/** The most of the crop's width or height a hand's part of the front may span. */
+const HAND_REACH = 1 / 3
+
+/**
+ * The hands holding a top up, where they lie over the front `crop`: 1 for
+ * each pixel of the photo to paint over. A hand is a patch of skin-toned
+ * garment pixels (in `solid`) that
+ * - comes from outside the garment: it touches the garment's outline,
+ * - reaches into the crop across its left, right or bottom edge, and more of
+ *   it lies outside the crop than in it,
+ * - covers only a corner of the crop, no more than HAND_REACH of its width
+ *   or height, and never the top edge, where a raglan sleeve or a collar runs,
+ * - and shows colours the rest of the crop doesn't. Neither the top `band`
+ *   rows of the crop, where a wooden hanger can show through the neck, nor
+ *   another hand count as the rest of the crop.
+ * Nothing is taken from a garment whose own main colour is a skin tone (a
+ * tan, camel or stone top), nor any colour close to its main colour; stripes
+ * or a contrasting collar span too much of the crop to pass. A couple of
+ * pixels of soft edge round each hand go with it.
+ */
+export function handsOverFront(image: RgbaImage, solid: Uint8Array, crop: Rect, band = 0): Uint8Array {
+  const { data, width, height } = image
+  const hands = new Uint8Array(width * height)
+  const dominant = dominantColor(image, solid, crop)
+  if (isSkinTone(dominant)) return hands
+  // Whether each pixel is a skin tone unlike the garment's own: worked out as the patches reach it.
+  const skin = new Int8Array(width * height).fill(-1)
+  const candidate = (i: number) => {
+    if (skin[i] < 0) {
+      const color: Rgb = [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]
+      skin[i] = solid[i] && isSkinTone(color) && colorDistance(color, dominant) > FOREIGN_COLOR ? 1 : 0
+    }
+    return skin[i] === 1
+  }
+  const inCrop = (x: number, y: number) => x >= crop.x && y >= crop.y && x < crop.x + crop.width && y < crop.y + crop.height
+
+  // Each patch of skin tones that lies partly in the crop, followed wherever it goes.
+  const patches: { size: number; inside: number[]; outline: boolean }[] = []
+  const owner = new Int32Array(width * height)
+  const queue = new Int32Array(width * height)
+  for (let y = crop.y; y < crop.y + crop.height; y++) {
+    for (let x = crop.x; x < crop.x + crop.width; x++) {
+      const start = y * width + x
+      if (owner[start] || !candidate(start)) continue
+      const id = patches.length + 1
+      let tail = 0
+      let outline = false
+      const inside: number[] = []
+      owner[start] = id
+      queue[tail++] = start
+      for (let head = 0; head < tail; head++) {
+        const i = queue[head]
+        const [px, py] = [i % width, Math.floor(i / width)]
+        if (inCrop(px, py)) inside.push(i)
+        if (px === 0 || py === 0 || px === width - 1 || py === height - 1) outline = true
+        forNeighbours(i, width, height, (j) => {
+          if (!solid[j]) outline = true
+          if (owner[j] || !candidate(j)) return
+          owner[j] = id
+          queue[tail++] = j
+        })
+      }
+      patches.push({ size: tail, inside, outline })
+    }
+  }
+
+  // The crop's own colours below the neck, leaving out every patch of skin
+  // tones that comes from outside the garment.
+  const bins = new Uint32Array(4096)
+  let garment = 0
+  for (let y = crop.y + Math.max(0, band); y < crop.y + crop.height; y++) {
+    for (let x = crop.x; x < crop.x + crop.width; x++) {
+      const i = y * width + x
+      if (!solid[i] || (owner[i] && patches[owner[i] - 1].outline)) continue
+      bins[colorBin(data, i * 4)]++
+      garment++
+    }
+  }
+  const enough = Math.max(1, garment * 0.001)
+
+  let found = false
+  for (const { size, inside, outline } of patches) {
+    if (!outline || size - inside.length < inside.length) continue
+    let [left, top, right, bottom] = [width, height, -1, -1]
+    let own = 0
+    for (const i of inside) {
+      const [x, y] = [i % width, Math.floor(i / width)]
+      left = Math.min(left, x)
+      right = Math.max(right, x)
+      top = Math.min(top, y)
+      bottom = Math.max(bottom, y)
+      if (nearbyCount(bins, pixel(image, x, y)) >= enough) own++
+    }
+    // Lying mostly outside the crop, it reaches in across one of its edges.
+    const local = right - left + 1 <= crop.width * HAND_REACH && bottom - top + 1 <= crop.height * HAND_REACH
+    if (!local || top === crop.y || own * 2 >= inside.length) continue
+    for (const i of inside) hands[i] = 1
+    found = true
+  }
+  if (!found) return hands
+
+  // The soft edge round each hand, within the crop.
+  const edged = dilateMask(hands, width, height, EDGE_ROUNDS)
+  for (let y = crop.y; y < crop.y + crop.height; y++) {
+    for (let x = crop.x; x < crop.x + crop.width; x++) hands[y * width + x] = edged[y * width + x]
+  }
+  return hands
+}
+
 /**
  * Copies `rect` out of the photo, painting any background inside it so gaps
  * (a shirt's neck opening, the space between trouser legs) don't end up on
