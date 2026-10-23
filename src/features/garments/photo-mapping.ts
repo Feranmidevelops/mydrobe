@@ -1161,8 +1161,7 @@ function wholeOf(covered: Uint8Array, zone: Uint8Array, width: number, radius: n
  * the fabric sample. Within the top `band` rows, a colour is painted over if
  * it's the backdrop's, or if it turns up nowhere lower down the front, so the
  * squares of a check, a stripe and a contrasting collar (whose front dips
- * lower) stay as photographed. What's painted over goes whole (see wholeOf),
- * so no specks of a label's print or a hanger's grain are left.
+ * lower) stay as photographed.
  *
  * A hanger bar or a label lying across the bottom of the band, and ending
  * just below it, is no proof of its own colour there: its lower part doesn't
@@ -1170,8 +1169,10 @@ function wholeOf(covered: Uint8Array, zone: Uint8Array, width: number, radius: n
  * painted over, so is that part. A collar, placket, raglan sleeve or stripe
  * runs on further (see shallowCrossings), so it still vouches for itself.
  * The soft edge around whatever is painted over goes too, so no outline of a
- * hanger is left. `offset` is where the front sits in the photo, so a tile of
- * the fabric's repeat paints in step with the check around it.
+ * hanger is left, and then it all goes whole (see wholeOf), so no specks of a
+ * label's print, or of its blurred foot, are left between the parts painted.
+ * `offset` is where the front sits in the photo, so a tile of the fabric's
+ * repeat paints in step with the check around it.
  */
 export function coverNeckOpening(
   front: RgbaImage,
@@ -1223,7 +1224,6 @@ export function coverNeckOpening(
       zone.fill(1, from, y * width + Math.min(width, box.x + box.width + EDGE_ROUNDS))
     }
   }
-  wholeOf(covered, zone, width, Math.max(1, Math.round(width * NECK_CLOSING)))
   for (let round = 0; round < EDGE_ROUNDS; round++) {
     const edge: number[] = []
     for (let i = 0; i < covered.length; i++) {
@@ -1236,6 +1236,7 @@ export function coverNeckOpening(
     }
     for (const i of edge) covered[i] = 1
   }
+  wholeOf(covered, zone, width, Math.max(1, Math.round(width * NECK_CLOSING)))
 
   const data = new Uint8ClampedArray(front.data)
   for (let i = 0; i < covered.length; i++) {

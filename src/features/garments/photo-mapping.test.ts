@@ -781,6 +781,17 @@ describe('neck opening', () => {
       expect(colorAt(covered, 50, 31)).toEqual(CREAM)
     })
 
+    it('paints over the blurred foot of a label’s print just below the band, between its letters too', () => {
+      const front = blank(100, 200, CREAM)
+      // Two letters crossing the band's bottom, blurring into grey below it.
+      paint(front, { x: 44, y: 27, width: 4, height: 4 }, LABEL)
+      paint(front, { x: 51, y: 27, width: 4, height: 4 }, LABEL)
+      paint(front, { x: 44, y: 31, width: 11, height: 2 }, [90, 90, 90])
+      const covered = cover(front)
+      expect(colorAt(covered, 46, 31)).toEqual(CREAM)
+      expect(colorAt(covered, 49, 31)).toEqual(CREAM)
+    })
+
     it('keeps an open collar in a contrasting colour, though its foot ends just below the band', () => {
       const front = blank(100, 200, CREAM)
       paint(front, { x: 30, y: 0, width: 5, height: 35 }, NAVY)
