@@ -1036,10 +1036,15 @@ function colorBin(data: Uint8ClampedArray, p: number) {
   return ((data[p] >> 4) << 8) | ((data[p + 1] >> 4) << 4) | (data[p + 2] >> 4)
 }
 
-/** Counts the colours in rows `from` onwards, in coarse bins of 16 levels per channel. */
-function colorBins(image: RgbaImage, from: number) {
+/**
+ * Counts the colours in rows `from` onwards, in coarse bins of 16 levels per
+ * channel, leaving out the pixels marked in `skip` (indexed like the image).
+ */
+function colorBins(image: RgbaImage, from: number, skip?: Uint8Array) {
   const bins = new Uint32Array(4096)
-  for (let i = from * image.width * 4; i < image.data.length; i += 4) bins[colorBin(image.data, i)]++
+  for (let i = from * image.width; i < image.width * image.height; i++) {
+    if (!skip?.[i]) bins[colorBin(image.data, i * 4)]++
+  }
   return bins
 }
 
@@ -1064,16 +1069,77 @@ const BACKDROP_MATCH = 60
 /** How many pixels of soft edge around something painted over go with it. */
 const EDGE_ROUNDS = 2
 
+/** How close in colour a pixel must stay to something crossing the bottom of the neck band to be part of it. */
+const KEEPS_COLOR = 60
+
+/** Something crossing the bottom of the neck band, as found by shallowCrossings(). */
+interface Crossing {
+  /** Its pixels, as indices into the front. */
+  pixels: Int32Array
+  /** Its box, in front pixels. */
+  box: Rect
+}
+
+/**
+ * The things in a foreign colour (marked in `foreign`, a row of `width` at a
+ * time) that cross the bottom row of the neck band, the front's first `rows`
+ * rows, and end within `dip` rows below it: a hanger bar lying across the
+ * neck, or the foot of a size label. Each is the foreign pixels joined to one
+ * on the band's bottom row that stay within KEEPS_COLOR of its colour.
+ * Something that runs further down, out to either side of the front, or over
+ * more than half the band's height belongs to the garment instead, such as a
+ * collar, a placket, a raglan sleeve or a stripe, and isn't returned.
+ */
+function shallowCrossings(front: RgbaImage, foreign: Uint8Array, rows: number, dip: number): Crossing[] {
+  const { width } = front
+  const reach = foreign.length / width
+  const seen = new Uint8Array(foreign.length)
+  const queue = new Int32Array(foreign.length)
+  const colorOf = (i: number) => pixel(front, i % width, Math.floor(i / width))
+  const found: Crossing[] = []
+  for (let seed = (rows - 1) * width; seed < rows * width; seed++) {
+    if (!foreign[seed] || seen[seed]) continue
+    const color = colorOf(seed)
+    let [left, top, right, bottom] = [width, reach, -1, -1]
+    let tail = 0
+    seen[seed] = 1
+    queue[tail++] = seed
+    for (let head = 0; head < tail; head++) {
+      const i = queue[head]
+      const [x, y] = [i % width, Math.floor(i / width)]
+      left = Math.min(left, x)
+      right = Math.max(right, x)
+      top = Math.min(top, y)
+      bottom = Math.max(bottom, y)
+      forNeighbours(i, width, reach, (j) => {
+        if (seen[j] || !foreign[j] || colorDistance(colorOf(j), color) > KEEPS_COLOR) return
+        seen[j] = 1
+        queue[tail++] = j
+      })
+    }
+    const shallow = bottom < rows + dip && bottom - top + 1 <= rows / 2
+    if (!shallow || left === 0 || right === width - 1) continue
+    found.push({ pixels: queue.slice(0, tail), box: { x: left, y: top, width: right - left + 1, height: bottom - top + 1 } })
+  }
+  return found
+}
+
 /**
  * Paints over what shows through a top's neck opening, such as the rest of a
  * hanger, the shaded inside of the back, a size label or the backdrop, with
- * the fabric sample. Only the top `band` rows change. Within them, a colour
- * is painted over if it's the backdrop's, or if it turns up nowhere lower
- * down the front, so the squares of a check, a stripe and a contrasting
- * collar (whose front dips lower) stay as photographed. The soft edge around
- * whatever is painted over goes too, so no outline of a hanger is left.
- * `offset` is where the front sits in the photo, so a tile of the fabric's
- * repeat paints in step with the check around it.
+ * the fabric sample. Within the top `band` rows, a colour is painted over if
+ * it's the backdrop's, or if it turns up nowhere lower down the front, so the
+ * squares of a check, a stripe and a contrasting collar (whose front dips
+ * lower) stay as photographed.
+ *
+ * A hanger bar or a label lying across the bottom of the band, and ending
+ * just below it, is no proof of its own colour there: its lower part doesn't
+ * count as the colour turning up lower down, and when the rest of it is
+ * painted over, so is that part. A collar, placket, raglan sleeve or stripe
+ * runs on further (see shallowCrossings), so it still vouches for itself.
+ * The soft edge around whatever is painted over goes too, so no outline of a
+ * hanger is left. `offset` is where the front sits in the photo, so a tile of
+ * the fabric's repeat paints in step with the check around it.
  */
 export function coverNeckOpening(
   front: RgbaImage,
@@ -1083,23 +1149,54 @@ export function coverNeckOpening(
   background: Rgb | null = null,
   offset: [number, number] = [0, 0],
 ): RgbaImage {
-  const { width } = front
-  const rows = Math.min(band, front.height)
-  const below = colorBins(front, rows)
-  const enough = Math.max(1, (front.height - rows) * width * 0.001)
+  const { width, height } = front
+  const rows = Math.max(0, Math.min(band, height))
+  const dip = Math.max(1, Math.round(height * NECKLINE_DIP))
+  // One row further than a shallow crossing may reach, to see whether it goes on.
+  const reach = Math.min(height, rows + dip + 1)
+  const foreign = new Uint8Array(reach * width)
+  for (let i = 0; i < foreign.length; i++) {
+    if (colorDistance(pixel(front, i % width, Math.floor(i / width)), fabric) > FOREIGN_COLOR) foreign[i] = 1
+  }
+  const bars = rows > 0 ? shallowCrossings(front, foreign, rows, dip) : []
+  const unproven = new Uint8Array(width * height)
+  for (const { pixels } of bars) for (const i of pixels) if (i >= rows * width) unproven[i] = 1
+
+  const below = colorBins(front, rows, unproven)
+  const enough = Math.max(1, (height - rows) * width * 0.001)
   const backdrop = (color: Rgb) => background !== null && colorDistance(color, background) <= BACKDROP_MATCH
-  const covered = new Uint8Array(rows * width)
-  for (let i = 0; i < covered.length; i++) {
+  const covered = new Uint8Array(reach * width)
+  for (let i = 0; i < rows * width; i++) {
+    if (!foreign[i]) continue
     const color = pixel(front, i % width, Math.floor(i / width))
-    if (colorDistance(color, fabric) <= FOREIGN_COLOR) continue
     if (backdrop(color) || nearbyCount(below, color) < enough) covered[i] = 1
+  }
+
+  // Below the band, only a bar painted over (and its soft edge) changes.
+  const zone = new Uint8Array(reach * width)
+  zone.fill(1, 0, rows * width)
+  for (const { pixels, box } of bars) {
+    // Painted over, like the rest of it, where it crosses the band's bottom row?
+    let crossing = 0
+    let painted = 0
+    for (const i of pixels) {
+      if (i < (rows - 1) * width || i >= rows * width) continue
+      crossing++
+      painted += covered[i]
+    }
+    if (painted * 2 < crossing) continue
+    for (const i of pixels) covered[i] = 1
+    for (let y = rows; y < Math.min(reach, box.y + box.height + EDGE_ROUNDS); y++) {
+      const from = y * width + Math.max(0, box.x - EDGE_ROUNDS)
+      zone.fill(1, from, y * width + Math.min(width, box.x + box.width + EDGE_ROUNDS))
+    }
   }
   for (let round = 0; round < EDGE_ROUNDS; round++) {
     const edge: number[] = []
     for (let i = 0; i < covered.length; i++) {
-      if (covered[i] || colorDistance(pixel(front, i % width, Math.floor(i / width)), fabric) <= FOREIGN_COLOR) continue
+      if (covered[i] || !foreign[i] || !zone[i]) continue
       let next = false
-      forNeighbours(i, width, rows, (j) => {
+      forNeighbours(i, width, reach, (j) => {
         if (covered[j]) next = true
       })
       if (next) edge.push(i)

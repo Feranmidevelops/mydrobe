@@ -721,6 +721,76 @@ describe('neck opening', () => {
     paint(front, { x: 18, y: 12, width: 24, height: 4 }, NAVY)
     expect(colorAt(coverNeckOpening(front, 12, blank(16, 16, CREAM), CREAM), 30, 2)).toEqual(NAVY)
   })
+
+  describe('across the bottom of the band', () => {
+    // A front tall enough that a neckline dips 6 rows, under a band of 30.
+    const BAND = 30
+    const cover = (front: RgbaImage) => coverNeckOpening(front, BAND, blank(16, 16, CREAM), CREAM)
+
+    it('paints over the whole of a hanger bar that pokes just below the band', () => {
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 30, y: 24, width: 40, height: 10 }, WOOD)
+      const covered = cover(front)
+      expect(colorAt(covered, 50, 26)).toEqual(CREAM)
+      // Nor is a sliver of it left below the band.
+      expect(colorAt(covered, 50, 32)).toEqual(CREAM)
+      expect(colorAt(covered, 30, 33)).toEqual(CREAM)
+    })
+
+    it('paints over the foot of a label printed in a colour seen nowhere else', () => {
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 44, y: 22, width: 12, height: 6 }, LABEL)
+      paint(front, { x: 46, y: 28, width: 8, height: 4 }, LABEL)
+      const covered = cover(front)
+      expect(colorAt(covered, 50, 24)).toEqual(CREAM)
+      expect(colorAt(covered, 50, 31)).toEqual(CREAM)
+    })
+
+    it('keeps an open collar in a contrasting colour, though its foot ends just below the band', () => {
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 30, y: 0, width: 5, height: 35 }, NAVY)
+      paint(front, { x: 65, y: 0, width: 5, height: 35 }, NAVY)
+      paint(front, { x: 30, y: 28, width: 40, height: 7 }, NAVY)
+      const covered = cover(front)
+      expect(colorAt(covered, 32, 10)).toEqual(NAVY)
+      expect(colorAt(covered, 50, 30)).toEqual(NAVY)
+    })
+
+    it('keeps a placket in a contrasting colour running down from the neck', () => {
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 46, y: 20, width: 8, height: 30 }, NAVY)
+      const covered = cover(front)
+      expect(colorAt(covered, 50, 22)).toEqual(NAVY)
+      expect(colorAt(covered, 50, 45)).toEqual(NAVY)
+    })
+
+    it('keeps raglan sleeves in a contrasting colour, which end not far below the band', () => {
+      const front = blank(100, 200, CREAM)
+      for (let y = 0; y < 50; y++) {
+        const reach = Math.round(40 - (40 * y) / 50)
+        paint(front, { x: 0, y, width: reach, height: 1 }, NAVY)
+        paint(front, { x: 100 - reach, y, width: reach, height: 1 }, NAVY)
+      }
+      const covered = cover(front)
+      expect(colorAt(covered, 5, 10)).toEqual(NAVY)
+      expect(colorAt(covered, 95, 10)).toEqual(NAVY)
+    })
+
+    it('keeps a stripe running out to the sides, though it shows only once', () => {
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 0, y: 26, width: 100, height: 8 }, NAVY)
+      expect(colorAt(cover(front), 50, 28)).toEqual(NAVY)
+    })
+
+    it('keeps tan stripes on a navy top, which repeat lower down', () => {
+      const CAMEL: Rgb = [185, 138, 94]
+      const front = blank(100, 200, NAVY)
+      for (let y = 6; y < 200; y += 20) paint(front, { x: 0, y, width: 100, height: 5 }, CAMEL)
+      const covered = coverNeckOpening(front, BAND, blank(16, 16, NAVY), NAVY)
+      expect(colorAt(covered, 50, 8)).toEqual(CAMEL)
+      expect(colorAt(covered, 50, 28)).toEqual(CAMEL)
+    })
+  })
 })
 
 describe('filling the background inside the crop', () => {
