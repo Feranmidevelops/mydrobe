@@ -68,16 +68,17 @@ export function ellipseArc(rx: number, rz: number, from: number, to: number): nu
 const torsoSwatchUv: LoftUv = (world, theta, ring) => [ellipseArc(ring.rx, ring.rz, 1.5 * Math.PI, theta), world.y]
 
 /**
- * Sleeve and leg fabric. Across: arc length round the limb from a centre
+ * Sleeve and leg fabric. Across: the distance round the limb from a centre
  * line at angle `centre`, so that line keeps one place in the fabric however
  * much the limb narrows, and the narrowing gathers at the far side, at the
- * seam. `offset`, plus any shift of the ring's centre, places the line in
- * the fabric. Along: the distance down the limb, or for a trouser leg the
- * height in the world, as on the seat.
+ * seam. It is measured round each ring's own oval (a forearm is deeper than
+ * it is wide), so a check keeps its width all the way round. `offset`, plus
+ * any shift of the ring's centre, places the line in the fabric. Along: the
+ * distance down the limb, or for a trouser leg the height in the world, as on the seat.
  */
 function limbSwatchUv(centre: number, along: 'limb' | 'height', offset = 0): LoftUv {
   return (world, theta, ring) => [
-    offset + (ring.cx ?? 0) + ((theta - centre) * (ring.rx + ring.rz)) / 2,
+    offset + (ring.cx ?? 0) + ellipseArc(ring.rx, ring.rz, centre, theta),
     along === 'limb' ? ring.y : world.y,
   ]
 }
@@ -439,9 +440,9 @@ function arcUp(r: number, h: number, elevation: number) {
  * A shirt's cap over one shoulder: a dome on top of the sleeve, tilted with
  * the arm and sharing the sleeve's opening, so the two meet without a ledge.
  * Its fabric runs on from the sleeve's: the same way round the arm, from the
- * same outer line, and measured over the dome in metres, so a check or stripe
- * carries on across the join unstretched. `sleeveTop` is the sleeve's top
- * ring, in the arm's own frame.
+ * same outer line, measured round the opening's own oval just as the sleeve
+ * is, and over the dome in metres, so a check or stripe carries on across the
+ * join unstretched. `sleeveTop` is the sleeve's top ring, in the arm's own frame.
  */
 export function shoulderCap(shape: BodyShape, side: Side, sleeveTop: Ring): BufferGeometry {
   const height = shape.shoulderRadius * SHOULDER_SQUASH + SHOULDER_TOP_EASE
@@ -450,12 +451,14 @@ export function shoulderCap(shape: BodyShape, side: Side, sleeveTop: Ring): Buff
   const dome = new SphereGeometry(1, 24, 8, Math.PI - seam, Math.PI * 2, 0, Math.PI / 2)
   const position = dome.getAttribute('position')
   const uv = dome.getAttribute('uv')
-  const radius = (sleeveTop.rx + sleeveTop.rz) / 2
+  const { rx, rz } = sleeveTop
   for (let i = 0; i < uv.count; i++) {
     // The angle round the arm the sleeve's loft would give this point.
     const theta = seam + Math.PI * 2 * (1 - uv.getX(i))
     const elevation = Math.asin(Math.min(1, position.getY(i)))
-    uv.setXY(i, (theta - outerLine(side)) * radius, sleeveTop.y + arcUp(radius, height, elevation))
+    // Up the dome, over its own curve from the rim, where its radius is the opening's at this angle.
+    const radius = Math.hypot(rx * Math.cos(theta), rz * Math.sin(theta))
+    uv.setXY(i, ellipseArc(rx, rz, outerLine(side), theta), sleeveTop.y + arcUp(radius, height, elevation))
   }
   return dome
     .scale(sleeveTop.rx, height, sleeveTop.rz)

@@ -408,6 +408,41 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
     }
   })
 
+  it('lays the fabric round each long sleeve as far as the surface goes, down to the oval wrist', () => {
+    // Arms hang palms-in, so the forearm and wrist are deeper than they are wide.
+    const { rest } = buildGarmentGeometry('shirt-long-sleeve', shape)
+    const rings = sleeveRings(shape, 'long')
+    expect(rings[0].rz / rings[0].rx).toBeGreaterThan(1.1)
+    for (const side of SIDES) {
+      const toLocal = limbTransform(shape.arm, side).invert()
+      // Not the top ring, which the shoulder cap shares.
+      for (const ring of rings.slice(0, -1)) {
+        expect(expectFabricToFollowRing(pointsOnRing(rest, ring, { toLocal }))).toBeGreaterThanOrEqual(24)
+      }
+    }
+  })
+
+  it('lays the fabric round the back of each trouser leg as far as the surface goes, from the hem up into the seat', () => {
+    // Low down the calves are a little deeper than they are wide; where the
+    // legs grow into the seat they are much wider than deep.
+    const { rest } = buildGarmentGeometry('trousers-straight', shape)
+    const position = rest.getAttribute('position')
+    const uv = rest.getAttribute('uv')
+    // The back of the seat comes first, then each leg's back, ring by ring
+    // from the hem up, with 41 points round each ring.
+    const columns = 41
+    const legRings = trouserLegRings(shape).back.length
+    const legsStart = trouserSeatRings(shape).back.length * columns
+    expect(position.count).toBe(legsStart + 2 * legRings * columns)
+    for (let ring = 0; ring < 2 * legRings; ring++) {
+      const points = Array.from({ length: columns }, (_, j) => {
+        const i = legsStart + ring * columns + j
+        return { at: new Vector3().fromBufferAttribute(position, i), u: uv.getX(i) }
+      })
+      expect(expectFabricToFollowRing(points.sort((a, b) => a.u - b.u))).toBe(columns - 1)
+    }
+  })
+
   it('lays a collar and neckband round an oval neckline as far as the surface goes, in step with each other', () => {
     // A neckline much wider than it is deep; the neckband's back half takes the shirt's own fabric.
     const top = topOf(shirtTorsoRings(shape, 'long').back)
@@ -425,7 +460,6 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
     const position = cap.getAttribute('position')
     const uv = cap.getAttribute('uv')
     const toArm = limbTransform(shape.arm, 1).invert()
-    const radius = (top.rx + top.rz) / 2
     // The dome is a grid of 9 rings of 25 points, from its top down to its rim.
     const at = (ring: number, point: number) => ring * 25 + point
     const where = (i: number) => new Vector3().fromBufferAttribute(position, i)
@@ -445,8 +479,44 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
       const local = where(at(8, point)).applyMatrix4(toArm)
       let theta = Math.atan2(local.z / top.rz, local.x / top.rx)
       while (theta < Math.PI) theta += Math.PI * 2
-      expect(uv.getX(at(8, point))).toBeCloseTo((theta - Math.PI * 2) * radius, 4)
+      expect(uv.getX(at(8, point))).toBeCloseTo(ellipseArc(top.rx, top.rz, Math.PI * 2, theta), 4)
       expect(uv.getY(at(8, point))).toBeCloseTo(top.y, 6)
+    }
+  })
+
+  it('lays the fabric over a shoulder cap on an oval sleeve as far as the surface goes', () => {
+    // A sleeve opening deeper than it is wide: round the rim and up the dome
+    // the fabric follows the surface, not an average radius.
+    const real = sleeveRings(shape, 'short')
+    const top = { ...real[real.length - 1], rz: real[real.length - 1].rx * 1.3 }
+    const cap = shoulderCap(shape, 1, top)
+    const toArm = limbTransform(shape.arm, 1).invert()
+    expect(expectFabricToFollowRing(pointsOnRing(cap, top, { toLocal: toArm }))).toBe(24)
+    const position = cap.getAttribute('position')
+    const uv = cap.getAttribute('uv')
+    // The dome is a grid of 9 rings of 25 points, from its top down to its
+    // rim. (Not from the very top, where every angle meets.)
+    for (let ring = 1; ring < 8; ring++) {
+      for (let point = 0; point < 25; point++) {
+        const [a, b] = [ring * 25 + point, (ring + 1) * 25 + point]
+        const up = new Vector3().fromBufferAttribute(position, a).distanceTo(new Vector3().fromBufferAttribute(position, b))
+        expect(Math.abs(Math.abs(uv.getY(a) - uv.getY(b)) / up - 1)).toBeLessThan(0.01)
+      }
+    }
+  })
+
+  it('carries the sleeve fabric on into the shoulder cap without a jump, even on an oval arm', () => {
+    // Arms deeper than they are wide all the way up, so the sleeve's top ring,
+    // which the cap shares, is an oval too.
+    const oval = { ...shape, arm: { ...shape.arm, rings: shape.arm.rings.map((ring) => ({ ...ring, rz: ring.rx * 1.3 })) } }
+    const { rest } = buildGarmentGeometry('shirt-long-sleeve', oval)
+    const rings = sleeveRings(oval, 'long')
+    const top = rings[rings.length - 1]
+    for (const side of SIDES) {
+      // The sleeve's top ring and the cap's rim, point for point.
+      const points = pointsOnRing(rest, top, { toLocal: limbTransform(oval.arm, side).invert() })
+      expect(points.length).toBe(2 * 25)
+      expect(expectFabricToFollowRing(points)).toBe(24)
     }
   })
 
@@ -610,6 +680,26 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
       }
     }
     expect(pairs).toBeGreaterThanOrEqual(40)
+  })
+
+  it('runs each trouser leg’s own fabric on up into the seat’s, with no step a ring below the join', () => {
+    // The legs' top ring takes the seat's fabric; the rings below it lay their
+    // own the same way, so a check runs on across the join without a jump.
+    const { rest } = buildGarmentGeometry('trousers-straight', shape)
+    const uv = rest.getAttribute('uv')
+    // The back of the seat comes first, then each leg's back, ring by ring
+    // from the hem up, with 41 points round each ring.
+    const columns = 41
+    const legRings = trouserLegRings(shape).back.length
+    const legsStart = trouserSeatRings(shape).back.length * columns
+    for (let leg = 0; leg < 2; leg++) {
+      const u = (ring: number, j: number) => uv.getX(legsStart + (leg * legRings + ring) * columns + j)
+      for (let j = 0; j < columns; j++) {
+        // Where the three rings below would carry on to, as a parabola.
+        const [a, b, c] = [legRings - 4, legRings - 3, legRings - 2].map((ring) => u(ring, j))
+        expect(Math.abs(u(legRings - 1, j) - (3 * c - 3 * b + a))).toBeLessThan(0.004)
+      }
+    }
   })
 
   it('shades the seat and the legs alike where they meet, so no line shows across the seat', () => {
