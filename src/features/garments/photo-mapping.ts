@@ -1201,22 +1201,83 @@ function endOf({ box, color }: Piece, { box: bar, color: barColor }: Piece) {
 const NECK_CLOSING = 0.01
 
 /**
+ * Numbers the separate parts of what's marked in `mask` (a row of `width` at
+ * a time), joined across corners too: 0 off the mask, and 1 up for the parts.
+ */
+function partsOf(mask: Uint8Array, width: number): Int32Array {
+  const height = mask.length / width
+  const parts = new Int32Array(mask.length)
+  const queue = new Int32Array(mask.length)
+  let count = 0
+  for (let start = 0; start < mask.length; start++) {
+    if (!mask[start] || parts[start]) continue
+    parts[start] = ++count
+    let tail = 0
+    queue[tail++] = start
+    for (let head = 0; head < tail; head++) {
+      const [x, y] = [queue[head] % width, Math.floor(queue[head] / width)]
+      for (let ny = Math.max(0, y - 1); ny <= Math.min(height - 1, y + 1); ny++) {
+        for (let nx = Math.max(0, x - 1); nx <= Math.min(width - 1, x + 1); nx++) {
+          const j = ny * width + nx
+          if (!mask[j] || parts[j]) continue
+          parts[j] = count
+          queue[tail++] = j
+        }
+      }
+    }
+  }
+  return parts
+}
+
+/** Whether two different parts (numbered in `parts`) both lie within `reach` of pixel `i`. */
+function between(parts: Int32Array, width: number, i: number, reach: number) {
+  const height = parts.length / width
+  const [x, y] = [i % width, Math.floor(i / width)]
+  let first = 0
+  for (let ny = Math.max(0, y - reach); ny <= Math.min(height - 1, y + reach); ny++) {
+    for (let nx = Math.max(0, x - reach); nx <= Math.min(width - 1, x + reach); nx++) {
+      const part = parts[ny * width + nx]
+      if (!part || part === first) continue
+      if (first) return true
+      first = part
+    }
+  }
+  return false
+}
+
+/**
  * Makes what's marked in `covered` whole, within `zone` (both a row of
  * `width` at a time): gaps up to twice `radius` wide are closed, and any
  * patch it closes round is marked too. Paint over the print on a label, or
  * the bright wood of a hanger, and the specks between and inside go with it.
- * Outside `zone` counts as open, so nothing is closed round against it.
+ * But a pixel notched into the outline of one painted part stays unless
+ * it's part of that part's soft edge (see `edging`), so a light seam along
+ * backdrop painted over isn't taken with it. Outside `zone` counts as open,
+ * so nothing is closed round against it.
  */
-function wholeOf(covered: Uint8Array, zone: Uint8Array, width: number, radius: number) {
+function wholeOf(
+  covered: Uint8Array,
+  zone: Uint8Array,
+  width: number,
+  radius: number,
+  edging: (i: number) => boolean,
+) {
   const height = covered.length / width
+  const parts = partsOf(covered, width)
   const closed = erodeMask(dilateMask(covered, width, height, radius), width, height, radius)
-  for (let i = 0; i < covered.length; i++) if (closed[i] && zone[i]) covered[i] = 1
+  const shut = covered.slice()
+  const added: number[] = []
+  for (let i = 0; i < covered.length; i++) {
+    if (!closed[i] || !zone[i] || covered[i]) continue
+    shut[i] = 1
+    added.push(i)
+  }
   // Flood the open pixels from the edges and from outside the zone; whatever it can't reach is enclosed.
   const open = new Uint8Array(covered.length)
   const queue = new Int32Array(covered.length)
   let tail = 0
   const visit = (i: number) => {
-    if (open[i] || (covered[i] && zone[i])) return
+    if (open[i] || (shut[i] && zone[i])) return
     open[i] = 1
     queue[tail++] = i
   }
@@ -1225,7 +1286,15 @@ function wholeOf(covered: Uint8Array, zone: Uint8Array, width: number, radius: n
     if (!zone[i] || x === 0 || y === 0 || x === width - 1 || y === height - 1) visit(i)
   }
   for (let head = 0; head < tail; head++) forNeighbours(queue[head], width, height, visit)
-  for (let i = 0; i < covered.length; i++) if (!open[i] && zone[i]) covered[i] = 1
+  for (let i = 0; i < covered.length; i++) if (!open[i] && zone[i] && !shut[i]) covered[i] = 1
+  // What the closing added goes too, unless it's notched into the outline of one part and no edge of it.
+  for (const i of added) {
+    let outline = false
+    forNeighbours(i, width, height, (j) => {
+      if (open[j]) outline = true
+    })
+    if (!outline || between(parts, width, i, 2 * radius) || edging(i)) covered[i] = 1
+  }
 }
 
 /**
@@ -1343,7 +1412,36 @@ export function coverNeckOpening(
     }
     for (const i of edge) covered[i] = 1
   }
-  wholeOf(covered, zone, width, Math.max(1, Math.round(width * NECK_CLOSING)))
+  // Whether a pixel beside what's painted is its soft edge: a blend of the
+  // fabric and what's painted beside it, or further still that way, like a
+  // dot of a label's print. One in the fabric's own colour, or off it the
+  // other way, like a light seam along dark backdrop, isn't.
+  const edging = (i: number) => {
+    const [x, y] = [i % width, Math.floor(i / width)]
+    const sum = [0, 0, 0]
+    let count = 0
+    for (let ny = Math.max(0, y - 1); ny <= Math.min(reach - 1, y + 1); ny++) {
+      for (let nx = Math.max(0, x - 1); nx <= Math.min(width - 1, x + 1); nx++) {
+        if (!covered[ny * width + nx]) continue
+        for (let channel = 0; channel < 3; channel++) sum[channel] += front.data[(ny * width + nx) * 4 + channel]
+        count++
+      }
+    }
+    if (count === 0) return false
+    const color = pixel(front, x, y)
+    let along = 0
+    let off = 0
+    let toward = 0
+    for (let channel = 0; channel < 3; channel++) {
+      const fromFabric = color[channel] - fabric[channel]
+      const painted = sum[channel] / count - fabric[channel]
+      along += fromFabric * painted
+      off += fromFabric * fromFabric
+      toward += painted * painted
+    }
+    return along > Math.sqrt(off * toward) / 2
+  }
+  wholeOf(covered, zone, width, Math.max(1, Math.round(width * NECK_CLOSING)), edging)
 
   const data = new Uint8ClampedArray(front.data)
   for (let i = 0; i < covered.length; i++) {

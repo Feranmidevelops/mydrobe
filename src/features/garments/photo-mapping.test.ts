@@ -766,6 +766,32 @@ describe('neck opening', () => {
       expect(colorAt(covered, 20, 50)).toEqual(GREY)
     })
 
+    it('leaves a light seam notched into the edge of the backdrop it paints over', () => {
+      // A white tee: dark backdrop through the neck, edged by the light seam of the back collar.
+      const FABRIC: Rgb = [201, 206, 212]
+      const DARK: Rgb = [57, 58, 58]
+      const SEAM: Rgb = [215, 219, 224]
+      const front = blank(100, 80, FABRIC)
+      paint(front, { x: 20, y: 0, width: 60, height: 10 }, DARK)
+      for (const x of [30, 40, 50]) paint(front, { x, y: 9, width: 1, height: 1 }, SEAM)
+      const covered = coverNeckOpening(front, 12, blank(16, 16, FABRIC), FABRIC, DARK)
+      expect(colorAt(covered, 50, 5)).toEqual(FABRIC)
+      for (const x of [30, 40, 50]) expect(colorAt(covered, x, 9)).toEqual(SEAM)
+    })
+
+    it('still takes the dim soft edge notched into a hanger it paints over', () => {
+      // A black tee: a brown hanger, edged by pixels blending it into the black.
+      const BLACK: Rgb = [20, 20, 20]
+      const BROWN: Rgb = [110, 60, 25]
+      const BLEND: Rgb = [45, 32, 22]
+      const front = blank(100, 80, BLACK)
+      paint(front, { x: 20, y: 2, width: 60, height: 8 }, BROWN)
+      for (const x of [30, 40, 50]) paint(front, { x, y: 9, width: 1, height: 1 }, BLEND)
+      const covered = coverNeckOpening(front, 12, blank(16, 16, BLACK), BLACK)
+      expect(colorAt(covered, 50, 5)).toEqual(BLACK)
+      for (const x of [30, 40, 50]) expect(colorAt(covered, x, 9)).toEqual(BLACK)
+    })
+
     it('leaves what a painted hanger hook arches over without closing round it', () => {
       const front = labelled()
       paint(front, { x: 10, y: 4, width: 16, height: 3 }, WHITE)
