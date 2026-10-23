@@ -1284,12 +1284,14 @@ export function coverNeckOpening(
     if (backdrop(color) || nearbyCount(below, color) < enough) covered[i] = 1
   }
 
-  // Which pieces are painted over, mostly: a shallow crossing by where it crosses the band's bottom row.
-  const painted = pieces.map(({ pixels }, k) => {
+  // Which pieces are painted over: most of their pixels in the band. A label
+  // crossing the band's bottom with only its print painted isn't, so its
+  // foot, and the rib below in a colour close to the label's, stay.
+  const painted = pieces.map(({ pixels }) => {
     let counted = 0
     let count = 0
     for (const i of pixels) {
-      if (shallow[k] ? i < (rows - 1) * width || i >= rows * width : i >= rows * width) continue
+      if (i >= rows * width) continue
       counted++
       count += covered[i]
     }

@@ -872,6 +872,27 @@ describe('neck opening', () => {
       expect(colorAt(covered, 50, 31)).toEqual(CREAM)
     })
 
+    it('paints over only the print of a light label crossing the band, not the label or the rib below it', () => {
+      // A white tee: a light label whose brightest foot, beside its print, is seen nowhere else.
+      const FABRIC: Rgb = [200, 205, 210]
+      const HIGHLIGHT: Rgb = [215, 218, 226]
+      const LABEL: Rgb = [232, 234, 238]
+      const BRIGHT: Rgb = [250, 251, 252]
+      const INK: Rgb = [30, 30, 30]
+      const front = blank(200, 400, FABRIC)
+      paint(front, { x: 20, y: 200, width: 40, height: 20 }, HIGHLIGHT)
+      paint(front, { x: 92, y: 18, width: 16, height: 10 }, LABEL)
+      paint(front, { x: 92, y: 28, width: 16, height: 4 }, BRIGHT)
+      paint(front, { x: 95, y: 26, width: 10, height: 4 }, INK)
+      // The rib's highlight, running on from the label's foot.
+      paint(front, { x: 85, y: 32, width: 30, height: 1 }, BRIGHT)
+      const covered = coverNeckOpening(front, BAND, blank(16, 16, FABRIC), FABRIC)
+      expect(colorAt(covered, 100, 28)).toEqual(FABRIC)
+      expect(colorAt(covered, 100, 20)).toEqual(LABEL)
+      expect(colorAt(covered, 100, 32)).toEqual(BRIGHT)
+      expect(colorAt(covered, 88, 32)).toEqual(BRIGHT)
+    })
+
     it('paints over the blurred foot of a label’s print just below the band, between its letters too', () => {
       const front = blank(100, 200, CREAM)
       // Two letters crossing the band's bottom, blurring into grey below it.
