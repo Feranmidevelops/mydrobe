@@ -722,6 +722,41 @@ describe('neck opening', () => {
     expect(colorAt(coverNeckOpening(front, 12, blank(16, 16, CREAM), CREAM), 30, 2)).toEqual(NAVY)
   })
 
+  describe('a label’s print', () => {
+    const BLACK: Rgb = [20, 20, 20]
+    const GREY: Rgb = [120, 120, 120]
+
+    /** A black front with grey squares lower down, and a black label in the neck printed in white. */
+    function labelled() {
+      const front = blank(100, 200, BLACK)
+      for (let y = 40; y < 200; y += 40) paint(front, { x: 0, y, width: 50, height: 20 }, GREY)
+      // A ring of a logo with grey specks inside it, then letters with grey specks between them.
+      paint(front, { x: 40, y: 4, width: 20, height: 12 }, WHITE)
+      paint(front, { x: 42, y: 6, width: 16, height: 8 }, GREY)
+      for (let x = 38; x < 62; x += 6) paint(front, { x, y: 18, width: 4, height: 6 }, WHITE)
+      for (let x = 42; x < 62; x += 6) paint(front, { x, y: 18, width: 2, height: 6 }, GREY)
+      return front
+    }
+
+    it('paints over the specks it closes round or lie between its letters, though their colour is the shirt’s', () => {
+      const covered = coverNeckOpening(labelled(), 30, blank(16, 16, BLACK), BLACK)
+      expect(colorAt(covered, 50, 10)).toEqual(BLACK)
+      expect(colorAt(covered, 42, 20)).toEqual(BLACK)
+      expect(colorAt(covered, 20, 50)).toEqual(GREY)
+    })
+
+    it('leaves what a painted hanger hook arches over without closing round it', () => {
+      const front = labelled()
+      paint(front, { x: 10, y: 4, width: 16, height: 3 }, WHITE)
+      paint(front, { x: 10, y: 4, width: 3, height: 16 }, WHITE)
+      paint(front, { x: 23, y: 4, width: 3, height: 16 }, WHITE)
+      paint(front, { x: 14, y: 9, width: 8, height: 8 }, GREY)
+      const covered = coverNeckOpening(front, 30, blank(16, 16, BLACK), BLACK)
+      expect(colorAt(covered, 11, 10)).toEqual(BLACK)
+      expect(colorAt(covered, 18, 13)).toEqual(GREY)
+    })
+  })
+
   describe('across the bottom of the band', () => {
     // A front tall enough that a neckline dips 6 rows, under a band of 30.
     const BAND = 30

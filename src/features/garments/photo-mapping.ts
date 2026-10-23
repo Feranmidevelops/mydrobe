@@ -1124,13 +1124,45 @@ function shallowCrossings(front: RgbaImage, foreign: Uint8Array, rows: number, d
   return found
 }
 
+/** How far gaps in what's painted over at the neck are closed, as a share of the front's width. */
+const NECK_CLOSING = 0.01
+
+/**
+ * Makes what's marked in `covered` whole, within `zone` (both a row of
+ * `width` at a time): gaps up to twice `radius` wide are closed, and any
+ * patch it closes round is marked too. Paint over the print on a label, or
+ * the bright wood of a hanger, and the specks between and inside go with it.
+ * Outside `zone` counts as open, so nothing is closed round against it.
+ */
+function wholeOf(covered: Uint8Array, zone: Uint8Array, width: number, radius: number) {
+  const height = covered.length / width
+  const closed = erodeMask(dilateMask(covered, width, height, radius), width, height, radius)
+  for (let i = 0; i < covered.length; i++) if (closed[i] && zone[i]) covered[i] = 1
+  // Flood the open pixels from the edges and from outside the zone; whatever it can't reach is enclosed.
+  const open = new Uint8Array(covered.length)
+  const queue = new Int32Array(covered.length)
+  let tail = 0
+  const visit = (i: number) => {
+    if (open[i] || (covered[i] && zone[i])) return
+    open[i] = 1
+    queue[tail++] = i
+  }
+  for (let i = 0; i < covered.length; i++) {
+    const [x, y] = [i % width, Math.floor(i / width)]
+    if (!zone[i] || x === 0 || y === 0 || x === width - 1 || y === height - 1) visit(i)
+  }
+  for (let head = 0; head < tail; head++) forNeighbours(queue[head], width, height, visit)
+  for (let i = 0; i < covered.length; i++) if (!open[i] && zone[i]) covered[i] = 1
+}
+
 /**
  * Paints over what shows through a top's neck opening, such as the rest of a
  * hanger, the shaded inside of the back, a size label or the backdrop, with
  * the fabric sample. Within the top `band` rows, a colour is painted over if
  * it's the backdrop's, or if it turns up nowhere lower down the front, so the
  * squares of a check, a stripe and a contrasting collar (whose front dips
- * lower) stay as photographed.
+ * lower) stay as photographed. What's painted over goes whole (see wholeOf),
+ * so no specks of a label's print or a hanger's grain are left.
  *
  * A hanger bar or a label lying across the bottom of the band, and ending
  * just below it, is no proof of its own colour there: its lower part doesn't
@@ -1191,6 +1223,7 @@ export function coverNeckOpening(
       zone.fill(1, from, y * width + Math.min(width, box.x + box.width + EDGE_ROUNDS))
     }
   }
+  wholeOf(covered, zone, width, Math.max(1, Math.round(width * NECK_CLOSING)))
   for (let round = 0; round < EDGE_ROUNDS; round++) {
     const edge: number[] = []
     for (let i = 0; i < covered.length; i++) {
