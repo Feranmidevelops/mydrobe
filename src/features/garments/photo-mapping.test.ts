@@ -439,6 +439,39 @@ describe('backdrop the tidying would fill in', () => {
       expect(mask[100 * 400 + 210]).toBe(1)
     })
 
+    describe('where the shade at the crotch is deeper than any on the open backdrop', () => {
+      /** Wide trousers whose shade at the top of the gap starts at a third of the backdrop's brightness. */
+      function deepShade(color: Rgb) {
+        const image = blank(400, 400, GREY)
+        paint(image, { x: 80, y: 30, width: 240, height: 70 }, color)
+        paint(image, { x: 80, y: 100, width: 110, height: 280 }, color)
+        paint(image, { x: 210, y: 100, width: 110, height: 280 }, color)
+        for (let y = 100; y < 140; y++) {
+          const v = Math.round(70 + (140 * (y - 100)) / 40)
+          paint(image, { x: 190, y, width: 20, height: 1 }, [v, v, v])
+        }
+        return image
+      }
+
+      it('opens it too, right up to the crotch', () => {
+        const mask = garmentMask(deepShade(NAVY), GREY)
+        for (let y = 100; y < 380; y++) {
+          for (const x of [191, 200, 208]) expect(mask[y * 400 + x]).toBe(0)
+        }
+        expect(mask[99 * 400 + 200]).toBe(1)
+      })
+
+      it('stops short of it on trousers that show that colour themselves, and keeps them whole', () => {
+        const CHARCOAL: Rgb = [62, 62, 64]
+        const mask = garmentMask(deepShade(CHARCOAL), GREY)
+        expect(maskBounds(mask, 400, 400)).toEqual({ x: 80, y: 30, width: 240, height: 350 })
+        expect(mask[200 * 400 + 150]).toBe(1)
+        // The shade no deeper than a shadow on the open backdrop still opens.
+        for (const y of [110, 120, 130]) expect(mask[y * 400 + 200]).toBe(0)
+        expect(mask[101 * 400 + 200]).toBe(1)
+      })
+    })
+
     it('keeps grey trousers whole, though their grey runs on from the shade', () => {
       const mask = garmentMask(shadedGap([124, 124, 124], 128), GREY)
       expect(maskBounds(mask, 400, 400)).toEqual({ x: 120, y: 40, width: 160, height: 320 })

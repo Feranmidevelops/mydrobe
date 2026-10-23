@@ -661,14 +661,20 @@ const SHADED_GARMENT = 0.05
 const SHADE_STEP = DEFAULT_BACKGROUND_TOLERANCE / 3
 
 /**
+ * The darkest the shade at the very tip of a gap is followed into, as a share
+ * of the backdrop's lightness, where the garment doesn't show that colour.
+ */
+const DEEPEST_SHADE = 0.2
+
+/**
  * A test for the backdrop's colour in shade: a colour of the same
- * chromaticity (within SHADOW_HUE) between DARKEST_SHADOW and 1 times the
+ * chromaticity (within SHADOW_HUE) between `darkest` and 1 times the
  * backdrop's lightness, or one shadowTest takes for its shadow. Unlike
  * shadowTest it holds on a grey backdrop too, where a grey garment passes it
  * as well, so it's only used where the garment doesn't (see reopenShadedTips).
  * Null for a very dark backdrop, whose colour can't be read.
  */
-function backdropShade(background: Rgb): ((color: Rgb) => boolean) | null {
+function backdropShade(background: Rgb, darkest = DARKEST_SHADOW): ((color: Rgb) => boolean) | null {
   const [r, g, b] = background
   if (Math.max(r, g, b) < READABLE_BACKDROP) return null
   const light = r + g + b
@@ -677,7 +683,7 @@ function backdropShade(background: Rgb): ((color: Rgb) => boolean) | null {
   return (color) => {
     if (shadow?.(color)) return true
     const sum = color[0] + color[1] + color[2]
-    if (sum < light * DARKEST_SHADOW || sum > light) return false
+    if (sum < light * darkest || sum > light) return false
     return Math.hypot(color[0] / sum - hueR, color[1] / sum - hueG) <= SHADOW_HUE
   }
 }
@@ -699,10 +705,14 @@ const SHADED_TIPS = 0.01
  * colour range reaches. Left as garment, the tip would be copied onto the
  * front and show as a grey sliver at the crotch. So from each reopened gap
  * the backdrop's shade (see backdropShade) is followed on into the tip,
- * stepping only gently in colour, so it stops at the garment's edge. Where
- * more than a little of the garment shows the backdrop's colour in shade
- * (grey trousers on a grey backdrop), the tip can't be told from the garment
- * and nothing changes. `reopened` is what reopenBackdrop made of `tidied`.
+ * stepping only gently in colour, so it stops at the garment's edge. Right
+ * by the crotch the shade can be deeper than any shadow on the open backdrop
+ * (DARKEST_SHADOW), and it's followed on into that too, down to
+ * DEEPEST_SHADE, though only through colours the garment doesn't show
+ * itself, so it can't run on into dark trousers. Where more than a little of
+ * the garment shows the backdrop's colour in shade (grey trousers on a grey
+ * backdrop), the tip can't be told from the garment and nothing changes.
+ * `reopened` is what reopenBackdrop made of `tidied`.
  *
  * Fabric that happens to be the backdrop's colour in shade, such as a faded
  * patch at the crotch, a sheen down the inside of the legs or a grey band
@@ -719,7 +729,8 @@ function reopenShadedTips(
   background: Rgb | null,
 ): Uint8Array {
   const shade = background && backdropShade(background)
-  if (!shade) return reopened
+  const deep = background && backdropShade(background, DEEPEST_SHADE)
+  if (!shade || !deep) return reopened
   const { width, height } = image
   const total = width * height
   const colorOf = (i: number) => pixel(image, i % width, Math.floor(i / width))
@@ -731,12 +742,21 @@ function reopenShadedTips(
 
   let garment = 0
   let shaded = 0
+  const bins = new Uint32Array(4096)
   for (let i = 0; i < total; i++) {
     if (!reopened[i] || isBackground[i]) continue
     garment++
     if (shade(colorOf(i))) shaded++
+    bins[colorBin(image.data, i * 4)]++
   }
   if (shaded > garment * SHADED_GARMENT) return reopened
+  // The garment's own colours, as reopenBackdrop tells them.
+  const ownBin = new Int8Array(4096).fill(-1)
+  const looksOwn = (i: number) => {
+    const bin = colorBin(image.data, i * 4)
+    if (ownBin[bin] < 0) ownBin[bin] = nearbyCount(bins, colorOf(i)) >= Math.max(1, garment * OWN_COLOR) ? 1 : 0
+    return ownBin[bin] === 1
+  }
 
   const result = reopened.slice()
   const seen = new Uint8Array(total)
@@ -760,7 +780,7 @@ function reopenShadedTips(
         if (!inGap(j)) {
           if (!reopened[j] || isBackground[j]) return
           const color = colorOf(j)
-          if (!shade(color) || colorDistance(color, here) > SHADE_STEP) return
+          if (colorDistance(color, here) > SHADE_STEP || !(shade(color) || (deep(color) && !looksOwn(j)))) return
           tip.push(j)
         }
         seen[j] = 1
