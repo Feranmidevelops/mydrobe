@@ -409,6 +409,44 @@ describe('backdrop the tidying would fill in', () => {
     expect(mask[99 * 400 + 200]).toBe(1)
   })
 
+  describe('where the legs shade the top of the gap between them', () => {
+    const GREY: Rgb = [210, 210, 210]
+
+    /**
+     * Trousers on a grey backdrop with a 20 px gap between the legs, whose top
+     * 40 rows the legs shade, from `darkest` grey at the crotch back up to the
+     * backdrop's. The top of the shade is darker than the backdrop's colour range.
+     */
+    function shadedGap(color: Rgb, darkest: number) {
+      const image = blank(400, 400, GREY)
+      paint(image, { x: 120, y: 40, width: 160, height: 60 }, color)
+      paint(image, { x: 120, y: 100, width: 70, height: 260 }, color)
+      paint(image, { x: 210, y: 100, width: 70, height: 260 }, color)
+      for (let y = 100; y < 140; y++) {
+        const v = Math.round(darkest + ((GREY[0] - darkest) * (y - 100)) / 40)
+        paint(image, { x: 190, y, width: 20, height: 1 }, [v, v, v])
+      }
+      return image
+    }
+
+    it('opens the shaded top of the gap too, right up to the crotch', () => {
+      const mask = garmentMask(shadedGap(NAVY, 130), GREY)
+      for (let y = 100; y < 360; y++) {
+        for (const x of [191, 200, 208]) expect(mask[y * 400 + x]).toBe(0)
+      }
+      expect(mask[99 * 400 + 200]).toBe(1)
+      expect(mask[100 * 400 + 189]).toBe(1)
+      expect(mask[100 * 400 + 210]).toBe(1)
+    })
+
+    it('keeps grey trousers whole, though their grey runs on from the shade', () => {
+      const mask = garmentMask(shadedGap([124, 124, 124], 128), GREY)
+      expect(maskBounds(mask, 400, 400)).toEqual({ x: 120, y: 40, width: 160, height: 320 })
+      expect(mask[200 * 400 + 150]).toBe(1)
+      expect(mask[60 * 400 + 200]).toBe(1)
+    })
+  })
+
   it('keeps a dark square lost to a dark backdrop at the hem, when the garment shows that colour too', () => {
     const BLACK: Rgb = [4, 4, 4]
     const image = blank(400, 400, BLACK)

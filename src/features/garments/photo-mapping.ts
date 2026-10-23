@@ -456,7 +456,8 @@ export function garmentMask(
   const garment = (isBackground: Uint8Array) => {
     const mask = new Uint8Array(total)
     for (let i = 0; i < total; i++) mask[i] = isBackground[i] ? 0 : 1
-    return reopenBackdrop(image, tidyMask(mask, width, height), isBackground)
+    const tidied = tidyMask(mask, width, height)
+    return reopenShadedTips(image, tidied, reopenBackdrop(image, tidied, isBackground), isBackground, background)
   }
 
   if (!background) {
@@ -646,6 +647,93 @@ function reopenBackdrop(image: RgbaImage, tidied: Uint8Array, isBackground: Uint
     }
     if (tail <= notch || own * 2 >= tail) continue
     for (let k = 0; k < tail; k++) result[queue[k]] = 0
+  }
+  return result
+}
+
+/**
+ * The most of a garment, as a share of its pixels, that may show the
+ * backdrop's colour in shade for the shaded tip of a gap to be told from it.
+ */
+const SHADED_GARMENT = 0.05
+
+/** How far in colour the shaded tip of a gap is followed at each step: as far as the backdrop grows at the default tolerance. */
+const SHADE_STEP = DEFAULT_BACKGROUND_TOLERANCE / 3
+
+/**
+ * A test for the backdrop's colour in shade: a colour of the same
+ * chromaticity (within SHADOW_HUE) between DARKEST_SHADOW and 1 times the
+ * backdrop's lightness, or one shadowTest takes for its shadow. Unlike
+ * shadowTest it holds on a grey backdrop too, where a grey garment passes it
+ * as well, so it's only used where the garment doesn't (see reopenShadedTips).
+ * Null for a very dark backdrop, whose colour can't be read.
+ */
+function backdropShade(background: Rgb): ((color: Rgb) => boolean) | null {
+  const [r, g, b] = background
+  if (Math.max(r, g, b) < READABLE_BACKDROP) return null
+  const light = r + g + b
+  const [hueR, hueG] = [r / light, g / light]
+  const shadow = shadowTest(background)
+  return (color) => {
+    if (shadow?.(color)) return true
+    const sum = color[0] + color[1] + color[2]
+    if (sum < light * DARKEST_SHADOW || sum > light) return false
+    return Math.hypot(color[0] / sum - hueR, color[1] / sum - hueG) <= SHADOW_HUE
+  }
+}
+
+/**
+ * Sends back to background the shaded tip of each gap reopenBackdrop sent
+ * back. Where a gap narrows to a point, such as the top of the gap between
+ * trouser legs just below the crotch, the garment on either side shades the
+ * backdrop, and on a grey backdrop that shade is darker than growBackdrop's
+ * colour range reaches. Left as garment, the tip would be copied onto the
+ * front and show as a grey sliver at the crotch. So from each reopened gap
+ * the backdrop's shade (see backdropShade) is followed on into the tip,
+ * stepping only gently in colour, so it stops at the garment's edge. Where
+ * more than a little of the garment shows the backdrop's colour in shade
+ * (grey trousers on a grey backdrop), the tip can't be told from the garment
+ * and nothing changes. `reopened` is what reopenBackdrop made of `tidied`.
+ */
+function reopenShadedTips(
+  image: RgbaImage,
+  tidied: Uint8Array,
+  reopened: Uint8Array,
+  isBackground: Uint8Array,
+  background: Rgb | null,
+): Uint8Array {
+  const shade = background && backdropShade(background)
+  if (!shade) return reopened
+  const { width, height } = image
+  const total = width * height
+  const colorOf = (i: number) => pixel(image, i % width, Math.floor(i / width))
+  // The tips are grown from the pixels of the gaps reopenBackdrop sent back.
+  const queue = new Int32Array(total)
+  let tail = 0
+  for (let i = 0; i < total; i++) if (tidied[i] && !reopened[i]) queue[tail++] = i
+  if (tail === 0) return reopened
+
+  let garment = 0
+  let shaded = 0
+  for (let i = 0; i < total; i++) {
+    if (!reopened[i] || isBackground[i]) continue
+    garment++
+    if (shade(colorOf(i))) shaded++
+  }
+  if (shaded > garment * SHADED_GARMENT) return reopened
+
+  const result = reopened.slice()
+  let head = 0
+  while (head < tail) {
+    const from = queue[head++]
+    const here = colorOf(from)
+    forNeighbours(from, width, height, (j) => {
+      if (!result[j] || isBackground[j]) return
+      const color = colorOf(j)
+      if (!shade(color) || colorDistance(color, here) > SHADE_STEP) return
+      result[j] = 0
+      queue[tail++] = j
+    })
   }
   return result
 }
