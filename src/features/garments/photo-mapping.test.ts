@@ -864,6 +864,26 @@ describe('neck opening', () => {
       expect(colorAt(covered, 50, 30)).toEqual(NAVY)
     })
 
+    it('keeps a shallower open collar in a contrasting colour, set in from the sides', () => {
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 30, y: 20, width: 5, height: 14 }, NAVY)
+      paint(front, { x: 65, y: 20, width: 5, height: 14 }, NAVY)
+      paint(front, { x: 30, y: 28, width: 40, height: 6 }, NAVY)
+      const covered = cover(front)
+      expect(colorAt(covered, 32, 22)).toEqual(NAVY)
+      expect(colorAt(covered, 50, 29)).toEqual(NAVY)
+      expect(colorAt(covered, 50, 32)).toEqual(NAVY)
+    })
+
+    it('keeps a small logo straddling the bottom of the band, whose lower half vouches for it', () => {
+      const RED: Rgb = [200, 40, 40]
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 44, y: 25, width: 12, height: 10 }, RED)
+      const covered = cover(front)
+      expect(colorAt(covered, 50, 27)).toEqual(RED)
+      expect(colorAt(covered, 50, 33)).toEqual(RED)
+    })
+
     it('keeps a placket in a contrasting colour running down from the neck', () => {
       const front = blank(100, 200, CREAM)
       paint(front, { x: 46, y: 20, width: 8, height: 30 }, NAVY)

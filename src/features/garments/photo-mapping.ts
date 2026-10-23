@@ -1125,21 +1125,26 @@ function neckPieces(front: RgbaImage, foreign: Uint8Array, rows: number): Piece[
   return found
 }
 
+/** How many times as wide as it's tall a patch must be to be taken for a hanger bar. */
+const BAR_SHAPE = 4
+
 /**
  * Whether `piece` crosses the bottom of the neck band, the front's first
  * `rows` rows, and ends within `dip` rows below it: a hanger bar lying across
  * the neck, or the foot of a size label. Something that runs further down,
  * out to either side of the front, or over more than half the band's height
  * belongs to the garment instead, such as a collar, a placket, a raglan
- * sleeve or a stripe.
+ * sleeve or a stripe. So does a detail with `enough` of itself below the band
+ * to vouch for its own colour there, such as a logo or the curve of a collar
+ * straddling the band's bottom, unless it's shaped like a hanger bar.
  */
-function shallowCrossing({ crossing, box }: Piece, rows: number, dip: number, width: number) {
+function shallowCrossing({ crossing, box, pixels }: Piece, rows: number, dip: number, width: number, enough: number) {
   const bottom = box.y + box.height - 1
-  return crossing && bottom < rows + dip && box.height <= rows / 2 && box.x > 0 && box.x + box.width < width
+  if (!crossing || bottom >= rows + dip || box.height > rows / 2 || box.x === 0 || box.x + box.width >= width) return false
+  let under = 0
+  for (const i of pixels) if (i >= rows * width) under++
+  return under < enough || box.width >= BAR_SHAPE * box.height
 }
-
-/** How many times as wide as it's tall a patch painted over must be to be taken for a hanger bar. */
-const BAR_SHAPE = 4
 
 /**
  * Whether `piece` is the shaded end of the hanger bar `bar`, in another
@@ -1222,15 +1227,16 @@ export function coverNeckOpening(
   for (let i = 0; i < foreign.length; i++) {
     if (colorDistance(pixel(front, i % width, Math.floor(i / width)), fabric) > FOREIGN_COLOR) foreign[i] = 1
   }
+  // How many pixels of a colour lower down the front make it one of the front's own.
+  const enough = Math.max(1, (height - rows) * width * 0.001)
   const pieces = rows > 0 ? neckPieces(front, foreign, rows) : []
-  const shallow = pieces.map((piece) => shallowCrossing(piece, rows, dip, width))
+  const shallow = pieces.map((piece) => shallowCrossing(piece, rows, dip, width, enough))
   const unproven = new Uint8Array(width * height)
   pieces.forEach(({ pixels }, k) => {
     if (shallow[k]) for (const i of pixels) if (i >= rows * width) unproven[i] = 1
   })
 
   const below = colorBins(front, rows, unproven)
-  const enough = Math.max(1, (height - rows) * width * 0.001)
   const backdrop = (color: Rgb) => background !== null && colorDistance(color, background) <= BACKDROP_MATCH
   const covered = new Uint8Array(reach * width)
   for (let i = 0; i < rows * width; i++) {
