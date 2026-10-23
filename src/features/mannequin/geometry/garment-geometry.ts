@@ -58,14 +58,35 @@ export function ellipseArc(rx: number, rz: number, from: number, to: number): nu
   // Simpson's rule: the curve is smooth, so a few steps per radian are plenty.
   const steps = 2 * Math.max(1, Math.ceil(Math.abs(to - from) / ARC_STEP))
   const h = (to - from) / steps
-  const speed = (t: number) => Math.hypot(rx * Math.sin(t), rz * Math.cos(t))
-  let sum = speed(from) + speed(to)
-  for (let i = 1; i < steps; i++) sum += (i % 2 ? 4 : 2) * speed(from + i * h)
+  let sum = 0
+  for (let i = 0; i <= steps; i++) {
+    const t = from + i * h
+    const [x, z] = [rx * Math.sin(t), rz * Math.cos(t)]
+    sum += (i === 0 || i === steps ? 1 : i % 2 ? 4 : 2) * Math.sqrt(x * x + z * z)
+  }
   return (sum * h) / 3
 }
 
+/**
+ * The distance round each ring from the angle `from` (see ellipseArc), for
+ * the angles a loft asks about in turn, round one ring after another: each
+ * carries on from the last one asked about on the same ring, so measuring a
+ * ring of points costs one trip round it, not one from `from` for every point.
+ */
+function arcFrom(from: number): (ring: Ring, theta: number) => number {
+  let last: { ring?: Ring; theta: number; arc: number } = { theta: from, arc: 0 }
+  return (ring, theta) => {
+    if (last.ring !== ring) last = { ring, theta: from, arc: 0 }
+    last = { ring, theta, arc: last.arc + ellipseArc(ring.rx, ring.rz, last.theta, theta) }
+    return last.arc
+  }
+}
+
 /** Torso fabric: the distance round each ring from the centre back, and height. */
-const torsoSwatchUv: LoftUv = (world, theta, ring) => [ellipseArc(ring.rx, ring.rz, 1.5 * Math.PI, theta), world.y]
+function torsoSwatchUv(): LoftUv {
+  const across = arcFrom(1.5 * Math.PI)
+  return (world, theta, ring) => [across(ring, theta), world.y]
+}
 
 /**
  * Sleeve and leg fabric. Across: the distance round the limb from a centre
@@ -77,8 +98,9 @@ const torsoSwatchUv: LoftUv = (world, theta, ring) => [ellipseArc(ring.rx, ring.
  * distance down the limb, or for a trouser leg the height in the world, as on the seat.
  */
 function limbSwatchUv(centre: number, along: 'limb' | 'height', offset = 0): LoftUv {
+  const across = arcFrom(centre)
   return (world, theta, ring) => [
-    offset + (ring.cx ?? 0) + ellipseArc(ring.rx, ring.rz, centre, theta),
+    offset + (ring.cx ?? 0) + across(ring, theta),
     along === 'limb' ? ring.y : world.y,
   ]
 }
@@ -168,7 +190,7 @@ export function neckFacing(shape: BodyShape, neckline: Ring): BufferGeometry {
   const y = neckline.y - NECKBAND_RISE / 2
   const [onNeck] = inflateRings([ringAt(shape.neck, y)], -0.001)
   // As many points round as the shirt's front and back together, so the edges meet exactly.
-  return buildLoft([onNeck, neckline], { radialSegments: 80, uv: torsoSwatchUv })
+  return buildLoft([onNeck, neckline], { radialSegments: 80, uv: torsoSwatchUv() })
 }
 
 /**
@@ -452,13 +474,14 @@ export function shoulderCap(shape: BodyShape, side: Side, sleeveTop: Ring): Buff
   const position = dome.getAttribute('position')
   const uv = dome.getAttribute('uv')
   const { rx, rz } = sleeveTop
+  const across = arcFrom(outerLine(side))
   for (let i = 0; i < uv.count; i++) {
     // The angle round the arm the sleeve's loft would give this point.
     const theta = seam + Math.PI * 2 * (1 - uv.getX(i))
     const elevation = Math.asin(Math.min(1, position.getY(i)))
     // Up the dome, over its own curve from the rim, where its radius is the opening's at this angle.
     const radius = Math.hypot(rx * Math.cos(theta), rz * Math.sin(theta))
-    uv.setXY(i, ellipseArc(rx, rz, outerLine(side), theta), sleeveTop.y + arcUp(radius, height, elevation))
+    uv.setXY(i, across(sleeveTop, theta), sleeveTop.y + arcUp(radius, height, elevation))
   }
   return dome
     .scale(sleeveTop.rx, height, sleeveTop.rz)
@@ -495,7 +518,7 @@ export function shirtCollar(shape: BodyShape, neckline: Ring): BufferGeometry {
     radialSegments: 32,
     thetaStart: Math.PI / 2 + COLLAR_OPENING,
     thetaLength: 2 * Math.PI - 2 * COLLAR_OPENING,
-    uv: torsoSwatchUv,
+    uv: torsoSwatchUv(),
   })
   const position = collar.getAttribute('position')
   for (let i = 0; i < position.count; i++) {
@@ -510,7 +533,7 @@ export function shirtCollar(shape: BodyShape, neckline: Ring): BufferGeometry {
 function shirtGeometry(shape: BodyShape, sleeve: 'long' | 'short'): GarmentGeometry {
   const torso = shirtTorsoRings(shape, sleeve)
   const front = [buildLoft(torso.front, { radialSegments: 40, ...FRONT_HALF })]
-  const rest = [buildLoft(torso.back, { radialSegments: 40, ...BACK_HALF, uv: torsoSwatchUv })]
+  const rest = [buildLoft(torso.back, { radialSegments: 40, ...BACK_HALF, uv: torsoSwatchUv() })]
 
   const neckline = torso.back[torso.back.length - 1]
   rest.push(neckFacing(shape, neckline))
@@ -575,7 +598,7 @@ const TROUSER_SEGMENTS = 40
 function trousersGeometry(shape: BodyShape): GarmentGeometry {
   const seat = trouserSeatRings(shape)
   const seatFront = buildLoft(seat.front, { radialSegments: TROUSER_SEGMENTS, ...FRONT_HALF })
-  const seatBack = buildLoft(seat.back, { radialSegments: TROUSER_SEGMENTS, ...BACK_HALF, uv: torsoSwatchUv })
+  const seatBack = buildLoft(seat.back, { radialSegments: TROUSER_SEGMENTS, ...BACK_HALF, uv: torsoSwatchUv() })
   const legFronts: BufferGeometry[] = []
   const legBacks: BufferGeometry[] = []
 
