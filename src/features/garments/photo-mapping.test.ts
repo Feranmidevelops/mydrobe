@@ -814,6 +814,19 @@ describe('neck opening', () => {
       expect(colorAt(cover(front), 27, 14)).toEqual(CREAM)
     })
 
+    it('keeps a button beside the painted inside of the back, which is no shade of it', () => {
+      const SHADE: Rgb = [60, 50, 45]
+      const BUTTON: Rgb = [200, 190, 150]
+      const front = blank(100, 200, CREAM)
+      // The inside of the back, bar-shaped and seen nowhere else, with the top button beside it.
+      paint(front, { x: 30, y: 10, width: 40, height: 8 }, SHADE)
+      paint(front, { x: 70, y: 11, width: 6, height: 6 }, BUTTON)
+      for (let y = 60; y < 200; y += 30) paint(front, { x: 70, y, width: 6, height: 6 }, BUTTON)
+      const covered = cover(front)
+      expect(colorAt(covered, 50, 14)).toEqual(CREAM)
+      expect(colorAt(covered, 73, 14)).toEqual(BUTTON)
+    })
+
     it('keeps a detail beside backdrop showing above the shoulders, which is no hanger bar', () => {
       const BROWN: Rgb = [110, 60, 25]
       const front = blank(100, 200, CREAM)

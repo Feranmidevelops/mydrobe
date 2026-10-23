@@ -1080,6 +1080,8 @@ interface Piece {
   box: Rect
   /** Whether it crosses the band's bottom row. */
   crossing: boolean
+  /** Its average colour. */
+  color: Rgb
 }
 
 /**
@@ -1101,12 +1103,14 @@ function neckPieces(front: RgbaImage, foreign: Uint8Array, rows: number): Piece[
     if (!foreign[seed] || seen[seed]) return
     const color = colorOf(seed)
     let [left, top, right, bottom] = [width, reach, -1, -1]
+    const sum = [0, 0, 0]
     let tail = 0
     seen[seed] = 1
     queue[tail++] = seed
     for (let head = 0; head < tail; head++) {
       const i = queue[head]
       const [x, y] = [i % width, Math.floor(i / width)]
+      for (let channel = 0; channel < 3; channel++) sum[channel] += front.data[i * 4 + channel]
       left = Math.min(left, x)
       right = Math.max(right, x)
       top = Math.min(top, y)
@@ -1118,7 +1122,8 @@ function neckPieces(front: RgbaImage, foreign: Uint8Array, rows: number): Piece[
       })
     }
     const box = { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }
-    found.push({ pixels: queue.slice(0, tail), box, crossing })
+    const average: Rgb = [sum[0] / tail, sum[1] / tail, sum[2] / tail]
+    found.push({ pixels: queue.slice(0, tail), box, crossing, color: average })
   }
   for (let seed = (rows - 1) * width; seed < rows * width; seed++) follow(seed, true)
   for (let seed = 0; seed < (rows - 1) * width; seed++) follow(seed, false)
@@ -1146,16 +1151,38 @@ function shallowCrossing({ crossing, box, pixels }: Piece, rows: number, dip: nu
   return under < enough || box.width >= BAR_SHAPE * box.height
 }
 
+/** How far a shade's chromaticity may stray from the line out from grey through the colour it's a shade of. */
+const SHADE_HUE = 0.06
+
+/**
+ * Whether `color` is a darker shade of `of`: darker overall, with its
+ * chromaticity (each channel's share of r + g + b) near the line from grey
+ * out through that of `of`, as shade deepens a colour but doesn't turn it.
+ */
+function shadeOf(color: Rgb, of: Rgb) {
+  const [sum, ofSum] = [color[0] + color[1] + color[2], of[0] + of[1] + of[2]]
+  if (sum <= 0 || sum >= ofSum) return false
+  const [cr, cg] = [color[0] / sum - 1 / 3, color[1] / sum - 1 / 3]
+  const [or, og] = [of[0] / ofSum - 1 / 3, of[1] / ofSum - 1 / 3]
+  const length = Math.hypot(or, og)
+  if (length === 0) return Math.hypot(cr, cg) <= SHADE_HUE
+  const across = Math.abs(cr * og - cg * or) / length
+  const along = (cr * or + cg * og) / length
+  return across <= SHADE_HUE && along >= -SHADE_HUE
+}
+
 /**
  * Whether `piece` is the shaded end of the hanger bar `bar`, in another
- * colour: it lies within the bar's rows, and is no wider than twice the bar
- * is tall. Only a patch much wider than it's tall, and clear of the top and
- * sides of the front (`width` wide), counts as a bar: backdrop above the
- * shoulders, or a stripe, isn't one.
+ * colour: a darker shade of the bar's, lying within the bar's rows, and no
+ * wider than twice the bar is tall. A button beside the bar, in a colour of
+ * its own, isn't one. Only a patch much wider than it's tall, and clear of
+ * the top and sides of the front (`width` wide), counts as a bar: backdrop
+ * above the shoulders, or a stripe, isn't one.
  */
-function endOf({ box }: Piece, { box: bar }: Piece, width: number) {
+function endOf({ box, color }: Piece, { box: bar, color: barColor }: Piece, width: number) {
   const barLike = bar.width >= BAR_SHAPE * bar.height && bar.y > 0 && bar.x > 0 && bar.x + bar.width < width
-  return barLike && box.y >= bar.y && box.y + box.height <= bar.y + bar.height && box.width <= 2 * bar.height
+  const within = box.y >= bar.y && box.y + box.height <= bar.y + bar.height && box.width <= 2 * bar.height
+  return barLike && within && shadeOf(color, barColor)
 }
 
 /** How far gaps in what's painted over at the neck are closed, as a share of the front's width. */
