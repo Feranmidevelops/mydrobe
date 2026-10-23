@@ -1172,17 +1172,29 @@ function shadeOf(color: Rgb, of: Rgb) {
 }
 
 /**
- * Whether `piece` is the shaded end of the hanger bar `bar`, in another
- * colour: a darker shade of the bar's, lying within the bar's rows, and no
- * wider than twice the bar is tall. A button beside the bar, in a colour of
- * its own, isn't one. Only a patch much wider than it's tall, and clear of
- * the top and sides of the front (`width` wide), counts as a bar: backdrop
- * above the shoulders, or a stripe, isn't one.
+ * Whether `piece` could be a hanger bar: much wider than it's tall, and clear
+ * of the top and sides of the front (`width` wide). Backdrop above the
+ * shoulders, or a stripe, isn't one.
  */
-function endOf({ box, color }: Piece, { box: bar, color: barColor }: Piece, width: number) {
-  const barLike = bar.width >= BAR_SHAPE * bar.height && bar.y > 0 && bar.x > 0 && bar.x + bar.width < width
-  const within = box.y >= bar.y && box.y + box.height <= bar.y + bar.height && box.width <= 2 * bar.height
-  return barLike && within && shadeOf(color, barColor)
+function barLike({ box }: Piece, width: number) {
+  return box.width >= BAR_SHAPE * box.height && box.y > 0 && box.x > 0 && box.x + box.width < width
+}
+
+/**
+ * Whether `piece` could be part of the shaded end of the hanger bar `bar`,
+ * in another colour: a darker shade of the bar's, lying within the bar's
+ * rows, and no wider than twice the bar is tall, nor further than that past
+ * either end of it. A button beside the bar, in a colour of its own, isn't.
+ */
+function endOf({ box, color }: Piece, { box: bar, color: barColor }: Piece) {
+  const beyond = 2 * bar.height
+  const within =
+    box.y >= bar.y &&
+    box.y + box.height <= bar.y + bar.height &&
+    box.width <= beyond &&
+    box.x >= bar.x - beyond &&
+    box.x + box.width <= bar.x + bar.width + beyond
+  return within && shadeOf(color, barColor)
 }
 
 /** How far gaps in what's painted over at the neck are closed, as a share of the front's width. */
@@ -1283,19 +1295,27 @@ export function coverNeckOpening(
     }
     return count * 2 >= counted
   })
-  // A shallow crossing painted over goes whole, and so does the shaded end of a hanger bar painted over.
+  // A shallow crossing painted over goes whole, and so does the shaded end of
+  // a hanger bar painted over. The end can come in several patches, each a
+  // shade of the bar's colour, so it's followed from patch to patch.
   const pieceOf = new Int32Array(reach * width).fill(-1)
   pieces.forEach(({ pixels }, k) => pixels.forEach((i) => (pieceOf[i] = k)))
-  const whole = pieces.map((piece, k) => {
-    if (painted[k]) return shallow[k]
-    return piece.pixels.some((i) => {
-      let end = false
-      forNeighbours(i, width, reach, (j) => {
-        const other = pieceOf[j]
-        if (other >= 0 && other !== k && painted[other] && endOf(piece, pieces[other], width)) end = true
-      })
-      return end
-    })
+  const whole = pieces.map((_, k) => painted[k] && shallow[k])
+  pieces.forEach((bar, b) => {
+    if (!painted[b] || !barLike(bar, width)) return
+    const trail = [b]
+    const taken = new Set(trail)
+    for (let t = 0; t < trail.length; t++) {
+      for (const i of pieces[trail[t]].pixels) {
+        forNeighbours(i, width, reach, (j) => {
+          const k = pieceOf[j]
+          if (k < 0 || taken.has(k) || !endOf(pieces[k], bar)) return
+          taken.add(k)
+          trail.push(k)
+          if (!painted[k]) whole[k] = true
+        })
+      }
+    }
   })
 
   // Below the band, only a piece painted over whole (and its soft edge) changes.

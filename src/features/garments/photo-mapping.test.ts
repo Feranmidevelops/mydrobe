@@ -805,6 +805,22 @@ describe('neck opening', () => {
       expect(colorAt(covered, 15, 110)).toEqual(BROWN)
     })
 
+    it('paints over a shaded end that comes in two shades, the darker clear of the bar', () => {
+      const BROWN: Rgb = [110, 60, 25]
+      const DARKER: Rgb = [75, 38, 12]
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 10, y: 100, width: 20, height: 20 }, BROWN)
+      paint(front, { x: 60, y: 120, width: 20, height: 20 }, DARKER)
+      paint(front, { x: 30, y: 24, width: 40, height: 10 }, WOOD)
+      paint(front, { x: 26, y: 25, width: 4, height: 8 }, BROWN)
+      paint(front, { x: 20, y: 26, width: 6, height: 6 }, DARKER)
+      const covered = cover(front)
+      expect(colorAt(covered, 27, 28)).toEqual(CREAM)
+      expect(colorAt(covered, 21, 28)).toEqual(CREAM)
+      expect(colorAt(covered, 21, 31)).toEqual(CREAM)
+      expect(colorAt(covered, 65, 125)).toEqual(DARKER)
+    })
+
     it('paints over the shaded end of a hanger bar lying wholly within the band', () => {
       const BROWN: Rgb = [110, 60, 25]
       const front = blank(100, 200, CREAM)
