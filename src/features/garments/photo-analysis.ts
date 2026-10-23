@@ -4,6 +4,7 @@ import { latticeTile, type FabricTile } from './pattern-tile'
 import {
   averageColor,
   chooseSwatch,
+  closeGaps,
   coverage,
   coverNeckOpening,
   cropAndFill,
@@ -40,7 +41,11 @@ export interface PhotoAnalysis {
   /** The plain fabric sample, also where the tile below is looked for. */
   swatch: Rect
   fabric: Rgb
-  /** Share of the crop that is garment rather than background. */
+  /**
+   * Share of the crop that is garment rather than background. A gap that
+   * tidying the mask would close, such as the one between trouser legs,
+   * counts as garment: it takes the fabric, so no background shows there.
+   */
   coverage: number
   /** The garment's main colours, most common first. */
   palette: Rgb[]
@@ -125,7 +130,7 @@ export function analyseGarmentPhoto(
     crop,
     swatch,
     fabric,
-    coverage: coverage(mask, image.width, crop),
+    coverage: coverage(closeGaps(mask, image.width, image.height), image.width, crop),
     palette: extractPalette(image, solid, bounds),
     front,
     swatchPixels,

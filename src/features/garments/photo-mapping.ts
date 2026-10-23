@@ -970,6 +970,18 @@ export function coverage(mask: Uint8Array, width: number, rect: Rect): number {
   return garment / Math.max(1, rect.width * rect.height)
 }
 
+/**
+ * The garment mask with the gaps tidyMask's closing fills closed up again:
+ * the gap between trouser legs or between an arm and the body, and the
+ * shaded tip at the top of one, which reopenBackdrop and reopenShadedTips
+ * send back to background. On the mannequin those gaps take the fabric, like
+ * any background inside the crop, so they're no sign of a poor cut-out.
+ */
+export function closeGaps(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const gap = closingRadius(width, height)
+  return erodeMask(dilateMask(mask, width, height, gap), width, height, gap)
+}
+
 /** Mirrors `i` back and forth across `length`, so a tile repeats without hard seams. */
 function mirrored(i: number, length: number) {
   const period = length * 2
