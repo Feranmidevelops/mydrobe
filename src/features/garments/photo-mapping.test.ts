@@ -793,6 +793,47 @@ describe('neck opening', () => {
       expect(colorAt(covered, 30, 33)).toEqual(CREAM)
     })
 
+    it('paints over the shaded end of a hanger bar too, though its colour turns up lower down', () => {
+      const BROWN: Rgb = [110, 60, 25]
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 10, y: 100, width: 20, height: 20 }, BROWN)
+      paint(front, { x: 30, y: 24, width: 40, height: 10 }, WOOD)
+      paint(front, { x: 26, y: 25, width: 4, height: 8 }, BROWN)
+      const covered = cover(front)
+      expect(colorAt(covered, 27, 28)).toEqual(CREAM)
+      expect(colorAt(covered, 27, 32)).toEqual(CREAM)
+      expect(colorAt(covered, 15, 110)).toEqual(BROWN)
+    })
+
+    it('paints over the shaded end of a hanger bar lying wholly within the band', () => {
+      const BROWN: Rgb = [110, 60, 25]
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 10, y: 100, width: 20, height: 20 }, BROWN)
+      paint(front, { x: 30, y: 10, width: 40, height: 10 }, WOOD)
+      paint(front, { x: 26, y: 11, width: 4, height: 8 }, BROWN)
+      expect(colorAt(cover(front), 27, 14)).toEqual(CREAM)
+    })
+
+    it('keeps a detail beside backdrop showing above the shoulders, which is no hanger bar', () => {
+      const BROWN: Rgb = [110, 60, 25]
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 10, y: 100, width: 20, height: 20 }, BROWN)
+      paint(front, { x: 30, y: 0, width: 40, height: 8 }, WHITE)
+      paint(front, { x: 26, y: 1, width: 4, height: 6 }, BROWN)
+      const covered = coverNeckOpening(front, BAND, blank(16, 16, CREAM), CREAM, WHITE)
+      expect(colorAt(covered, 50, 4)).toEqual(CREAM)
+      expect(colorAt(covered, 27, 4)).toEqual(BROWN)
+    })
+
+    it('keeps a detail beside a hanger bar that reaches above it', () => {
+      const BROWN: Rgb = [110, 60, 25]
+      const front = blank(100, 200, CREAM)
+      paint(front, { x: 10, y: 100, width: 20, height: 20 }, BROWN)
+      paint(front, { x: 30, y: 24, width: 40, height: 10 }, WOOD)
+      paint(front, { x: 26, y: 20, width: 4, height: 15 }, BROWN)
+      expect(colorAt(cover(front), 27, 21)).toEqual(BROWN)
+    })
+
     it('paints over the foot of a label printed in a colour seen nowhere else', () => {
       const front = blank(100, 200, CREAM)
       paint(front, { x: 44, y: 22, width: 12, height: 6 }, LABEL)
