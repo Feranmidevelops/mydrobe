@@ -123,7 +123,7 @@ export function analyseGarmentPhoto(
   // them. So do hands holding a top up, which aren't the garment either.
   const top = templateId !== 'trousers-straight'
   const band = top ? neckBand(mask, image.width, bounds, crop) : 0
-  const shown = top ? withoutHands(solid, handsOverFront(image, solid, crop, band)) : solid
+  const shown = top ? withoutHands(solid, handsOverFront(image, solid, crop, band, background)) : solid
   const filled = cropAndFill(image, shown, crop, tile)
   const front = top ? coverNeckOpening(filled, band, tile, fabric, background, [crop.x, crop.y]) : filled
   return {

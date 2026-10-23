@@ -1275,8 +1275,11 @@ const HAND_REACH = 1 / 3
 /**
  * The hands holding a top up, where they lie over the front `crop`: 1 for
  * each pixel of the photo to paint over. A hand is a patch of skin-toned
- * garment pixels (in `solid`) that
- * - comes from outside the garment: it touches the garment's outline,
+ * pixels, some of them garment pixels (in `solid`) in the crop, that
+ * - comes from outside the garment: it touches the garment's outline. It's
+ *   followed out past the outline too, through skin tones unlike the
+ *   `background`, as the cut-out can take most of a hand for backdrop and
+ *   leave only its shaded edge, where it lies over the garment, behind,
  * - reaches into the crop across its left, right or bottom edge, and more of
  *   it lies outside the crop than in it,
  * - covers only a corner of the crop, no more than HAND_REACH of its width
@@ -1289,30 +1292,38 @@ const HAND_REACH = 1 / 3
  * or a contrasting collar span too much of the crop to pass. A couple of
  * pixels of soft edge round each hand go with it.
  */
-export function handsOverFront(image: RgbaImage, solid: Uint8Array, crop: Rect, band = 0): Uint8Array {
+export function handsOverFront(
+  image: RgbaImage,
+  solid: Uint8Array,
+  crop: Rect,
+  band = 0,
+  background: Rgb | null = null,
+): Uint8Array {
   const { data, width, height } = image
   const hands = new Uint8Array(width * height)
   const dominant = dominantColor(image, solid, crop)
   if (isSkinTone(dominant)) return hands
-  // Whether each pixel is a skin tone unlike the garment's own: worked out as the patches reach it.
+  // Whether each pixel is a skin tone unlike the garment's own, and off the
+  // garment unlike the backdrop: worked out as the patches reach it.
   const skin = new Int8Array(width * height).fill(-1)
   const candidate = (i: number) => {
     if (skin[i] < 0) {
       const color: Rgb = [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]
-      skin[i] = solid[i] && isSkinTone(color) && colorDistance(color, dominant) > FOREIGN_COLOR ? 1 : 0
+      const shown = solid[i] || (data[i * 4 + 3] >= 128 && (!background || colorDistance(color, background) > BACKDROP_MATCH))
+      skin[i] = shown && isSkinTone(color) && colorDistance(color, dominant) > FOREIGN_COLOR ? 1 : 0
     }
     return skin[i] === 1
   }
   const inCrop = (x: number, y: number) => x >= crop.x && y >= crop.y && x < crop.x + crop.width && y < crop.y + crop.height
 
-  // Each patch of skin tones that lies partly in the crop, followed wherever it goes.
+  // Each patch of skin tones that lies partly over the garment in the crop, followed wherever it goes.
   const patches: { size: number; inside: number[]; outline: boolean }[] = []
   const owner = new Int32Array(width * height)
   const queue = new Int32Array(width * height)
   for (let y = crop.y; y < crop.y + crop.height; y++) {
     for (let x = crop.x; x < crop.x + crop.width; x++) {
       const start = y * width + x
-      if (owner[start] || !candidate(start)) continue
+      if (owner[start] || !solid[start] || !candidate(start)) continue
       const id = patches.length + 1
       let tail = 0
       let outline = false

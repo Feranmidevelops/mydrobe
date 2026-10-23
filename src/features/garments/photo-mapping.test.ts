@@ -610,6 +610,27 @@ describe('hands holding a top up', () => {
     expect(marked(hands, 35, 115)).toBe(1)
   })
 
+  it('follows a hand the cut-out took for backdrop, so the shaded edge it left on the front goes too', () => {
+    const image = withHand(top(NAVY))
+    // All the cut-out kept of the hand is a sliver where it lies over the body.
+    const solid = garmentOf(image)
+    for (let y = 85; y < 99; y++) for (let x = 83; x < 112; x++) solid[y * 120 + x] = 0
+    const hands = handsOverFront(image, solid, crop, 0, WHITE)
+    expect(marked(hands, 81, 92)).toBe(1)
+    expect(marked(hands, 60, 92)).toBe(0)
+  })
+
+  it('doesn’t follow a skin-toned tab out into a backdrop of much the same tone', () => {
+    const BEIGE: Rgb = [214, 190, 160]
+    const image = blank(120, 160, BEIGE)
+    paint(image, { x: 15, y: 40, width: 90, height: 30 }, NAVY)
+    paint(image, crop, NAVY)
+    paint(image, { x: 80, y: 135, width: 10, height: 15 }, CAMEL)
+    const solid = new Uint8Array(120 * 160)
+    for (let i = 0; i < solid.length; i++) if (image.data[i * 4 + 2] !== BEIGE[2]) solid[i] = 1
+    expect(count(handsOverFront(image, solid, crop, 0, BEIGE))).toBe(0)
+  })
+
   it('never takes a tan, camel or stone top’s own colour for a hand', () => {
     for (const color of [CAMEL, STONE]) {
       const image = withHand(top(color))
