@@ -683,6 +683,15 @@ function backdropShade(background: Rgb): ((color: Rgb) => boolean) | null {
 }
 
 /**
+ * The most of a gap, as a share of the backdrop tidying filled in it, that its
+ * shaded tip may make up: the garment either side shades only the narrow end.
+ */
+const SHADED_TIP = 0.25
+
+/** The most of a garment, as a share of its pixels, that reopening the shaded tips of its gaps may take away. */
+const SHADED_TIPS = 0.01
+
+/**
  * Sends back to background the shaded tip of each gap reopenBackdrop sent
  * back. Where a gap narrows to a point, such as the top of the gap between
  * trouser legs just below the crotch, the garment on either side shades the
@@ -694,6 +703,13 @@ function backdropShade(background: Rgb): ((color: Rgb) => boolean) | null {
  * more than a little of the garment shows the backdrop's colour in shade
  * (grey trousers on a grey backdrop), the tip can't be told from the garment
  * and nothing changes. `reopened` is what reopenBackdrop made of `tidied`.
+ *
+ * Fabric that happens to be the backdrop's colour in shade, such as a faded
+ * patch at the crotch, a sheen down the inside of the legs or a grey band
+ * across them, can carry on softly from the tip, and the shade would run on
+ * into it. So a gap whose tip comes to more than SHADED_TIP of the gap is left
+ * as it was, and if the tips together come to more than SHADED_TIPS of the
+ * garment, or would cut it in two, none is reopened.
  */
 function reopenShadedTips(
   image: RgbaImage,
@@ -707,11 +723,11 @@ function reopenShadedTips(
   const { width, height } = image
   const total = width * height
   const colorOf = (i: number) => pixel(image, i % width, Math.floor(i / width))
-  // The tips are grown from the pixels of the gaps reopenBackdrop sent back.
-  const queue = new Int32Array(total)
-  let tail = 0
-  for (let i = 0; i < total; i++) if (tidied[i] && !reopened[i]) queue[tail++] = i
-  if (tail === 0) return reopened
+  // The gaps reopenBackdrop sent back, which the tips are grown from.
+  const inGap = (i: number) => tidied[i] === 1 && reopened[i] === 0
+  let gaps = false
+  for (let i = 0; i < total && !gaps; i++) gaps = inGap(i)
+  if (!gaps) return reopened
 
   let garment = 0
   let shaded = 0
@@ -723,19 +739,105 @@ function reopenShadedTips(
   if (shaded > garment * SHADED_GARMENT) return reopened
 
   const result = reopened.slice()
-  let head = 0
-  while (head < tail) {
-    const from = queue[head++]
-    const here = colorOf(from)
-    forNeighbours(from, width, height, (j) => {
-      if (!result[j] || isBackground[j]) return
-      const color = colorOf(j)
-      if (!shade(color) || colorDistance(color, here) > SHADE_STEP) return
-      result[j] = 0
-      queue[tail++] = j
+  const seen = new Uint8Array(total)
+  const queue = new Int32Array(total)
+  const cut: number[] = []
+  for (let start = 0; start < total; start++) {
+    if (seen[start] || !inGap(start)) continue
+    // Flood the gap and the shade that carries on from it, counting each.
+    const tip: number[] = []
+    let gap = 0
+    let head = 0
+    let tail = 0
+    seen[start] = 1
+    queue[tail++] = start
+    while (head < tail) {
+      const from = queue[head++]
+      if (inGap(from)) gap++
+      const here = colorOf(from)
+      forNeighbours(from, width, height, (j) => {
+        if (seen[j]) return
+        if (!inGap(j)) {
+          if (!reopened[j] || isBackground[j]) return
+          const color = colorOf(j)
+          if (!shade(color) || colorDistance(color, here) > SHADE_STEP) return
+          tip.push(j)
+        }
+        seen[j] = 1
+        queue[tail++] = j
+      })
+    }
+    if (tip.length > gap * SHADED_TIP) continue
+    for (const i of tip) {
+      result[i] = 0
+      cut.push(i)
+    }
+  }
+  if (cut.length === 0 || cut.length > garment * SHADED_TIPS) return reopened
+  // Reopening the tips may cut off a speck or two, but no more.
+  return holdsTogether(result, cut, width, height, (closingRadius(width, height) / 2) ** 2) ? result : reopened
+}
+
+/**
+ * Whether a garment `mask`, with the pixels `cut` just taken out of it, still
+ * holds together: whether the garment pixels bordering the cut all join up,
+ * apart from specks of no more than `speck` pixels. The search
+ * spreads out from all of them at once, joining their groups where they meet,
+ * and stops as soon as one group is left growing, so a cut that leaves the
+ * garment whole costs little however big the garment is.
+ */
+function holdsTogether(mask: Uint8Array, cut: number[], width: number, height: number, speck: number): boolean {
+  const group = new Int32Array(mask.length).fill(-1)
+  const queue: number[] = []
+  // Per group: the group it joined (itself while it leads), its size, and how many of its pixels are still queued.
+  const leader: number[] = []
+  const size: number[] = []
+  const queued: number[] = []
+  for (const i of cut) {
+    forNeighbours(i, width, height, (j) => {
+      if (!mask[j] || group[j] >= 0) return
+      group[j] = leader.length
+      leader.push(leader.length)
+      size.push(1)
+      queued.push(1)
+      queue.push(j)
     })
   }
-  return result
+  const lead = (g: number) => {
+    while (leader[g] !== g) g = leader[g] = leader[leader[g]]
+    return g
+  }
+  // Groups still growing, and finished ones bigger than a speck: the garment holds unless two pieces are.
+  let growing = leader.length
+  let pieces = 0
+  for (let head = 0; head < queue.length; head++) {
+    if (growing === 1 && pieces === 0) return true
+    const i = queue[head]
+    const g = lead(group[i])
+    let split = false
+    forNeighbours(i, width, height, (j) => {
+      if (!mask[j]) return
+      if (group[j] < 0) {
+        group[j] = g
+        size[g]++
+        queued[g]++
+        queue.push(j)
+      } else {
+        const other = lead(group[j])
+        if (other === g) return
+        leader[other] = g
+        size[g] += size[other]
+        queued[g] += queued[other]
+        growing--
+      }
+      if (pieces > 0 && size[g] > speck) split = true
+    })
+    if (split) return false
+    if (--queued[g] > 0) continue
+    growing--
+    if (size[g] > speck && ++pieces > 1) return false
+  }
+  return true
 }
 
 /** The unbroken run of garment pixels on a row that contains, or is nearest to, `centre`. */

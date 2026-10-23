@@ -445,6 +445,91 @@ describe('backdrop the tidying would fill in', () => {
       expect(mask[200 * 400 + 150]).toBe(1)
       expect(mask[60 * 400 + 200]).toBe(1)
     })
+
+    describe('where the fabric carries on softly from the shade in a colour like it', () => {
+      const onTrousers = (x: number, y: number) => x >= 120 && x < 280 && y >= 40 && y < 360 && (y < 100 || x < 190 || x >= 210)
+      const mix = (from: Rgb, to: Rgb, amount: number) =>
+        from.map((value, k) => Math.round(value + (to[k] - value) * Math.min(1, Math.max(0, amount)))) as Rgb
+
+      /** Paints the trousers `shadedGap` drew with `colorAt(x, y)`, where it gives one. */
+      function paintTrousers(image: RgbaImage, colorAt: (x: number, y: number) => Rgb | null) {
+        for (let y = 40; y < 360; y++) {
+          for (let x = 120; x < 280; x++) {
+            const color = onTrousers(x, y) && colorAt(x, y)
+            if (color) image.data.set([...color, 255], (y * 400 + x) * 4)
+          }
+        }
+      }
+
+      /** A soft-edged round patch of `color` on `fabric`, solid out to `radius` and fading over 3 px. */
+      const patch = (fabric: Rgb, color: Rgb, cx: number, cy: number, radius: number) => (x: number, y: number) => {
+        const distance = Math.hypot(x - cx, y - cy)
+        return distance < radius + 3 ? mix(color, fabric, (distance - radius) / 3) : null
+      }
+
+      it('keeps black trousers whole, though a soft grey band runs across the legs from the shade', () => {
+        const BLACK: Rgb = [30, 30, 33]
+        const image = shadedGap(BLACK, 140)
+        // The middle of the band is the shade's grey beside it, 8 rows below the crotch.
+        paintTrousers(image, (_, y) => (Math.abs(y - 108) < 8 ? mix([154, 154, 154], BLACK, Math.abs(y - 108) / 8) : null))
+        const mask = garmentMask(image, GREY)
+        expect(maskBounds(mask, 400, 400)).toEqual({ x: 120, y: 40, width: 160, height: 320 })
+        expect(mask[108 * 400 + 150]).toBe(1)
+        expect(mask[300 * 400 + 150]).toBe(1)
+      })
+
+      it('keeps a faded patch at the crotch of mid-wash denim', () => {
+        const DENIM: Rgb = [80, 105, 145]
+        const image = shadedGap(DENIM, 148)
+        paintTrousers(image, patch(DENIM, [148, 150, 156], 200, 88, 24))
+        const mask = garmentMask(image, GREY)
+        for (const [x, y] of [[200, 80], [185, 100], [215, 100], [200, 66]]) expect(mask[y * 400 + x]).toBe(1)
+      })
+
+      it('keeps the soft sheen down the inside of the legs of charcoal trousers', () => {
+        const CHARCOAL: Rgb = [70, 70, 72]
+        const image = shadedGap(CHARCOAL, 130)
+        // As light as the shade at the crotch along each leg's inner edge, fading over 10 px.
+        paintTrousers(image, (x, y) => {
+          const fromEdge = x < 200 ? 189 - x : x - 210
+          return y >= 100 && y < 250 && fromEdge < 10 ? mix([130, 130, 130], CHARCOAL, fromEdge / 10) : null
+        })
+        const mask = garmentMask(image, GREY)
+        for (const y of [100, 150, 240]) {
+          for (const x of [184, 189, 210, 215]) expect(mask[y * 400 + x]).toBe(1)
+        }
+      })
+
+      it('keeps the soft sheen down the inside of the legs of black trousers that flare from the crotch', () => {
+        // The gap between the legs widens from 2 px at the crotch to 60 at the hem, so tidying fills only its top third.
+        const BLACK: Rgb = [30, 30, 33]
+        const image = blank(400, 400, GREY)
+        paint(image, { x: 120, y: 40, width: 160, height: 60 }, BLACK)
+        const half = (y: number) => 1 + (29 * (y - 100)) / 260
+        for (let y = 100; y < 360; y++) {
+          for (let x = 120; x < 280; x++) {
+            const fromEdge = Math.abs(x + 0.5 - 200) - half(y)
+            // The shade at the top of the gap, and a sheen 4 px wide down each leg’s inner edge to 40 rows below the crotch.
+            const v = Math.round(130 + (80 * (y - 100)) / 40)
+            const color: Rgb =
+              fromEdge < 0 ? (y < 140 ? [v, v, v] : GREY) : y < 140 && fromEdge < 4 ? mix([128, 128, 128], BLACK, fromEdge / 20) : BLACK
+            image.data.set([...color, 255], (y * 400 + x) * 4)
+          }
+        }
+        const mask = garmentMask(image, GREY)
+        for (const y of [110, 125, 138]) {
+          const edge = Math.ceil(200 + half(y))
+          for (const x of [edge, edge + 2, 399 - edge - 2, 399 - edge]) expect(mask[y * 400 + x]).toBe(1)
+        }
+      })
+
+      it('keeps a soft grey patch at the crotch of navy trousers', () => {
+        const image = shadedGap(NAVY, 150)
+        paintTrousers(image, patch(NAVY, [150, 150, 152], 200, 92, 12))
+        const mask = garmentMask(image, GREY)
+        for (const [x, y] of [[200, 92], [200, 82], [188, 100], [211, 100]]) expect(mask[y * 400 + x]).toBe(1)
+      })
+    })
   })
 
   it('keeps a dark square lost to a dark backdrop at the hem, when the garment shows that colour too', () => {
