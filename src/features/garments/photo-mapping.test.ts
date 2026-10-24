@@ -930,6 +930,24 @@ describe('neck opening', () => {
       expect(colorAt(covered, 49, 31)).toEqual(CREAM)
     })
 
+    it('paints over the whole of a word straddling the bottom of the band, not just its whitest letters', () => {
+      // A black shirt with grey squares lower down, and a label's white word blurred into it.
+      const BLACK: Rgb = [20, 20, 20]
+      const GREY: Rgb = [120, 120, 120]
+      const front = blank(100, 200, BLACK)
+      for (let y = 60; y < 200; y += 40) paint(front, { x: 0, y, width: 50, height: 20 }, GREY)
+      // One letter is white in the band; the next only shows its blurred grey top there.
+      paint(front, { x: 40, y: 28, width: 3, height: 6 }, WHITE)
+      paint(front, { x: 45, y: 28, width: 3, height: 2 }, GREY)
+      paint(front, { x: 45, y: 30, width: 3, height: 4 }, WHITE)
+      paint(front, { x: 43, y: 31, width: 2, height: 2 }, GREY)
+      const covered = coverNeckOpening(front, BAND, blank(16, 16, BLACK), BLACK)
+      expect(colorAt(covered, 41, 31)).toEqual(BLACK)
+      expect(colorAt(covered, 46, 28)).toEqual(BLACK)
+      expect(colorAt(covered, 46, 32)).toEqual(BLACK)
+      expect(colorAt(covered, 20, 70)).toEqual(GREY)
+    })
+
     it('keeps an open collar in a contrasting colour, though its foot ends just below the band', () => {
       const front = blank(100, 200, CREAM)
       paint(front, { x: 30, y: 0, width: 5, height: 35 }, NAVY)

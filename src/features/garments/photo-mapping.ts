@@ -1298,6 +1298,62 @@ function wholeOf(
 }
 
 /**
+ * Paints over the rest of the print that each of `letters` belongs to (marked
+ * in `covered`): pieces crossing the bottom of the neck band, the front's
+ * first `rows` rows, painted over whole, such as the letters of a word on a
+ * label straddling the band. Blurred into the label, a word comes in many
+ * pieces and shades, and a letter showing only its blurred top in the band,
+ * in a shade the shirt shows lower down, would otherwise be left, and half
+ * the word with it. The print is the run of foreign pixels (marked in
+ * `foreign`) joined to a letter, all lighter or all darker than the `fabric`.
+ * Like a shallow crossing, it starts no more than `dip` rows above the band's
+ * bottom and ends within `dip` rows below it, clear of the front's sides, so
+ * a collar, a stripe, a check, or a detail running up beside a hanger isn't
+ * one. A hanger bar is no letter, so a button beside one isn't taken either.
+ */
+function wholePrint(
+  front: RgbaImage,
+  foreign: Uint8Array,
+  covered: Uint8Array,
+  fabric: Rgb,
+  rows: number,
+  dip: number,
+  letters: Piece[],
+) {
+  const { width, data } = front
+  const reach = foreign.length / width
+  const fabricLight = fabric[0] + fabric[1] + fabric[2]
+  const lighter = (i: number) => data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2] > fabricLight
+  const seen = new Uint8Array(foreign.length)
+  const queue = new Int32Array(foreign.length)
+  for (const { pixels, color } of letters) {
+    const tone = color[0] + color[1] + color[2] > fabricLight
+    let tail = 0
+    for (const i of pixels) {
+      if (seen[i]) continue
+      seen[i] = 1
+      queue[tail++] = i
+    }
+    let [left, top, right, bottom] = [width, reach, -1, -1]
+    for (let head = 0; head < tail; head++) {
+      const i = queue[head]
+      const [x, y] = [i % width, Math.floor(i / width)]
+      left = Math.min(left, x)
+      right = Math.max(right, x)
+      top = Math.min(top, y)
+      bottom = Math.max(bottom, y)
+      forNeighbours(i, width, reach, (j) => {
+        if (seen[j] || !foreign[j] || lighter(j) !== tone) return
+        seen[j] = 1
+        queue[tail++] = j
+      })
+    }
+    if (tail === 0 || top < rows - dip || bottom >= rows + dip || left === 0 || right === width - 1) continue
+    for (let k = 0; k < tail; k++) covered[queue[k]] = 1
+  }
+}
+
+/**
  * Paints over what shows through a top's neck opening, such as the rest of a
  * hanger, the shaded inside of the back, a size label or the backdrop, with
  * the fabric sample. Within the top `band` rows, a colour is painted over if
@@ -1412,6 +1468,10 @@ export function coverNeckOpening(
     }
     for (const i of edge) covered[i] = 1
   }
+  // A word straddling the band goes whole once some of its letters do, but
+  // without a soft edge of its own, which on a light label is the label.
+  const letters = pieces.filter((piece, k) => painted[k] && shallow[k] && !barLike(piece, width))
+  wholePrint(front, foreign, covered, fabric, rows, dip, letters)
   // Whether a pixel beside what's painted is its soft edge: a blend of the
   // fabric and what's painted beside it, or further still that way, like a
   // dot of a label's print. One in the fabric's own colour, or off it the
