@@ -670,6 +670,25 @@ describe('hands holding a top up', () => {
     expect(count(handsOverFront(image, garmentOf(image), crop))).toBe(0)
   })
 
+  it('leaves a pair of cuffs hanging into the lower corners alone, as a garment mirrors itself and hands don’t', () => {
+    const image = top(NAVY)
+    // Long sleeves hanging beside the body, one a little lower, ending in camel cuffs just inside the crop.
+    paint(image, { x: 18, y: 70, width: 14, height: 70 }, NAVY)
+    paint(image, { x: 88, y: 70, width: 14, height: 72 }, NAVY)
+    paint(image, { x: 18, y: 125, width: 14, height: 15 }, CAMEL)
+    paint(image, { x: 88, y: 127, width: 14, height: 15 }, CAMEL)
+    expect(count(handsOverFront(image, garmentOf(image), crop, 10))).toBe(0)
+  })
+
+  it('still marks a hand on one side when the other side shows no match for it', () => {
+    const image = withHand(top(NAVY))
+    // A cuff on the left, level with the hand but in a brown nothing like it.
+    paint(image, { x: 18, y: 70, width: 14, height: 30 }, NAVY)
+    paint(image, { x: 18, y: 85, width: 14, height: 15 }, [90, 60, 45])
+    const hands = handsOverFront(image, garmentOf(image), crop, 10)
+    expect(marked(hands, 85, 92)).toBe(1)
+  })
+
   it('leaves a skin tone the rest of the front shows, like the squares of a check', () => {
     const image = withHand(top(NAVY))
     for (let y = 75; y < 150; y += 20) {

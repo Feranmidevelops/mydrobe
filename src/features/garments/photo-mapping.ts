@@ -1537,6 +1537,31 @@ export function isSkinTone([r, g, b]: Rgb): boolean {
 /** The most of the crop's width or height a hand's part of the front may span. */
 const HAND_REACH = 1 / 3
 
+/** A patch of skin tones reaching into the front crop from outside the garment, as handsOverFront() finds them. */
+interface Reaching {
+  /** Its pixels inside the crop, as indices into the photo. */
+  inside: number[]
+  /** The box round those, in photo pixels. */
+  box: Rect
+  /** Their average colour. */
+  color: Rgb
+}
+
+/**
+ * Whether `a` and `b` mirror each other across the front `crop`: one comes
+ * in across its left edge and the other across its right, level with each
+ * other (sharing at least half the rows of the shorter), in much the same
+ * colour. So do the cuffs of a pair of long sleeves hanging beside the body,
+ * or the sleeves themselves, as a garment is the same on both sides; hands
+ * holding it up rarely are.
+ */
+function pairedAcross({ box: a, color: colorA }: Reaching, { box: b, color: colorB }: Reaching, crop: Rect) {
+  const right = crop.x + crop.width - 1
+  const across = (a.x === crop.x && b.x + b.width - 1 === right) || (b.x === crop.x && a.x + a.width - 1 === right)
+  const shared = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+  return across && shared * 2 >= Math.min(a.height, b.height) && colorDistance(colorA, colorB) <= FOREIGN_COLOR
+}
+
 /**
  * The hands holding a top up, where they lie over the front `crop`: 1 for
  * each pixel of the photo to paint over. A hand is a patch of skin-toned
@@ -1549,9 +1574,11 @@ const HAND_REACH = 1 / 3
  *   it lies outside the crop than in it,
  * - covers only a corner of the crop, no more than HAND_REACH of its width
  *   or height, and never the top edge, where a raglan sleeve or a collar runs,
- * - and shows colours the rest of the crop doesn't. Neither the top `band`
+ * - shows colours the rest of the crop doesn't. Neither the top `band`
  *   rows of the crop, where a wooden hanger can show through the neck, nor
- *   another hand count as the rest of the crop.
+ *   another hand count as the rest of the crop,
+ * - and has no match on the other side of the crop (see pairedAcross), as a
+ *   pair of cuffs hanging into its lower corners would.
  * Nothing is taken from a garment whose own main colour is a skin tone (a
  * tan, camel or stone top), nor any colour close to its main colour; stripes
  * or a contrasting collar span too much of the crop to pass. A couple of
@@ -1625,26 +1652,35 @@ export function handsOverFront(
   }
   const enough = Math.max(1, garment * 0.001)
 
-  let found = false
+  const found: Reaching[] = []
   for (const { size, inside, outline } of patches) {
     if (!outline || size - inside.length < inside.length) continue
     let [left, top, right, bottom] = [width, height, -1, -1]
     let own = 0
+    const sum = [0, 0, 0]
     for (const i of inside) {
       const [x, y] = [i % width, Math.floor(i / width)]
       left = Math.min(left, x)
       right = Math.max(right, x)
       top = Math.min(top, y)
       bottom = Math.max(bottom, y)
-      if (nearbyCount(bins, pixel(image, x, y)) >= enough) own++
+      const color = pixel(image, x, y)
+      for (let channel = 0; channel < 3; channel++) sum[channel] += color[channel]
+      if (nearbyCount(bins, color) >= enough) own++
     }
     // Lying mostly outside the crop, it reaches in across one of its edges.
     const local = right - left + 1 <= crop.width * HAND_REACH && bottom - top + 1 <= crop.height * HAND_REACH
     if (!local || top === crop.y || own * 2 >= inside.length) continue
-    for (const i of inside) hands[i] = 1
-    found = true
+    const color: Rgb = [sum[0] / inside.length, sum[1] / inside.length, sum[2] / inside.length]
+    found.push({ inside, box: { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }, color })
   }
-  if (!found) return hands
+  let marked = false
+  for (const hand of found) {
+    if (found.some((other) => other !== hand && pairedAcross(hand, other, crop))) continue
+    for (const i of hand.inside) hands[i] = 1
+    marked = true
+  }
+  if (!marked) return hands
 
   // The soft edge round each hand, within the crop.
   const edged = dilateMask(hands, width, height, EDGE_ROUNDS)
