@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { handsOverFront, type Rect, type Rgb, type RgbaImage } from './photo-mapping'
+import { coverNeckOpening, handsOverFront, type Rect, type Rgb, type RgbaImage } from './photo-mapping'
 
 /*
  * Sweeps over whole families of hands, cuffs, collars, logos and buttons, at
@@ -11,11 +11,17 @@ import { handsOverFront, type Rect, type Rgb, type RgbaImage } from './photo-map
 
 const WHITE: Rgb = [255, 255, 255]
 const NAVY: Rgb = [36, 55, 94]
+const CREAM: Rgb = [236, 232, 224]
 
 function blank(width: number, height: number, color: Rgb = WHITE): RgbaImage {
   const data = new Uint8ClampedArray(width * height * 4)
   for (let i = 0; i < width * height; i++) data.set([...color, 255], i * 4)
   return { data, width, height }
+}
+
+function colorAt(image: RgbaImage, x: number, y: number): Rgb {
+  const i = (y * image.width + x) * 4
+  return [image.data[i], image.data[i + 1], image.data[i + 2]]
 }
 
 function paint(image: RgbaImage, { x, y, width, height }: Rect, color: Rgb) {
@@ -208,5 +214,64 @@ describe('hands and cuffs at the size the app works at', () => {
     paint(image, { x: 352, y: 280, width: 56, height: 300 }, NAVY)
     const [x, y] = hand(image, { side: 'right', y: 400, size: [128, 56], tone: SKIN_TONES.medium })
     expect(handsIn(image)[y * WIDTH + x]).toBe(1)
+  })
+})
+
+describe('the neck opening at the size the app works at', () => {
+  // A front as a shirt's comes out of a photo, with the neck opening showing in its top BAND rows: the
+  // shoulders' rows, and the neckline's dip of 3% of the front's height below them.
+  const [WIDTH, HEIGHT, BAND] = [455, 600, 60]
+  const SHOULDERS = BAND - 18
+  const CENTRE = 228
+  const WOOD: Rgb = [150, 100, 60]
+
+  function cover(front: RgbaImage, fabric: Rgb = CREAM) {
+    return coverNeckOpening(front, BAND, blank(16, 16, fabric), fabric)
+  }
+
+  /** How many pixels differ between two images of the same size. */
+  function changed(a: RgbaImage, b: RgbaImage) {
+    let count = 0
+    for (let i = 0; i < a.data.length; i += 4) {
+      if (a.data[i] !== b.data[i] || a.data[i + 1] !== b.data[i + 1] || a.data[i + 2] !== b.data[i + 2]) count++
+    }
+    return count
+  }
+
+  /**
+   * A contrasting collar `width` across, its curve ending `below` rows below
+   * the band and `thick` rows thick, its sides running up into the neckline,
+   * `above` rows past the shoulders.
+   */
+  function collar(width: number, above: number, below: number, thick: number) {
+    const front = blank(WIDTH, HEIGHT, CREAM)
+    const [x, y] = [CENTRE - (width >> 1), SHOULDERS - above]
+    const height = BAND + below - y
+    paint(front, { x, y, width: 10, height }, NAVY)
+    paint(front, { x: x + width - 10, y, width: 10, height }, NAVY)
+    paint(front, { x, y: y + height - thick, width, height: thick }, NAVY)
+    return front
+  }
+
+  it.each(product([60, 100, 120, 150, 200], [0, 6, 12], [2, 4, 10], [6, 12]))(
+    'keeps a collar %i across, its sides running up %i rows past the shoulders, ending %i rows below the band, %i thick',
+    (width, above, below, thick) => {
+      const front = collar(width, above, below, thick)
+      expect(changed(front, cover(front))).toBe(0)
+    },
+  )
+
+  it('paints over a hanger bar a label hides the middle of, though that leaves it thicker at its ends', () => {
+    const front = blank(WIDTH, HEIGHT, CREAM)
+    paint(front, { x: 80, y: 52, width: 300, height: 12 }, WOOD)
+    paint(front, { x: 155, y: 30, width: 150, height: 30 }, [40, 40, 60])
+    const covered = cover(front)
+    for (const [x, y] of [
+      [85, 54],
+      [230, 62],
+      [375, 54],
+    ]) {
+      expect(colorAt(covered, x, y)).toEqual(CREAM)
+    }
   })
 })

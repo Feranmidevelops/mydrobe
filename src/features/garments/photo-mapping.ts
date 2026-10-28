@@ -1134,18 +1134,50 @@ function neckPieces(front: RgbaImage, foreign: Uint8Array, rows: number): Piece[
 const BAR_SHAPE = 4
 
 /**
+ * Whether `piece` is the curve of a collar, running up into the neckline at
+ * both ends: its outermost columns, an eighth of its width at each end, reach
+ * up to the `shoulders` row, where the neckline meets them, and higher than
+ * any of its middle third does by more than half its thickness there. A
+ * hanger bar runs straight across, however it's tilted or nicked along its
+ * top, and the inside of the back seen through the opening is thicker in the
+ * middle than its ends rise. `width` is the front's.
+ */
+function collarCurve({ pixels, box }: Piece, width: number, shoulders: number) {
+  const tops = new Int32Array(box.width).fill(box.y + box.height)
+  const thickness = new Int32Array(box.width)
+  for (const i of pixels) {
+    const column = (i % width) - box.x
+    tops[column] = Math.min(tops[column], Math.floor(i / width))
+    thickness[column]++
+  }
+  const end = Math.max(1, Math.round(box.width / 8))
+  const [from, to] = [Math.floor(box.width / 3), Math.ceil((2 * box.width) / 3)]
+  const middleTop = Math.min(...tops.subarray(from, to))
+  const middleThickness = median([...thickness.subarray(from, to)])
+  const rises = (columns: Int32Array) => {
+    const top = Math.min(...columns)
+    return top <= shoulders && middleTop - top > middleThickness / 2
+  }
+  return rises(tops.subarray(0, end)) && rises(tops.subarray(box.width - end))
+}
+
+/**
  * Whether `piece` crosses the bottom of the neck band, the front's first
  * `rows` rows, and ends within `dip` rows below it: a hanger bar lying across
  * the neck, or the foot of a size label. Something that runs further down,
  * out to either side of the front, or over more than half the band's height
- * belongs to the garment instead, such as a collar, a placket, a raglan
- * sleeve or a stripe. So does a detail with `enough` of itself below the band
- * to vouch for its own colour there, such as a logo or the curve of a collar
- * straddling the band's bottom, unless it's shaped like a hanger bar.
+ * belongs to the garment instead, such as a placket, a raglan sleeve or a
+ * stripe, and so does the curve of a collar, however shallow, as it runs up
+ * into the neckline at both ends (see collarCurve). So does a detail with
+ * `enough` of itself below the band to vouch for its own colour there, such
+ * as a logo straddling the band's bottom, unless it's shaped like a hanger
+ * bar.
  */
-function shallowCrossing({ crossing, box, pixels }: Piece, rows: number, dip: number, width: number, enough: number) {
+function shallowCrossing(piece: Piece, rows: number, dip: number, width: number, enough: number) {
+  const { crossing, box, pixels } = piece
   const bottom = box.y + box.height - 1
   if (!crossing || bottom >= rows + dip || box.height > rows / 2 || box.x === 0 || box.x + box.width >= width) return false
+  if (collarCurve(piece, width, rows - dip)) return false
   let under = 0
   for (const i of pixels) if (i >= rows * width) under++
   return under < enough || box.width >= BAR_SHAPE * box.height
@@ -1359,7 +1391,9 @@ function wholePrint(
  * the fabric sample. Within the top `band` rows, a colour is painted over if
  * it's the backdrop's, or if it turns up nowhere lower down the front, so the
  * squares of a check, a stripe and a contrasting collar (whose front dips
- * lower) stay as photographed.
+ * lower) stay as photographed. The curve of a collar crossing the band's
+ * bottom stays whatever its colour, however little of it shows below, as it
+ * runs up into the neckline at both ends (see collarCurve).
  *
  * A hanger bar or a label lying across the bottom of the band, and ending
  * just below it, is no proof of its own colour there: its lower part doesn't
@@ -1395,6 +1429,11 @@ export function coverNeckOpening(
   const enough = Math.max(1, (height - rows) * width * 0.001)
   const pieces = rows > 0 ? neckPieces(front, foreign, rows) : []
   const shallow = pieces.map((piece) => shallowCrossing(piece, rows, dip, width, enough))
+  // The curve of a collar crossing the band's bottom is the garment's own edge, whatever its colour.
+  const collar = new Uint8Array(width * rows)
+  for (const piece of pieces) {
+    if (piece.crossing && collarCurve(piece, width, rows - dip)) for (const i of piece.pixels) if (i < collar.length) collar[i] = 1
+  }
   const unproven = new Uint8Array(width * height)
   pieces.forEach(({ pixels }, k) => {
     if (shallow[k]) for (const i of pixels) if (i >= rows * width) unproven[i] = 1
@@ -1406,7 +1445,7 @@ export function coverNeckOpening(
   for (let i = 0; i < rows * width; i++) {
     if (!foreign[i]) continue
     const color = pixel(front, i % width, Math.floor(i / width))
-    if (backdrop(color) || nearbyCount(below, color) < enough) covered[i] = 1
+    if (backdrop(color) || (!collar[i] && nearbyCount(below, color) < enough)) covered[i] = 1
   }
 
   // Which pieces are painted over: most of their pixels in the band. A label
