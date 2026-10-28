@@ -299,4 +299,21 @@ describe('the neck opening at the size the app works at', () => {
     expect(colorAt(covered, 220, y + (thick >> 1))).toEqual(shirt)
     expect(colorAt(covered, x + (size >> 1), top + (size >> 1))).toEqual(color)
   })
+
+  it.each(product([24, 40], [2, 4], ['60,60,60', '95,95,100'], [[48, 8], [30, 14]] as [number, number][]))(
+    'keeps a detail just under a label’s print %i px wide whose foot shows %i rows below the band, in %s, %j',
+    (printWidth, foot, detailColor, [detailWidth, detailHeight]) => {
+      // A white tee, its label's dark print straddling the band, and a detail touching the print's foot from below.
+      const FABRIC: Rgb = [200, 205, 210]
+      const color = detailColor.split(',').map(Number) as Rgb
+      const front = blank(WIDTH, HEIGHT, FABRIC)
+      const printY = BAND + foot - 12
+      paint(front, { x: CENTRE - (printWidth >> 1), y: printY, width: printWidth, height: 12 }, [30, 30, 30])
+      const detailY = BAND + foot
+      paint(front, { x: CENTRE - (detailWidth >> 1), y: detailY, width: detailWidth, height: detailHeight }, color)
+      const covered = cover(front, FABRIC)
+      expect(colorAt(covered, CENTRE, printY + 4)).toEqual(FABRIC)
+      expect(colorAt(covered, CENTRE, detailY + (detailHeight >> 1))).toEqual(color)
+    },
+  )
 })

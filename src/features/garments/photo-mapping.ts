@@ -1345,11 +1345,14 @@ function wholeOf(
  * pieces and shades, and a letter showing only its blurred top in the band,
  * in a shade the shirt shows lower down, would otherwise be left, and half
  * the word with it. The print is the run of foreign pixels (marked in
- * `foreign`) joined to a letter, all lighter or all darker than the `fabric`.
- * Like a shallow crossing, it starts no more than `dip` rows above the band's
- * bottom and ends within `dip` rows below it, clear of the front's sides, so
- * a collar, a stripe, a check, or a detail running up beside a hanger isn't
- * one. A hanger bar is no letter, so a button beside one isn't taken either.
+ * `foreign`) joined to a letter, all lighter or all darker than the `fabric`,
+ * and no lower than the lowest of the letters: a word's letters stand on one
+ * line, so a detail touching its foot from below, like a logo just under a
+ * label, is no part of it. Like a shallow crossing, the print starts no more
+ * than `dip` rows above the band's bottom and ends within `dip` rows below
+ * it, clear of the front's sides, so a collar, a stripe, a check, or a detail
+ * running up beside a hanger isn't one. A hanger bar is no letter, so a
+ * button beside one isn't taken either.
  */
 function wholePrint(
   front: RgbaImage,
@@ -1366,6 +1369,7 @@ function wholePrint(
   const lighter = (i: number) => data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2] > fabricLight
   const seen = new Uint8Array(foreign.length)
   const queue = new Int32Array(foreign.length)
+  const baseline = Math.max(...letters.map(({ box }) => box.y + box.height - 1))
   for (const { pixels, color } of letters) {
     const tone = color[0] + color[1] + color[2] > fabricLight
     let tail = 0
@@ -1382,7 +1386,7 @@ function wholePrint(
       right = Math.max(right, x)
       top = Math.min(top, y)
       bottom = Math.max(bottom, y)
-      forNeighbours(i, width, reach, (j) => {
+      forNeighbours(i, width, baseline + 1, (j) => {
         if (seen[j] || !foreign[j] || lighter(j) !== tone) return
         seen[j] = 1
         queue[tail++] = j
