@@ -1537,29 +1537,59 @@ export function isSkinTone([r, g, b]: Rgb): boolean {
 /** The most of the crop's width or height a hand's part of the front may span. */
 const HAND_REACH = 1 / 3
 
-/** A patch of skin tones reaching into the front crop from outside the garment, as handsOverFront() finds them. */
-interface Reaching {
-  /** Its pixels inside the crop, as indices into the photo. */
-  inside: number[]
-  /** The box round those, in photo pixels. */
-  box: Rect
-  /** Their average colour. */
-  color: Rgb
-}
+/** The four sides of a patch, as the step in x and y that leads off it: above, below, left and right. */
+const SIDES = [
+  [0, -1],
+  [0, 1],
+  [-1, 0],
+  [1, 0],
+] as const
 
 /**
- * Whether `a` and `b` mirror each other across the front `crop`: one comes
- * in across its left edge and the other across its right, level with each
- * other (sharing at least half the rows of the shorter), in much the same
- * colour. So do the cuffs of a pair of long sleeves hanging beside the body,
- * or the sleeves themselves, as a garment is the same on both sides; hands
- * holding it up rarely are.
+ * Whether a patch of skin tones reaching into the front `crop` (its photo
+ * pixels, `pixels`) is the cuff of a sleeve rather than a hand: beyond the
+ * crop, the garment (marked in `solid`) caps it along nearly the whole of one
+ * side, the sleeve it ends, and backdrop bounds it everywhere else, as it's
+ * the same width as the sleeve. A hand reaches out over the backdrop on its
+ * own, or lies across the garment beyond the crop, as when it rests on the
+ * shoulder of a shirt being worn, so the garment borders it on more than one
+ * side or on only part of one. Each side is read line by line, along the
+ * columns for its top and bottom and the rows for its left and right: what
+ * lies past the patch's outermost pixel outside the crop on that line, the
+ * garment or backdrop, read beyond a soft edge (EDGE_ROUNDS) so a thread of
+ * piping or blur along the cuff's end isn't taken for the garment going on.
+ * Lines ending at the crop, where the patch lies over the front, don't count. A hand right under a sleeve, no wider than
+ * it and with no arm beyond, looks just like a cuff, and is taken for one.
  */
-function pairedAcross({ box: a, color: colorA }: Reaching, { box: b, color: colorB }: Reaching, crop: Rect) {
-  const right = crop.x + crop.width - 1
-  const across = (a.x === crop.x && b.x + b.width - 1 === right) || (b.x === crop.x && a.x + a.width - 1 === right)
-  const shared = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
-  return across && shared * 2 >= Math.min(a.height, b.height) && colorDistance(colorA, colorB) <= FOREIGN_COLOR
+function cuffOfSleeve(pixels: Int32Array, solid: Uint8Array, crop: Rect, width: number, height: number) {
+  const inCrop = (x: number, y: number) => x >= crop.x && y >= crop.y && x < crop.x + crop.width && y < crop.y + crop.height
+  const sides = SIDES.map(([dx, dy]) => {
+    // The outermost pixel outside the crop on each line across this side, and how far out it lies.
+    const outermost = new Map<number, [number, number]>()
+    for (const i of pixels) {
+      const [x, y] = [i % width, Math.floor(i / width)]
+      if (inCrop(x, y)) continue
+      const line = dx === 0 ? x : y
+      const out = dx === 0 ? y * dy : x * dx
+      const best = outermost.get(line)
+      if (!best || out > best[0]) outermost.set(line, [out, i])
+    }
+    let garment = 0
+    let backdrop = 0
+    for (const [, i] of outermost.values()) {
+      const [x, y] = [(i % width) + dx * (EDGE_ROUNDS + 1), Math.floor(i / width) + dy * (EDGE_ROUNDS + 1)]
+      if (x < 0 || y < 0 || x >= width || y >= height || !solid[y * width + x]) backdrop++
+      else if (!inCrop(x, y)) garment++
+    }
+    return { garment, backdrop }
+  })
+  // Capped on one side for at least three lines in four, and the garment on no more than one in four of the others.
+  return sides.some(
+    ({ garment, backdrop }, side) =>
+      garment > 0 &&
+      garment >= 3 * backdrop &&
+      sides.every((other, k) => k === side || 3 * other.garment <= other.backdrop),
+  )
 }
 
 /**
@@ -1577,8 +1607,8 @@ function pairedAcross({ box: a, color: colorA }: Reaching, { box: b, color: colo
  * - shows colours the rest of the crop doesn't. Neither the top `band`
  *   rows of the crop, where a wooden hanger can show through the neck, nor
  *   another hand count as the rest of the crop,
- * - and has no match on the other side of the crop (see pairedAcross), as a
- *   pair of cuffs hanging into its lower corners would.
+ * - and isn't the cuff of a sleeve hanging into the crop's lower corners
+ *   (see cuffOfSleeve).
  * Nothing is taken from a garment whose own main colour is a skin tone (a
  * tan, camel or stone top), nor any colour close to its main colour; stripes
  * or a contrasting collar span too much of the crop to pass. A couple of
@@ -1609,7 +1639,7 @@ export function handsOverFront(
   const inCrop = (x: number, y: number) => x >= crop.x && y >= crop.y && x < crop.x + crop.width && y < crop.y + crop.height
 
   // Each patch of skin tones that lies partly over the garment in the crop, followed wherever it goes.
-  const patches: { size: number; inside: number[]; outline: boolean }[] = []
+  const patches: { pixels: Int32Array; inside: number[]; outline: boolean }[] = []
   const owner = new Int32Array(width * height)
   const queue = new Int32Array(width * height)
   for (let y = crop.y; y < crop.y + crop.height; y++) {
@@ -1634,7 +1664,7 @@ export function handsOverFront(
           queue[tail++] = j
         })
       }
-      patches.push({ size: tail, inside, outline })
+      patches.push({ pixels: queue.slice(0, tail), inside, outline })
     }
   }
 
@@ -1652,32 +1682,24 @@ export function handsOverFront(
   }
   const enough = Math.max(1, garment * 0.001)
 
-  const found: Reaching[] = []
-  for (const { size, inside, outline } of patches) {
-    if (!outline || size - inside.length < inside.length) continue
+  let marked = false
+  for (const { pixels, inside, outline } of patches) {
+    if (!outline || pixels.length - inside.length < inside.length) continue
     let [left, top, right, bottom] = [width, height, -1, -1]
     let own = 0
-    const sum = [0, 0, 0]
     for (const i of inside) {
       const [x, y] = [i % width, Math.floor(i / width)]
       left = Math.min(left, x)
       right = Math.max(right, x)
       top = Math.min(top, y)
       bottom = Math.max(bottom, y)
-      const color = pixel(image, x, y)
-      for (let channel = 0; channel < 3; channel++) sum[channel] += color[channel]
-      if (nearbyCount(bins, color) >= enough) own++
+      if (nearbyCount(bins, pixel(image, x, y)) >= enough) own++
     }
     // Lying mostly outside the crop, it reaches in across one of its edges.
     const local = right - left + 1 <= crop.width * HAND_REACH && bottom - top + 1 <= crop.height * HAND_REACH
     if (!local || top === crop.y || own * 2 >= inside.length) continue
-    const color: Rgb = [sum[0] / inside.length, sum[1] / inside.length, sum[2] / inside.length]
-    found.push({ inside, box: { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }, color })
-  }
-  let marked = false
-  for (const hand of found) {
-    if (found.some((other) => other !== hand && pairedAcross(hand, other, crop))) continue
-    for (const i of hand.inside) hands[i] = 1
+    if (cuffOfSleeve(pixels, solid, crop, width, height)) continue
+    for (const i of inside) hands[i] = 1
     marked = true
   }
   if (!marked) return hands
