@@ -1216,9 +1216,15 @@ function barLike({ box }: Piece, width: number) {
  * Whether `piece` could be part of the shaded end of the hanger bar `bar`,
  * in another colour: a darker shade of the bar's, lying within the bar's
  * rows, and no wider than twice the bar is tall, nor further than that past
- * either end of it. A button beside the bar, in a colour of its own, isn't.
+ * either end of it. Where it meets the bar itself (`meetsBar`) past one of
+ * its ends, it carries the bar on, as thick as the bar (bar a quarter, for
+ * blur), and it tapers only further on; along the bar, it's the bar's shaded
+ * edge, however thin. A button touching the end of the bar, or of the shaded
+ * inside of the back, is a small round thing thinner than it, even in a
+ * darker shade of its colour, and one in a colour of its own is no part of
+ * it either.
  */
-function endOf({ box, color }: Piece, { box: bar, color: barColor }: Piece) {
+function endOf({ box, color }: Piece, { box: bar, color: barColor }: Piece, meetsBar: boolean) {
   const beyond = 2 * bar.height
   const within =
     box.y >= bar.y &&
@@ -1226,7 +1232,9 @@ function endOf({ box, color }: Piece, { box: bar, color: barColor }: Piece) {
     box.width <= beyond &&
     box.x >= bar.x - beyond &&
     box.x + box.width <= bar.x + bar.width + beyond
-  return within && shadeOf(color, barColor)
+  const past = box.x < bar.x || box.x + box.width > bar.x + bar.width
+  const thick = !meetsBar || !past || 4 * box.height >= 3 * bar.height
+  return within && thick && shadeOf(color, barColor)
 }
 
 /** How far gaps in what's painted over at the neck are closed, as a share of the front's width. */
@@ -1475,7 +1483,7 @@ export function coverNeckOpening(
       for (const i of pieces[trail[t]].pixels) {
         forNeighbours(i, width, reach, (j) => {
           const k = pieceOf[j]
-          if (k < 0 || taken.has(k) || !endOf(pieces[k], bar)) return
+          if (k < 0 || taken.has(k) || !endOf(pieces[k], bar, t === 0)) return
           taken.add(k)
           trail.push(k)
           if (!painted[k]) whole[k] = true

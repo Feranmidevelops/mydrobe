@@ -274,4 +274,29 @@ describe('the neck opening at the size the app works at', () => {
       expect(colorAt(covered, x, y)).toEqual(CREAM)
     }
   })
+
+  /** Shirts with something bar-shaped in a darker shade across the neck, and buttons in a darker shade still. */
+  const BARRED: Record<string, { shirt: Rgb; bar: Rgb; thick: number; buttons: Rgb[] }> = {
+    'grey inside of a white shirt': { shirt: [235, 235, 240], bar: [120, 120, 125], thick: 30, buttons: [[30, 30, 30], [60, 60, 60]] },
+    'navy-shaded inside of a light blue shirt': { shirt: [170, 195, 225], bar: [80, 95, 115], thick: 30, buttons: [[30, 40, 70]] },
+    'wooden hanger bar on a cream shirt': { shirt: CREAM, bar: WOOD, thick: 24, buttons: [[95, 62, 35], [70, 45, 25]] },
+  }
+  const buttonCases = Object.entries(BARRED).flatMap(([name, { thick, buttons }]) =>
+    product([name], buttons.map((button) => button.join()), [Math.round(thick * 0.45), Math.round(thick * 0.6)], [0, 1, 2]),
+  )
+
+  it.each(buttonCases)('keeps a top button by the %s, in %s, %i px across and %i px clear of it', (name, button, size, gap) => {
+    const { shirt, bar, thick } = BARRED[name]
+    const color = button.split(',').map(Number) as Rgb
+    const front = blank(WIDTH, HEIGHT, shirt)
+    const y = 16
+    paint(front, { x: 120, y, width: 200, height: thick }, bar)
+    // The top button, beside the end of the bar and within its rows, and the shirt's other buttons lower down.
+    const [x, top] = [320 + gap, y + ((thick - size) >> 1)]
+    paint(front, { x, y: top, width: size, height: size }, color)
+    for (let lower = 150; lower < 580; lower += 110) paint(front, { x: 220, y: lower, width: size, height: size }, color)
+    const covered = cover(front, shirt)
+    expect(colorAt(covered, 220, y + (thick >> 1))).toEqual(shirt)
+    expect(colorAt(covered, x + (size >> 1), top + (size >> 1))).toEqual(color)
+  })
 })
