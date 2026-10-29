@@ -1420,8 +1420,9 @@ function wholePrint(
  * band, is the garment's own and stays whatever its colour. A hanger bar, a
  * label or the word printed on one, seen through the opening and ending just
  * below the band, is no proof of its own colour there: its lower part doesn't
- * count as the colour turning up lower down, and when the rest of it is
- * painted over, so is that part. And when a hanger bar is painted over, so is
+ * count as the colour turning up lower down, and it goes or stays as one:
+ * when most of the rest of it is painted over, so is all of it, and when most
+ * isn't, none of it is. And when a hanger bar is painted over, so is
  * its shaded end, in another colour that may turn up lower down (see endOf).
  * The soft edge around whatever is painted over goes too, so no outline of a
  * hanger is left, and then it all goes whole (see wholeOf), so no specks of a
@@ -1482,6 +1483,15 @@ export function coverNeckOpening(
       count += covered[i]
     }
     return count * 2 >= counted
+  })
+  // A label or a bar seen through the opening goes or stays as one: one that
+  // isn't painted over, in the garment's own colours like a white label on a
+  // white tee, is left whole as photographed, its brightest corner too.
+  pieces.forEach(({ pixels }, k) => {
+    if (!shallow[k] || painted[k]) return
+    for (const i of pixels) {
+      if (i < rows * width && !backdrop(pixel(front, i % width, Math.floor(i / width)))) covered[i] = 0
+    }
   })
   // A shallow crossing painted over goes whole, and so does the shaded end of
   // a hanger bar painted over. The end can come in several patches, each a

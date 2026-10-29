@@ -362,6 +362,30 @@ describe('the neck opening at the size the app works at', () => {
     },
   )
 
+  it.each(product([40, 60], [2, 5], [4, 8]))(
+    'keeps a light label %i across on a white tee whole, its foot %i rows below the band, its brightest corner %i px',
+    (width, foot, corner) => {
+      // A white tee with highlights lower down in the label's colour, though none quite as bright as the
+      // label's top corner, where it catches the light.
+      const [FABRIC, LABEL, BRIGHT]: Rgb[] = [
+        [190, 195, 200],
+        [223, 227, 231],
+        [242, 246, 250],
+      ]
+      const front = blank(WIDTH, HEIGHT, FABRIC)
+      paint(front, { x: 40, y: 300, width: 40, height: 20 }, LABEL)
+      // The label hanging into the opening, its dark print straddling the band.
+      const [x, y] = [CENTRE - (width >> 1), BAND - 24]
+      paint(front, { x, y, width, height: 24 + foot }, LABEL)
+      paint(front, { x: x + width - corner, y, width: corner, height: corner }, BRIGHT)
+      paint(front, { x: x + 10, y: BAND - 4, width: width - 20, height: 6 }, [30, 30, 30])
+      const covered = cover(front, FABRIC)
+      expect(colorAt(covered, x + width - 1, y)).toEqual(BRIGHT)
+      expect(colorAt(covered, x + width - (corner >> 1), y + (corner >> 1))).toEqual(BRIGHT)
+      expect(colorAt(covered, CENTRE, BAND - 2)).toEqual(FABRIC)
+    },
+  )
+
   it.each(product([24, 40], [2, 4], ['60,60,60', '95,95,100'], [[48, 8], [30, 14]] as [number, number][]))(
     'keeps a detail just under a label’s print %i px wide whose foot shows %i rows below the band, in %s, %j',
     (printWidth, foot, detailColor, [detailWidth, detailHeight]) => {
