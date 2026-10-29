@@ -523,6 +523,37 @@ describe('a check whose light squares match the backdrop', () => {
     for (let y = elbow.y; y < elbow.y + elbow.height; y++) expect(mask[y * SIZE + 205]).toBe(0)
     for (const y of [150, 300]) expect(mask[y * SIZE + 195]).toBe(0)
   })
+
+  it('keeps the light squares down both sides of a sleeve that hangs at a slant', () => {
+    // A sleeve three bands wide, leaning a pixel across for every four down
+    // with its check leaning along, hung from the shoulders of a shirt body
+    // whose light squares are all inside it.
+    const image = blank(SIZE, SIZE, WALL)
+    const shoulders = { x: 60, y: 60, width: 13 * SQUARE, height: SQUARE }
+    paintCheck(image, shoulders, shoulders, 0, 1)
+    const lean = (y: number) => Math.floor((y - 60) / 4)
+    for (let y = 60; y < 420; y++) {
+      for (let u = 0; u < 3 * SQUARE; u++) {
+        const lightDown = Math.floor(u / SQUARE) % 2 === 0
+        const lightAcross = Math.floor((y - 60) / SQUARE) % 2 === 1
+        const color = lightDown && lightAcross ? WALL : lightDown || lightAcross ? MID : DARK
+        image.data.set([...color, 255], (y * SIZE + 60 + lean(y) + u) * 4)
+      }
+    }
+    const body = { x: 300, y: 60, width: 5 * SQUARE, height: 11 * SQUARE }
+    paintCheck(image, body, body, 1, 1)
+    const mask = garmentMask(image, estimateBackground(image))
+    // Every light square down the sleeve's edges, short of the last row's, whose light squares are in the corners.
+    for (let row = 1; row < 11; row += 2) {
+      for (const column of [0, 2]) {
+        let kept = 0
+        for (let y = 60 + row * SQUARE; y < 60 + (row + 1) * SQUARE; y++) {
+          for (let u = column * SQUARE; u < (column + 1) * SQUARE; u++) kept += mask[y * SIZE + 60 + lean(y) + u]
+        }
+        expect(kept / SQUARE ** 2).toBeGreaterThan(0.97)
+      }
+    }
+  })
 })
 
 describe('erodeMask', () => {

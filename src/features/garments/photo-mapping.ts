@@ -676,11 +676,30 @@ const BITE = 0.08
 /** How far a bite's walls may step from one line to the next, as a share of BITE. */
 const BITE_STEP = 1 / 8
 
-/** The image as lines of pixels: columns, or rows. `index` gives the pixel `at` steps along a line. */
-function pixelLines(width: number, height: number, down: boolean) {
-  return down
-    ? { lines: width, length: height, index: (line: number, at: number) => at * width + line }
-    : { lines: height, length: width, index: (line: number, at: number) => line * width + at }
+/**
+ * The slants of the lines down which fillBites looks for walls above and
+ * below, in pixels across for each pixel down: straight down, and leaning a
+ * little either way, as a sleeve hangs out from the body.
+ */
+const BITE_SLANTS = [0, 1 / 4, -1 / 4]
+
+/**
+ * The image as lines of pixels: rows, or columns slanting `slant` pixels
+ * across for each pixel down. `index` gives the pixel `at` steps along a
+ * line, or -1 where a slanting column runs outside the image.
+ */
+function pixelLines(width: number, height: number, down: boolean, slant = 0) {
+  if (!down) return { lines: height, length: width, index: (line: number, at: number) => line * width + at }
+  const drift = Math.floor((height - 1) * slant)
+  const first = Math.min(0, -drift)
+  return {
+    lines: width + Math.abs(drift),
+    length: height,
+    index: (line: number, at: number) => {
+      const x = line + first + Math.floor(at * slant)
+      return x >= 0 && x < width ? at * width + x : -1
+    },
+  }
 }
 
 /**
@@ -715,15 +734,19 @@ function pixelLines(width: number, height: number, down: boolean) {
 function fillBites(mask: Uint8Array, width: number, height: number, looksOwn: (i: number) => boolean): Uint8Array {
   const longest = Math.max(1, Math.round(Math.max(width, height) * BITE))
   const step = Math.max(2, Math.round(longest * BITE_STEP))
-  // Columns to find gaps between walls above and below, then rows to find
-  // gaps between walls to the left and right.
-  const passes = [pixelLines(width, height, true), pixelLines(width, height, false)]
+  // Columns (straight and slanting) to find gaps between walls above and
+  // below, then rows to find gaps between walls to the left and right.
+  const passes = [
+    ...BITE_SLANTS.map((slant) => pixelLines(width, height, true, slant)),
+    pixelLines(width, height, false),
+  ]
   let result = mask
   for (const { lines, length, index } of passes) {
-    const garmentAt = (i: number) => result[i] === 1
+    const garmentAt = (i: number) => i >= 0 && result[i] === 1
 
     // The gaps: stretches of background along a line, walled in by garment
-    // at both ends and no longer than `longest`.
+    // at both ends and no longer than `longest`. A slanting column's stretch
+    // outside the image is never walled in.
     const gaps: { line: number; start: number; end: number }[] = []
     const firstOnLine = new Int32Array(lines + 1)
     for (let line = 0; line < lines; line++) {
