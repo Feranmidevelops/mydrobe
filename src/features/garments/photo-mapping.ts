@@ -732,6 +732,8 @@ function pixelLines(width: number, height: number, down: boolean, slant = 0) {
  * filled first, the gap runs whole again.
  */
 function fillBites(mask: Uint8Array, width: number, height: number, looksOwn: (i: number) => boolean): Uint8Array {
+  // A backdrop showing none of the garment's own colours can't hold a bite.
+  if (!mask.some((garment, i) => garment === 0 && looksOwn(i))) return mask
   const longest = Math.max(1, Math.round(Math.max(width, height) * BITE))
   const step = Math.max(2, Math.round(longest * BITE_STEP))
   // Columns (straight and slanting) to find gaps between walls above and
