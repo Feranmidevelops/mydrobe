@@ -686,17 +686,20 @@ const BITE_SLANTS = [0, 1 / 4, -1 / 4]
 /**
  * The image as lines of pixels: rows, or columns slanting `slant` pixels
  * across for each pixel down. `index` gives the pixel `at` steps along a
- * line, or -1 where a slanting column runs outside the image.
+ * line, or -1 where a slanting column runs outside the image. For columns,
+ * `across` gives how far across each row a column's pixel lies from its number.
  */
 function pixelLines(width: number, height: number, down: boolean, slant = 0) {
-  if (!down) return { lines: height, length: width, index: (line: number, at: number) => line * width + at }
+  if (!down) return { lines: height, length: width, across: null, index: (line: number, at: number) => line * width + at }
   const drift = Math.floor((height - 1) * slant)
   const first = Math.min(0, -drift)
+  const across = Int32Array.from({ length: height }, (_, y) => first + Math.floor(y * slant))
   return {
     lines: width + Math.abs(drift),
     length: height,
+    across,
     index: (line: number, at: number) => {
-      const x = line + first + Math.floor(at * slant)
+      const x = line + across[at]
       return x >= 0 && x < width ? at * width + x : -1
     },
   }
@@ -743,21 +746,28 @@ function fillBites(mask: Uint8Array, width: number, height: number, looksOwn: (i
     pixelLines(width, height, false),
   ]
   let result = mask
-  for (const { lines, length, index } of passes) {
+  for (const { lines, length, across, index } of passes) {
     const garmentAt = (i: number) => i >= 0 && result[i] === 1
 
-    // The gaps: stretches of background along a line, walled in by garment
-    // at both ends and no longer than `longest`. A slanting column's stretch
-    // outside the image is never walled in.
+    // The gaps: stretches of background along a line between two garment
+    // pixels, no longer than `longest`. Each line is walked noting where it
+    // last met garment; a slanting column's stretch outside the image never
+    // lies between two.
     const gaps: { line: number; start: number; end: number }[] = []
     const firstOnLine = new Int32Array(lines + 1)
     for (let line = 0; line < lines; line++) {
       firstOnLine[line] = gaps.length
+      let last = -1
       for (let at = 0; at < length; at++) {
-        if (garmentAt(index(line, at))) continue
-        const start = at
-        while (at + 1 < length && !garmentAt(index(line, at + 1))) at++
-        if (start > 0 && at < length - 1 && at - start < longest) gaps.push({ line, start, end: at })
+        let i = line * width + at
+        if (across) {
+          const x = line + across[at]
+          if (x < 0 || x >= width) continue
+          i = at * width + x
+        }
+        if (!result[i]) continue
+        if (last >= 0 && at - last > 1 && at - last - 1 <= longest) gaps.push({ line, start: last + 1, end: at - 1 })
+        last = at
       }
     }
     firstOnLine[lines] = gaps.length
