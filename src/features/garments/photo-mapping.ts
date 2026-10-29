@@ -456,7 +456,9 @@ export function garmentMask(
   const garment = (isBackground: Uint8Array) => {
     const mask = new Uint8Array(total)
     for (let i = 0; i < total; i++) mask[i] = isBackground[i] ? 0 : 1
-    return reopenBackdrop(image, tidyMask(mask, width, height), isBackground)
+    const tidied = tidyMask(mask, width, height)
+    const looksOwn = ownColorTest(image, tidied, isBackground)
+    return reopenBackdrop(image, tidied, isBackground, looksOwn)
   }
 
   if (!background) {
@@ -589,6 +591,30 @@ function closingRadius(width: number, height: number) {
 const OWN_COLOR = 0.01
 
 /**
+ * A test for whether a pixel shows one of the garment's own colours: those
+ * of the pixels in `tidied` the backdrop never reached. A transparent pixel
+ * never does, so in a cut-out the test always fails.
+ */
+function ownColorTest(image: RgbaImage, tidied: Uint8Array, isBackground: Uint8Array): (i: number) => boolean {
+  const { data, width } = image
+  const bins = new Uint32Array(4096)
+  let garment = 0
+  for (let i = 0; i < tidied.length; i++) {
+    if (!tidied[i] || isBackground[i]) continue
+    bins[colorBin(data, i * 4)]++
+    garment++
+  }
+  const enough = Math.max(1, garment * OWN_COLOR)
+  const ownBin = new Int8Array(4096).fill(-1)
+  return (i: number) => {
+    if (data[i * 4 + 3] < 128) return false
+    const bin = colorBin(data, i * 4)
+    if (ownBin[bin] < 0) ownBin[bin] = nearbyCount(bins, pixel(image, i % width, Math.floor(i / width))) >= enough ? 1 : 0
+    return ownBin[bin] === 1
+  }
+}
+
+/**
  * Sends back to background each patch of backdrop that tidyMask's closing
  * filled in although the backdrop had reached it, such as the strip of wall
  * between an arm and the body, the gap between trouser legs or the corner
@@ -596,32 +622,20 @@ const OWN_COLOR = 0.01
  * copied onto the front as they are; as background, they get the fabric.
  *
  * A patch stays filled if it's no bigger than a notch, or if most of it shows
- * colours the garment itself does: the dark squares of a check lost to a dark
- * backdrop, or deep shadow in a fold, are part of the garment, and look it.
- * In a cut-out, where `isBackground` is the transparent pixels, only the size
- * counts.
+ * colours the garment itself does (see ownColorTest): the dark squares of a
+ * check lost to a dark backdrop, or deep shadow in a fold, are part of the
+ * garment, and look it. In a cut-out, where `isBackground` is the transparent
+ * pixels, only the size counts.
  */
-function reopenBackdrop(image: RgbaImage, tidied: Uint8Array, isBackground: Uint8Array): Uint8Array {
-  const { data, width, height } = image
+function reopenBackdrop(
+  image: RgbaImage,
+  tidied: Uint8Array,
+  isBackground: Uint8Array,
+  looksOwn: (i: number) => boolean,
+): Uint8Array {
+  const { width, height } = image
   const total = width * height
   const notch = (closingRadius(width, height) / 2) ** 2
-  // The garment's own colours: those of the pixels the backdrop never reached.
-  const bins = new Uint32Array(4096)
-  let garment = 0
-  for (let i = 0; i < total; i++) {
-    if (!tidied[i] || isBackground[i]) continue
-    bins[colorBin(data, i * 4)]++
-    garment++
-  }
-  const enough = Math.max(1, garment * OWN_COLOR)
-  const ownBin = new Int8Array(4096).fill(-1)
-  const looksOwn = (i: number) => {
-    if (data[i * 4 + 3] < 128) return false
-    const bin = colorBin(data, i * 4)
-    if (ownBin[bin] < 0) ownBin[bin] = nearbyCount(bins, pixel(image, i % width, Math.floor(i / width))) >= enough ? 1 : 0
-    return ownBin[bin] === 1
-  }
-
   const result = tidied.slice()
   const seen = new Uint8Array(total)
   const queue = new Int32Array(total)
