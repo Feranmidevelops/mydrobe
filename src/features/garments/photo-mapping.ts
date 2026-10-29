@@ -1162,25 +1162,35 @@ function collarCurve({ pixels, box }: Piece, width: number, shoulders: number) {
 }
 
 /**
- * Whether `piece` crosses the bottom of the neck band, the front's first
- * `rows` rows, and ends within `dip` rows below it: a hanger bar lying across
- * the neck, or the foot of a size label. Something that runs further down,
- * out to either side of the front, or over more than half the band's height
- * belongs to the garment instead, such as a placket, a raglan sleeve or a
- * stripe, and so does the curve of a collar, however shallow, as it runs up
- * into the neckline at both ends (see collarCurve). So does a detail with
- * `enough` of itself below the band to vouch for its own colour there, such
- * as a logo straddling the band's bottom, unless it's shaped like a hanger
- * bar.
+ * What `piece` is, when it crosses the bottom of the neck band, the front's
+ * first `rows` rows (null when it doesn't, or when that can't be told):
+ * - the garment's own ('own'), whatever its colour: the curve of a collar,
+ *   however shallow, as it runs up into the neckline at both ends (see
+ *   collarCurve), or a detail on the front below the collar, such as a logo
+ *   whose top reaches into the band: as much of it below the band as in it,
+ *   however far down it runs,
+ * - seen through the neck opening ('opening'), its part below the band no
+ *   proof of its colour: a hanger bar lying across the neck, much wider than
+ *   it's tall, or a label hanging from the back of the neck, most of it in
+ *   the band, either ending within `dip` rows below the band; or a word
+ *   printed on a label, its letters a few millimetres tall, no taller than
+ *   half the neckline's dip,
+ * - or null when it spans more than half the band's height or reaches either
+ *   side of the front, like a placket, a raglan sleeve or a stripe, or when
+ *   it's shaped like a bar or a label but runs on further below: these are
+ *   judged by their colours like the rest of the band.
+ * `width` is the front's.
  */
-function shallowCrossing(piece: Piece, rows: number, dip: number, width: number, enough: number) {
+function crossingKind(piece: Piece, rows: number, dip: number, width: number): 'own' | 'opening' | null {
   const { crossing, box, pixels } = piece
-  const bottom = box.y + box.height - 1
-  if (!crossing || bottom >= rows + dip || box.height > rows / 2 || box.x === 0 || box.x + box.width >= width) return false
-  if (collarCurve(piece, width, rows - dip)) return false
+  if (!crossing) return null
+  if (collarCurve(piece, width, rows - dip)) return 'own'
+  if (box.height > rows / 2 || box.x === 0 || box.x + box.width >= width) return null
   let under = 0
   for (const i of pixels) if (i >= rows * width) under++
-  return under < enough || box.width >= BAR_SHAPE * box.height
+  const seenThrough = pixels.length - under > under || box.width >= BAR_SHAPE * box.height
+  if (box.y + box.height - 1 >= rows + dip) return seenThrough ? null : 'own'
+  return seenThrough || 2 * box.height <= dip ? 'opening' : 'own'
 }
 
 /** How far a shade's chromaticity may stray from the line out from grey through the colour it's a shade of. */
@@ -1403,17 +1413,16 @@ function wholePrint(
  * the fabric sample. Within the top `band` rows, a colour is painted over if
  * it's the backdrop's, or if it turns up nowhere lower down the front, so the
  * squares of a check, a stripe and a contrasting collar (whose front dips
- * lower) stay as photographed. The curve of a collar crossing the band's
- * bottom stays whatever its colour, however little of it shows below, as it
- * runs up into the neckline at both ends (see collarCurve).
+ * lower) stay as photographed.
  *
- * A hanger bar or a label lying across the bottom of the band, and ending
- * just below it, is no proof of its own colour there: its lower part doesn't
+ * What crosses the bottom of the band is read as a whole (see crossingKind).
+ * The curve of a collar, or a logo on the front whose top reaches into the
+ * band, is the garment's own and stays whatever its colour. A hanger bar, a
+ * label or the word printed on one, seen through the opening and ending just
+ * below the band, is no proof of its own colour there: its lower part doesn't
  * count as the colour turning up lower down, and when the rest of it is
- * painted over, so is that part. A collar, placket, raglan sleeve or stripe
- * runs on further (see shallowCrossing), so it still vouches for itself. And
- * when a hanger bar is painted over, so is its shaded end, in another colour
- * that may turn up lower down (see endOf).
+ * painted over, so is that part. And when a hanger bar is painted over, so is
+ * its shaded end, in another colour that may turn up lower down (see endOf).
  * The soft edge around whatever is painted over goes too, so no outline of a
  * hanger is left, and then it all goes whole (see wholeOf), so no specks of a
  * label's print, or of its blurred foot, are left between the parts painted.
@@ -1440,15 +1449,16 @@ export function coverNeckOpening(
   // How many pixels of a colour lower down the front make it one of the front's own.
   const enough = Math.max(1, (height - rows) * width * 0.001)
   const pieces = rows > 0 ? neckPieces(front, foreign, rows) : []
-  const shallow = pieces.map((piece) => shallowCrossing(piece, rows, dip, width, enough))
-  // The curve of a collar crossing the band's bottom is the garment's own edge, whatever its colour.
-  const collar = new Uint8Array(width * rows)
-  for (const piece of pieces) {
-    if (piece.crossing && collarCurve(piece, width, rows - dip)) for (const i of piece.pixels) if (i < collar.length) collar[i] = 1
-  }
+  const kinds = pieces.map((piece) => crossingKind(piece, rows, dip, width))
+  const shallow = kinds.map((kind) => kind === 'opening')
+  // What crosses the band's bottom as the garment's own stays, whatever its colour.
+  const own = new Uint8Array(width * rows)
   const unproven = new Uint8Array(width * height)
   pieces.forEach(({ pixels }, k) => {
-    if (shallow[k]) for (const i of pixels) if (i >= rows * width) unproven[i] = 1
+    for (const i of pixels) {
+      if (kinds[k] === 'own' && i < own.length) own[i] = 1
+      if (shallow[k] && i >= rows * width) unproven[i] = 1
+    }
   })
 
   const below = colorBins(front, rows, unproven)
@@ -1457,7 +1467,7 @@ export function coverNeckOpening(
   for (let i = 0; i < rows * width; i++) {
     if (!foreign[i]) continue
     const color = pixel(front, i % width, Math.floor(i / width))
-    if (backdrop(color) || (!collar[i] && nearbyCount(below, color) < enough)) covered[i] = 1
+    if (backdrop(color) || (!own[i] && nearbyCount(below, color) < enough)) covered[i] = 1
   }
 
   // Which pieces are painted over: most of their pixels in the band. A label

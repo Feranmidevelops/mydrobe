@@ -300,6 +300,68 @@ describe('the neck opening at the size the app works at', () => {
     expect(colorAt(covered, x + (size >> 1), top + (size >> 1))).toEqual(color)
   })
 
+  const RED: Rgb = [200, 40, 40]
+  const LOGOS: [number, number][] = [
+    [12, 10],
+    [16, 12],
+    [20, 14],
+    [24, 16],
+    [30, 20],
+    [40, 16],
+    [24, 30],
+  ]
+
+  it.each(product(LOGOS, [0.5, 0.65, 0.85], ['centre', 'side'], ['solid', 'ring']))(
+    'keeps a %j logo straddling the bottom of the band, %f of it below, at the %s, %s',
+    ([width, height], share, position, shape) => {
+      // A logo on the front, below the collar, its top reaching into the band: as much of it below the band as in it.
+      const front = blank(WIDTH, HEIGHT, CREAM)
+      const below = Math.ceil(height * share)
+      const [x, y] = [position === 'centre' ? CENTRE - (width >> 1) : 120, BAND + below - height]
+      paint(front, { x, y, width, height }, RED)
+      if (shape === 'ring') paint(front, { x: 3 + x, y: y + 3, width: width - 6, height: height - 6 }, CREAM)
+      expect(changed(front, cover(front))).toBe(0)
+    },
+  )
+
+  it.each(product([20, 40, 60], [16, 30], [2, 5, 7], ['20,20,20', '200,40,40']))(
+    'paints over the whole of a label %i across and %i tall hanging into the neck, its foot %i rows below the band, in %s',
+    (width, height, foot, labelColor) => {
+      // A label hangs from the back of the neck: most of it lies in the band, only its foot dips below.
+      const color = labelColor.split(',').map(Number) as Rgb
+      const front = blank(WIDTH, HEIGHT, CREAM)
+      const [x, y] = [CENTRE - (width >> 1), BAND + foot - height]
+      paint(front, { x, y, width, height }, color)
+      const covered = cover(front)
+      for (const [px, py] of [
+        [x + 1, y + 1],
+        [CENTRE, y + (height >> 1)],
+        [x + width - 2, BAND + foot - 1],
+        [CENTRE, BAND + foot - 1],
+      ]) {
+        expect(colorAt(covered, px, py)).toEqual(CREAM)
+      }
+    },
+  )
+
+  it.each(product([4, 6, 8], [1, 2], [3, 6]))(
+    'paints over the whole of a label’s word %i rows tall, %i of them in the band, in letters %i wide',
+    (height, inBand, letterWidth) => {
+      // A dark shirt with grey squares lower down, and the white word on its size label hanging just below the band.
+      const BLACK: Rgb = [20, 20, 20]
+      const front = blank(WIDTH, HEIGHT, BLACK)
+      for (let y = 120; y < HEIGHT; y += 80) paint(front, { x: 0, y, width: 200, height: 30 }, [120, 120, 120])
+      const y = BAND - inBand
+      const letters = [0, 1, 2, 3, 4, 5].map((k) => CENTRE - 24 + k * (letterWidth + 2))
+      for (const x of letters) paint(front, { x, y, width: letterWidth, height }, WHITE)
+      const covered = cover(front, BLACK)
+      for (const x of letters) {
+        expect(colorAt(covered, x, y)).toEqual(BLACK)
+        expect(colorAt(covered, x + letterWidth - 1, y + height - 1)).toEqual(BLACK)
+      }
+    },
+  )
+
   it.each(product([24, 40], [2, 4], ['60,60,60', '95,95,100'], [[48, 8], [30, 14]] as [number, number][]))(
     'keeps a detail just under a label’s print %i px wide whose foot shows %i rows below the band, in %s, %j',
     (printWidth, foot, detailColor, [detailWidth, detailHeight]) => {
