@@ -697,6 +697,16 @@ interface Side {
 }
 
 /**
+ * The median of `values`, which needn't be whole numbers. They're sorted as a
+ * Float64Array rather than handed to median(): fed fractions as well as the
+ * colour channels it's mostly given, median() slows down wherever it's used,
+ * and the whole analysis with it.
+ */
+function middleOf(values: number[]) {
+  return Float64Array.from(values).sort()[values.length >> 1]
+}
+
+/**
  * The straight side along `points` ([y, x] pairs, top down): first held to
  * the middle of them (the median slope between points half the run apart),
  * so a few stray points can't pull it, then fitted by least squares through
@@ -711,8 +721,8 @@ function fitSide(points: [number, number][]): Side | null {
     const [y1, x1] = points[k + half]
     slopes.push((x1 - x0) / (y1 - y0))
   }
-  const rough = median(slopes)
-  const roughAt = median(points.map(([y, x]) => x - rough * y))
+  const rough = middleOf(slopes)
+  const roughAt = middleOf(points.map(([y, x]) => x - rough * y))
   const near = points.filter(([y, x]) => Math.abs(x - roughAt - rough * y) <= SIDE_SPREAD)
   if (near.length < 3) return null
   const [meanY, meanX] = [0, 1].map((k) => near.reduce((sum, point) => sum + point[k], 0) / near.length)
@@ -791,11 +801,15 @@ function reopenShadedTips(
     while (b < width - 1 && !reopened[row + b + 1] && b - a <= widest) b++
     return b - a > widest ? null : [a, b]
   }
+  // The gaps are where reopenBackdrop changed the mask; most photos have few, so they're found by jumping
+  // from one change to the next rather than testing every pixel.
+  let start = nextChange(tidied, reopened, 0)
+  if (start === total) return reopened
   const seen = new Uint8Array(total)
   const queue = new Int32Array(total)
   let result: Uint8Array | null = null
-  for (let start = 0; start < total; start++) {
-    if (seen[start] || !inGap(start)) continue
+  for (; start < total; start = nextChange(tidied, reopened, start + 1)) {
+    if (seen[start]) continue
     // The gap's pixels end up in queue[0, tail). The first found lies on its top row.
     let tail = 0
     seen[start] = 1
@@ -856,6 +870,12 @@ function reopenShadedTips(
     }
   }
   return result ?? reopened
+}
+
+/** The first index from `from` on where masks `a` and `b` differ, or their length if they don't. */
+function nextChange(a: Uint8Array, b: Uint8Array, from: number) {
+  for (let i = from; i < a.length; i++) if (a[i] !== b[i]) return i
+  return a.length
 }
 
 /** The unbroken run of garment pixels on a row that contains, or is nearest to, `centre`. */
