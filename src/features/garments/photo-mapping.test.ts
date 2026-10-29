@@ -428,6 +428,103 @@ describe('backdrop the tidying would fill in', () => {
   })
 })
 
+describe('a check whose light squares match the backdrop', () => {
+  // A grey buffalo check on a wall of the same grey as its light squares:
+  // where a light square meets the edge of the garment, nothing in the photo
+  // says where the wall stops and the shirt starts.
+  const WALL: Rgb = [150, 150, 150]
+  const MID: Rgb = [95, 95, 95]
+  const DARK: Rgb = [40, 40, 40]
+  const SQUARE = 30
+  const SIZE = 480
+
+  /**
+   * Paints a flat buffalo check over `rect`, in squares of SQUARE px counted
+   * from `origin`: the wall's grey where a light band down meets a light band
+   * across, dark where two dark bands meet, and mid grey where they cross.
+   * Bands down are light when their number has the parity `columns`, bands
+   * across when theirs has the parity `rows`.
+   */
+  function paintCheck(image: RgbaImage, rect: Rect, origin: { x: number; y: number }, columns: number, rows: number) {
+    for (let y = rect.y; y < rect.y + rect.height; y++) {
+      for (let x = rect.x; x < rect.x + rect.width; x++) {
+        const lightDown = Math.floor((x - origin.x) / SQUARE) % 2 === columns
+        const lightAcross = Math.floor((y - origin.y) / SQUARE) % 2 === rows
+        const color = lightDown && lightAcross ? WALL : lightDown || lightAcross ? MID : DARK
+        image.data.set([...color, 255], (y * image.width + x) * 4)
+      }
+    }
+  }
+
+  /** Whether the centre of square (`column`, `row`), counted from `origin`, is garment. */
+  const kept = (mask: Uint8Array, origin: { x: number; y: number }, column: number, row: number) =>
+    mask[(origin.y + row * SQUARE + SQUARE / 2) * SIZE + origin.x + column * SQUARE + SQUARE / 2] === 1
+
+  it('keeps the light squares along the sides of a shirt', () => {
+    // Seven bands down, light first and last, so light squares line both
+    // sides; light bands across every other row from the second, so no light
+    // square sits in a corner, where nothing could tell it from the wall.
+    const image = blank(SIZE, SIZE, WALL)
+    const body = { x: 135, y: 60, width: 7 * SQUARE, height: 11 * SQUARE }
+    paintCheck(image, body, body, 0, 1)
+    const mask = garmentMask(image, estimateBackground(image))
+    for (let row = 1; row < 11; row += 2) {
+      expect(kept(mask, body, 0, row)).toBe(true)
+      expect(kept(mask, body, 6, row)).toBe(true)
+    }
+    expect(maskBounds(mask, SIZE, SIZE)).toEqual(body)
+    expect(coverage(mask, SIZE, body)).toBeGreaterThan(0.98)
+  })
+
+  it('keeps the light squares along the hem, so the front is the shirt’s full width', () => {
+    // Light bands down every other one from the second, so none on the sides;
+    // the last band across is light, so light squares sit along the hem, and
+    // it's deep enough to hold every row torsoRect measures the hem on.
+    const image = blank(SIZE, SIZE, WALL)
+    const body = { x: 135, y: 150, width: 7 * SQUARE, height: 6 * SQUARE }
+    paintCheck(image, body, body, 1, 1)
+    const { mask, bounds } = analyse(image)
+    for (const column of [1, 3, 5]) expect(kept(mask, body, column, 5)).toBe(true)
+    expect(torsoRect(mask, SIZE, bounds)).toEqual(body)
+  })
+
+  it('keeps the light squares along trouser legs, but leaves the gap between the legs open', () => {
+    // Each leg is three bands wide, light on both sides, so the light squares
+    // on its inside edge face a gap of wall as wide as a square.
+    const image = blank(SIZE, SIZE, WALL)
+    const origin = { x: 135, y: 30 }
+    const waistband = { x: 135, y: 30, width: 7 * SQUARE, height: 2 * SQUARE }
+    const legs = [
+      { x: 135, y: 90, width: 3 * SQUARE, height: 12 * SQUARE },
+      { x: 255, y: 90, width: 3 * SQUARE, height: 12 * SQUARE },
+    ]
+    for (const part of [waistband, ...legs]) paintCheck(image, part, origin, 0, 1)
+    const mask = garmentMask(image, estimateBackground(image))
+    // The light rows down the legs, short of the last, whose light squares are in the corners.
+    for (let row = 3; row < 13; row += 2) {
+      for (const column of [0, 2, 4, 6]) expect(kept(mask, origin, column, row)).toBe(true)
+    }
+    for (let y = 120; y < 450; y++) expect(mask[y * SIZE + 240]).toBe(0)
+  })
+
+  it('keeps the light squares down an arm, but leaves the gap under it open where an elbow narrows it', () => {
+    // The arm is two bands wide with light squares down its inside edge,
+    // facing a gap of wall two squares wide that the elbow narrows to 36 px
+    // for a little way: no wider than a square bitten out of the edge.
+    const image = blank(SIZE, SIZE, WALL)
+    const origin = { x: 105, y: 60 }
+    const shoulders = { x: 105, y: 60, width: 9 * SQUARE, height: SQUARE }
+    const arm = { x: 105, y: 60, width: 2 * SQUARE, height: 10 * SQUARE }
+    const elbow = { x: 165, y: 200, width: 24, height: 24 }
+    const body = { x: 225, y: 60, width: 5 * SQUARE, height: 11 * SQUARE }
+    for (const part of [shoulders, arm, elbow, body]) paintCheck(image, part, origin, 1, 1)
+    const mask = garmentMask(image, estimateBackground(image))
+    for (const row of [1, 3, 5, 7]) expect(kept(mask, origin, 1, row)).toBe(true)
+    for (let y = elbow.y; y < elbow.y + elbow.height; y++) expect(mask[y * SIZE + 205]).toBe(0)
+    for (const y of [150, 300]) expect(mask[y * SIZE + 195]).toBe(0)
+  })
+})
+
 describe('erodeMask', () => {
   it('shaves the given number of pixels off every side', () => {
     const image = blank(20, 20)
