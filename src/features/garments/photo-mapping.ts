@@ -453,11 +453,11 @@ export function garmentMask(
 ): Uint8Array {
   const { data, width, height } = image
   const total = width * height
-  const garment = (isBackground: Uint8Array) => {
+  const garment = (isBackground: Uint8Array, step = 0) => {
     const mask = new Uint8Array(total)
     for (let i = 0; i < total; i++) mask[i] = isBackground[i] ? 0 : 1
     const tidied = tidyMask(mask, width, height)
-    return reopenShadedTips(image, tidied, reopenBackdrop(image, tidied, isBackground), isBackground, background)
+    return reopenShadedTips(image, tidied, reopenBackdrop(image, tidied, isBackground), isBackground, background, step)
   }
 
   if (!background) {
@@ -479,12 +479,12 @@ export function garmentMask(
     if (colorDistance(color, background) <= range || shadow?.(color)) inRange[i] = 1
   }
   const backdrop = growBackdrop(image, inRange, step, null)
-  const byColour = largestComponent(garment(backdrop), width, height)
+  const byColour = largestComponent(garment(backdrop, step), width, height)
   // When the barrier holds back none of the backdrop the colours alone take,
   // growing it again would give the same mask, so that work is skipped.
   const blocked = textureBarrier(image, inRange, tolerance)
   if (!blocked.some((held, i) => held === 1 && backdrop[i] === 1)) return byColour
-  const withBarrier = garment(growBackdrop(image, inRange, step, blocked))
+  const withBarrier = garment(growBackdrop(image, inRange, step, blocked), step)
   return byColour.includes(1)
     ? largestComponent(withBarrier, width, height, byColour)
     : largestComponent(withBarrier, width, height)
@@ -652,29 +652,21 @@ function reopenBackdrop(image: RgbaImage, tidied: Uint8Array, isBackground: Uint
 }
 
 /**
- * The most of a garment, as a share of its pixels, that may show the
- * backdrop's colour in shade for the shaded tip of a gap to be told from it.
- */
-const SHADED_GARMENT = 0.05
-
-/** How far in colour the shaded tip of a gap is followed at each step: as far as the backdrop grows at the default tolerance. */
-const SHADE_STEP = DEFAULT_BACKGROUND_TOLERANCE / 3
-
-/**
- * The darkest the shade at the very tip of a gap is followed into, as a share
- * of the backdrop's lightness, where the garment doesn't show that colour.
+ * The darkest the shade at the top of the gap between trouser legs is taken
+ * to be, as a share of the backdrop's lightness: right by the crotch it can be
+ * deeper than any shadow on the open backdrop (DARKEST_SHADOW).
  */
 const DEEPEST_SHADE = 0.2
 
 /**
  * A test for the backdrop's colour in shade: a colour of the same
- * chromaticity (within SHADOW_HUE) between `darkest` and 1 times the
+ * chromaticity (within SHADOW_HUE) between DEEPEST_SHADE and 1 times the
  * backdrop's lightness, or one shadowTest takes for its shadow. Unlike
  * shadowTest it holds on a grey backdrop too, where a grey garment passes it
- * as well, so it's only used where the garment doesn't (see reopenShadedTips).
+ * as well, so it's only used where the garment can't be (see reopenShadedTips).
  * Null for a very dark backdrop, whose colour can't be read.
  */
-function backdropShade(background: Rgb, darkest = DARKEST_SHADOW): ((color: Rgb) => boolean) | null {
+function backdropShade(background: Rgb): ((color: Rgb) => boolean) | null {
   const [r, g, b] = background
   if (Math.max(r, g, b) < READABLE_BACKDROP) return null
   const light = r + g + b
@@ -683,43 +675,87 @@ function backdropShade(background: Rgb, darkest = DARKEST_SHADOW): ((color: Rgb)
   return (color) => {
     if (shadow?.(color)) return true
     const sum = color[0] + color[1] + color[2]
-    if (sum < light * darkest || sum > light) return false
+    if (sum < light * DEEPEST_SHADE || sum > light) return false
     return Math.hypot(color[0] / sum - hueR, color[1] / sum - hueG) <= SHADOW_HUE
   }
 }
 
+/** How far down from the top of a gap, as a multiple of tidyMask's closing radius, its sides are followed. */
+const GAP_SIDES = 4
+
+/** How far inside each side a pixel's centre must lie to be reopened: the pixels along a leg's edge blend it with the backdrop. */
+const EDGE_MARGIN = 1
+
+/** How far, in pixels, a point may lie off a side's first straight line and still count towards the final one. */
+const SIDE_SPREAD = 1.5
+
+/** A side of a gap: the straight line x = at + slope * y, and how far off it may be at row y (its standard error). */
+interface Side {
+  at: number
+  slope: number
+  error: (y: number) => number
+}
+
 /**
- * The most of a gap, as a share of the backdrop tidying filled in it, that its
- * shaded tip may make up: the garment either side shades only the narrow end.
+ * The straight side along `points` ([y, x] pairs, top down): first held to
+ * the middle of them (the median slope between points half the run apart),
+ * so a few stray points can't pull it, then fitted by least squares through
+ * the points near that, so the steps of a pixel edge average out. Null if
+ * there are too few points near it to tell how well it fits.
  */
-const SHADED_TIP = 0.25
-
-/** The most of a garment, as a share of its pixels, that reopening the shaded tips of its gaps may take away. */
-const SHADED_TIPS = 0.01
+function fitSide(points: [number, number][]): Side | null {
+  const half = Math.floor(points.length / 2)
+  const slopes: number[] = []
+  for (let k = 0; k + half < points.length; k++) {
+    const [y0, x0] = points[k]
+    const [y1, x1] = points[k + half]
+    slopes.push((x1 - x0) / (y1 - y0))
+  }
+  const rough = median(slopes)
+  const roughAt = median(points.map(([y, x]) => x - rough * y))
+  const near = points.filter(([y, x]) => Math.abs(x - roughAt - rough * y) <= SIDE_SPREAD)
+  if (near.length < 3) return null
+  const [meanY, meanX] = [0, 1].map((k) => near.reduce((sum, point) => sum + point[k], 0) / near.length)
+  let across = 0
+  let spread = 0
+  for (const [y, x] of near) {
+    across += (y - meanY) * (x - meanX)
+    spread += (y - meanY) ** 2
+  }
+  const slope = across / spread
+  const at = meanX - slope * meanY
+  const variance = near.reduce((sum, [y, x]) => sum + (x - at - slope * y) ** 2, 0) / (near.length - 2)
+  return { at, slope, error: (y) => Math.sqrt(variance * (1 / near.length + (y - meanY) ** 2 / spread)) }
+}
 
 /**
- * Sends back to background the shaded tip of each gap reopenBackdrop sent
- * back. Where a gap narrows to a point, such as the top of the gap between
- * trouser legs just below the crotch, the garment on either side shades the
- * backdrop, and on a grey backdrop that shade is darker than growBackdrop's
- * colour range reaches. Left as garment, the tip would be copied onto the
- * front and show as a grey sliver at the crotch. So from each reopened gap
- * the backdrop's shade (see backdropShade) is followed on into the tip,
- * stepping only gently in colour, so it stops at the garment's edge. Right
- * by the crotch the shade can be deeper than any shadow on the open backdrop
- * (DARKEST_SHADOW), and it's followed on into that too, down to
- * DEEPEST_SHADE, though only through colours the garment doesn't show
- * itself, so it can't run on into dark trousers. Where more than a little of
- * the garment shows the backdrop's colour in shade (grey trousers on a grey
- * backdrop), the tip can't be told from the garment and nothing changes.
- * `reopened` is what reopenBackdrop made of `tidied`.
+ * Sends back to background the shaded tip at the top of the gap between
+ * trouser legs. Right below the crotch the legs shade the backdrop, and on a
+ * grey backdrop that shade is darker than growBackdrop's colour range reaches,
+ * so the narrow top of the gap is left as garment; it would be copied onto the
+ * front and show as a grey sliver at the crotch.
  *
- * Fabric that happens to be the backdrop's colour in shade, such as a faded
- * patch at the crotch, a sheen down the inside of the legs or a grey band
- * across them, can carry on softly from the tip, and the shade would run on
- * into it. So a gap whose tip comes to more than SHADED_TIP of the gap is left
- * as it was, and if the tips together come to more than SHADED_TIPS of the
- * garment, or would cut it in two, none is reopened.
+ * That tip can only be backdrop lying between the two legs and below the point
+ * where their inner edges meet, the crotch. So for each gap reopenBackdrop sent
+ * back (`tidied` less `reopened`), its sides are followed down from its top
+ * through the backdrop between the legs, and taken on the rows where the
+ * backdrop stopped at a leg's edge (the colour jumps by more than the
+ * backdrop's `step`) rather than running out of colour range in the shade or
+ * a shadow, or on into a sheen that fades into the leg. Each side is carried
+ * on up as a straight line to where the two lines meet. Between the lines (by
+ * more than EDGE_MARGIN) and below that point, any garment that the closing
+ * filled in or that shows the backdrop's colour in shade (see backdropShade),
+ * joined to the gap, goes back to background. Fabric there would have to lie
+ * on a leg or above the crotch, so a sheen down the inside of the legs, a
+ * faded patch over the crotch or grey trousers, whatever their colour and
+ * size, stay whole.
+ *
+ * Where the lines can't be trusted to find the crotch, the gap is left as it
+ * is: where a side's edge shows on too few rows, where the sides don't come
+ * together going up (legs that never part, a corner), where they'd meet
+ * further above the gap than they were followed below it (sides too near
+ * parallel, which may well round off before they'd meet), or where either is
+ * known too roughly there (its standard error) to stay within the margin.
  */
 function reopenShadedTips(
   image: RgbaImage,
@@ -727,137 +763,99 @@ function reopenShadedTips(
   reopened: Uint8Array,
   isBackground: Uint8Array,
   background: Rgb | null,
+  step: number,
 ): Uint8Array {
   const shade = background && backdropShade(background)
-  const deep = background && backdropShade(background, DEEPEST_SHADE)
-  if (!shade || !deep) return reopened
+  if (!shade) return reopened
   const { width, height } = image
   const total = width * height
-  const colorOf = (i: number) => pixel(image, i % width, Math.floor(i / width))
-  // The gaps reopenBackdrop sent back, which the tips are grown from.
+  const reach = GAP_SIDES * closingRadius(width, height)
+  // Whether the colour on row `y` jumps from the gap's pixel `inside` to the garment's `outside` by more than
+  // the backdrop steps: there the backdrop met a leg's edge, rather than running out of colour range in the shade.
+  const edge = (inside: number, outside: number, y: number) => colorDistance(pixel(image, inside, y), pixel(image, outside, y)) > step
   const inGap = (i: number) => tidied[i] === 1 && reopened[i] === 0
-  let gaps = false
-  for (let i = 0; i < total && !gaps; i++) gaps = inGap(i)
-  if (!gaps) return reopened
-
-  let garment = 0
-  let shaded = 0
-  const bins = new Uint32Array(4096)
-  for (let i = 0; i < total; i++) {
-    if (!reopened[i] || isBackground[i]) continue
-    garment++
-    if (shade(colorOf(i))) shaded++
-    bins[colorBin(image.data, i * 4)]++
+  // The run of background on row `y` through the column nearest the middle of [lo, hi] that has any. Null if
+  // there's none, or if it's wider than any gap could be: out round the end of a leg.
+  const widest = 2 * reach
+  const runUnder = (y: number, lo: number, hi: number) => {
+    const row = y * width
+    const middle = (lo + hi) >> 1
+    let x = -1
+    for (let d = 0; x < 0 && d <= middle - lo + 1; d++) {
+      if (middle - d >= lo && !reopened[row + middle - d]) x = middle - d
+      else if (middle + d <= hi && !reopened[row + middle + d]) x = middle + d
+    }
+    if (x < 0) return null
+    let [a, b] = [x, x]
+    while (a > 0 && !reopened[row + a - 1] && b - a <= widest) a--
+    while (b < width - 1 && !reopened[row + b + 1] && b - a <= widest) b++
+    return b - a > widest ? null : [a, b]
   }
-  if (shaded > garment * SHADED_GARMENT) return reopened
-  // The garment's own colours, as reopenBackdrop tells them.
-  const ownBin = new Int8Array(4096).fill(-1)
-  const looksOwn = (i: number) => {
-    const bin = colorBin(image.data, i * 4)
-    if (ownBin[bin] < 0) ownBin[bin] = nearbyCount(bins, colorOf(i)) >= Math.max(1, garment * OWN_COLOR) ? 1 : 0
-    return ownBin[bin] === 1
-  }
-
-  const result = reopened.slice()
   const seen = new Uint8Array(total)
   const queue = new Int32Array(total)
-  const cut: number[] = []
+  let result: Uint8Array | null = null
   for (let start = 0; start < total; start++) {
     if (seen[start] || !inGap(start)) continue
-    // Flood the gap and the shade that carries on from it, counting each.
-    const tip: number[] = []
-    let gap = 0
-    let head = 0
+    // The gap's pixels end up in queue[0, tail). The first found lies on its top row.
     let tail = 0
     seen[start] = 1
     queue[tail++] = start
-    while (head < tail) {
-      const from = queue[head++]
-      if (inGap(from)) gap++
-      const here = colorOf(from)
-      forNeighbours(from, width, height, (j) => {
-        if (seen[j]) return
-        if (!inGap(j)) {
-          if (!reopened[j] || isBackground[j]) return
-          const color = colorOf(j)
-          if (colorDistance(color, here) > SHADE_STEP || !(shade(color) || (deep(color) && !looksOwn(j)))) return
-          tip.push(j)
+    for (let head = 0; head < tail; head++) {
+      forNeighbours(queue[head], width, height, (j) => {
+        if (!seen[j] && inGap(j)) {
+          seen[j] = 1
+          queue[tail++] = j
         }
-        seen[j] = 1
-        queue[tail++] = j
       })
     }
-    if (tip.length > gap * SHADED_TIP) continue
-    for (const i of tip) {
-      result[i] = 0
-      cut.push(i)
+
+    // Each side, followed down from the gap's top through the backdrop between the legs, on and below the
+    // part of it the closing filled: on each row, the run of background nearest the middle of the run above.
+    const top = Math.floor(start / width)
+    const lefts: [number, number][] = []
+    const rights: [number, number][] = []
+    let [lo, hi] = [start - top * width, start - top * width]
+    let bottom = top
+    for (let y = top; y < Math.min(height, top + reach); y++) {
+      const run = runUnder(y, lo, hi)
+      // Past the photo's edge, or out round the end of a leg, there's nothing to follow.
+      if (!run || run[0] === 0 || run[1] === width - 1) break
+      const [a, b] = run
+      ;[lo, hi, bottom] = [a, b, y]
+      if (edge(a, a - 1, y)) lefts.push([y + 0.5, a])
+      if (edge(b, b + 1, y)) rights.push([y + 0.5, b + 1])
+    }
+    if (Math.min(lefts.length, rights.length) < Math.max(4, reach / 8)) continue
+    const left = fitSide(lefts)
+    const right = fitSide(rights)
+    if (!left || !right || !(right.slope > left.slope)) continue
+    const below = top + 0.5
+    const apex = below - (right.at + right.slope * below - left.at - left.slope * below) / (right.slope - left.slope)
+    // The sides must meet above the gap, and no further above it than they were followed below it: sides
+    // nearer parallel would meet far off, if at all. And each must be known there to well within the margin.
+    if (!(apex < below) || below - apex > bottom - top) continue
+    if (left.error(apex) + right.error(apex) > EDGE_MARGIN) continue
+    const inWedge = (x: number, y: number) => {
+      const [cx, cy] = [x + 0.5, y + 0.5]
+      return cy > apex && cy < bottom + 1 && cx > left.at + left.slope * cy + EDGE_MARGIN && cx < right.at + right.slope * cy - EDGE_MARGIN
+    }
+
+    // Spread from the gap into the garment between the lines that the closing filled or that's the backdrop in shade.
+    const next = result ?? (result = reopened.slice())
+    let tip = tail
+    for (let k = 0; k < tip; k++) {
+      forNeighbours(queue[k], width, height, (j) => {
+        if (seen[j] || !next[j]) return
+        const y = Math.floor(j / width)
+        const x = j - y * width
+        if (!inWedge(x, y) || !(isBackground[j] || shade(pixel(image, x, y)))) return
+        seen[j] = 2
+        next[j] = 0
+        queue[tip++] = j
+      })
     }
   }
-  if (cut.length === 0 || cut.length > garment * SHADED_TIPS) return reopened
-  // Reopening the tips may cut off a speck or two, but no more.
-  return holdsTogether(result, cut, width, height, (closingRadius(width, height) / 2) ** 2) ? result : reopened
-}
-
-/**
- * Whether a garment `mask`, with the pixels `cut` just taken out of it, still
- * holds together: whether the garment pixels bordering the cut all join up,
- * apart from specks of no more than `speck` pixels. The search
- * spreads out from all of them at once, joining their groups where they meet,
- * and stops as soon as one group is left growing, so a cut that leaves the
- * garment whole costs little however big the garment is.
- */
-function holdsTogether(mask: Uint8Array, cut: number[], width: number, height: number, speck: number): boolean {
-  const group = new Int32Array(mask.length).fill(-1)
-  const queue: number[] = []
-  // Per group: the group it joined (itself while it leads), its size, and how many of its pixels are still queued.
-  const leader: number[] = []
-  const size: number[] = []
-  const queued: number[] = []
-  for (const i of cut) {
-    forNeighbours(i, width, height, (j) => {
-      if (!mask[j] || group[j] >= 0) return
-      group[j] = leader.length
-      leader.push(leader.length)
-      size.push(1)
-      queued.push(1)
-      queue.push(j)
-    })
-  }
-  const lead = (g: number) => {
-    while (leader[g] !== g) g = leader[g] = leader[leader[g]]
-    return g
-  }
-  // Groups still growing, and finished ones bigger than a speck: the garment holds unless two pieces are.
-  let growing = leader.length
-  let pieces = 0
-  for (let head = 0; head < queue.length; head++) {
-    if (growing === 1 && pieces === 0) return true
-    const i = queue[head]
-    const g = lead(group[i])
-    let split = false
-    forNeighbours(i, width, height, (j) => {
-      if (!mask[j]) return
-      if (group[j] < 0) {
-        group[j] = g
-        size[g]++
-        queued[g]++
-        queue.push(j)
-      } else {
-        const other = lead(group[j])
-        if (other === g) return
-        leader[other] = g
-        size[g] += size[other]
-        queued[g] += queued[other]
-        growing--
-      }
-      if (pieces > 0 && size[g] > speck) split = true
-    })
-    if (split) return false
-    if (--queued[g] > 0) continue
-    growing--
-    if (size[g] > speck && ++pieces > 1) return false
-  }
-  return true
+  return result ?? reopened
 }
 
 /** The unbroken run of garment pixels on a row that contains, or is nearest to, `centre`. */

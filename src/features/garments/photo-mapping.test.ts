@@ -429,46 +429,55 @@ describe('backdrop the tidying would fill in', () => {
       return image
     }
 
-    it('opens the shaded top of the gap too, right up to the crotch', () => {
-      const mask = garmentMask(shadedGap(NAVY, 130), GREY)
+    /**
+     * Trousers on a grey backdrop whose legs part from a point at the crotch
+     * (200, 100), their inner edges running apart 0.2 px a row each, with the
+     * top 40 rows of the gap shaded from `darkest` grey at the crotch back up
+     * to the backdrop's. The top of the shade is darker than the backdrop's
+     * colour range. Returns the image and the gap's first and last pixel on row `y`.
+     */
+    function pointedGap(color: Rgb, darkest: number, { from = 120, to = 280 } = {}) {
+      const image = blank(400, 400, GREY)
+      paint(image, { x: from, y: 40, width: to - from, height: 60 }, color)
+      const gap = (y: number) => [Math.round(200 - 0.2 * (y - 100)), Math.round(200 + 0.2 * (y - 100)) - 1]
       for (let y = 100; y < 360; y++) {
-        for (const x of [191, 200, 208]) expect(mask[y * 400 + x]).toBe(0)
+        const [left, right] = gap(y)
+        paint(image, { x: from, y, width: left - from, height: 1 }, color)
+        paint(image, { x: right + 1, y, width: to - right - 1, height: 1 }, color)
+        const v = Math.round(darkest + ((GREY[0] - darkest) * Math.min(40, y - 100)) / 40)
+        if (right >= left) paint(image, { x: left, y, width: right - left + 1, height: 1 }, [v, v, v])
+      }
+      return { image, gap }
+    }
+
+    /** Expects the gap open on every row below the crotch, but for the pixel at each side, and the legs and seat round it kept. */
+    function expectOpenRightUp(mask: Uint8Array, gap: (y: number) => number[]) {
+      for (let y = 101; y < 360; y++) {
+        const [left, right] = gap(y)
+        for (let x = left + 1; x < right; x++) expect(mask[y * 400 + x], `${x}, ${y}`).toBe(0)
+        expect(mask[y * 400 + left - 1]).toBe(1)
+        expect(mask[y * 400 + right + 1]).toBe(1)
       }
       expect(mask[99 * 400 + 200]).toBe(1)
-      expect(mask[100 * 400 + 189]).toBe(1)
-      expect(mask[100 * 400 + 210]).toBe(1)
+    }
+
+    it('opens the shaded top of the gap too, right up to the crotch', () => {
+      const { image, gap } = pointedGap(NAVY, 130)
+      expectOpenRightUp(garmentMask(image, GREY), gap)
     })
 
     describe('where the shade at the crotch is deeper than any on the open backdrop', () => {
-      /** Wide trousers whose shade at the top of the gap starts at a third of the backdrop's brightness. */
-      function deepShade(color: Rgb) {
-        const image = blank(400, 400, GREY)
-        paint(image, { x: 80, y: 30, width: 240, height: 70 }, color)
-        paint(image, { x: 80, y: 100, width: 110, height: 280 }, color)
-        paint(image, { x: 210, y: 100, width: 110, height: 280 }, color)
-        for (let y = 100; y < 140; y++) {
-          const v = Math.round(70 + (140 * (y - 100)) / 40)
-          paint(image, { x: 190, y, width: 20, height: 1 }, [v, v, v])
-        }
-        return image
-      }
-
       it('opens it too, right up to the crotch', () => {
-        const mask = garmentMask(deepShade(NAVY), GREY)
-        for (let y = 100; y < 380; y++) {
-          for (const x of [191, 200, 208]) expect(mask[y * 400 + x]).toBe(0)
-        }
-        expect(mask[99 * 400 + 200]).toBe(1)
+        const { image, gap } = pointedGap(NAVY, 70, { from: 80, to: 320 })
+        expectOpenRightUp(garmentMask(image, GREY), gap)
       })
 
-      it('stops short of it on trousers that show that colour themselves, and keeps them whole', () => {
+      it('opens it on trousers that show that colour themselves too, and keeps them whole', () => {
         const CHARCOAL: Rgb = [62, 62, 64]
-        const mask = garmentMask(deepShade(CHARCOAL), GREY)
-        expect(maskBounds(mask, 400, 400)).toEqual({ x: 80, y: 30, width: 240, height: 350 })
-        expect(mask[200 * 400 + 150]).toBe(1)
-        // The shade no deeper than a shadow on the open backdrop still opens.
-        for (const y of [110, 120, 130]) expect(mask[y * 400 + 200]).toBe(0)
-        expect(mask[101 * 400 + 200]).toBe(1)
+        const { image, gap } = pointedGap(CHARCOAL, 70, { from: 80, to: 320 })
+        const mask = garmentMask(image, GREY)
+        expect(maskBounds(mask, 400, 400)).toEqual({ x: 80, y: 40, width: 240, height: 320 })
+        expectOpenRightUp(mask, gap)
       })
     })
 
