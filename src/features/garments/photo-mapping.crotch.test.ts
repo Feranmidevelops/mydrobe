@@ -8,6 +8,14 @@ import { estimateBackground, garmentMask, type Rgb, type RgbaImage } from './pho
  * range reaches, so it's left as a sliver of garment unless something
  * opens it. Fabric that looks like the shade, a sheen down the inside of the
  * legs or a grey patch over the crotch, mustn't be opened with it.
+ *
+ * The tip is opened only as far up as both legs' edges are seen. Where a sheen
+ * runs right up to a black or charcoal leg's inner edge, or grey trousers are
+ * the colour of the shade, the leg's colour slopes away from the shade, or
+ * doesn't change at all, rather than stepping, just as a sheen or a grey
+ * patch over a rounded crotch does above its top. There the edges can't be
+ * told from the fabric, so the tip above the backdrop's reach is left and only
+ * the fabric is checked.
  */
 
 const GREY: Rgb = [209, 209, 209]
@@ -208,13 +216,17 @@ describe('the shaded top of the gap between trouser legs, at the working size', 
     denim: [0.5, 0.25, 0],
   }
 
+  /** The fabrics whose sheen slopes away from the shade at the leg's edge, rather than stepping. */
+  const SLOPED = ['black', 'charcoal']
+
   for (const [name, fabric] of Object.entries(FABRICS)) {
-    it(`keeps a sheen down the legs and a patch over the crotch of ${name} trousers, and opens the sliver`, () => {
+    it(`keeps a sheen down the legs and a patch over the crotch of ${name} trousers, and opens the sliver where their edges show`, () => {
       const found: string[] = []
+      const opensAt = SLOPED.includes(name) ? [] : [70, 110]
       for (const strength of [0.15, 0.25, 0.35, 0.5]) {
         const tolerances = TOLERANCES.filter((_, k) => strength <= STRONGEST[name][k])
         for (const width of [5, 10, 20, 30]) {
-          found.push(...failures(`${strength * 100}% sheen ${width} px wide`, { fabric, sheen: { strength, width } }, tolerances))
+          found.push(...failures(`${strength * 100}% sheen ${width} px wide`, { fabric, sheen: { strength, width } }, tolerances, opensAt))
         }
       }
       const color: Rgb = name === 'denim' ? [148, 150, 156] : [150, 150, 152]
@@ -229,16 +241,18 @@ describe('the shaded top of the gap between trouser legs, at the working size', 
     const ways: [string, FlatLay, number[]?][] = [
       ['with straight legs', { fabric: FABRICS.black, straight: true, sheen: SHEEN }],
       ['turned one way', { fabric: FABRICS.navy, turn: 4, patch: PATCH }],
-      ['turned the other way', { fabric: FABRICS.charcoal, turn: -4, sheen: { strength: 0.2, width: 10 } }],
-      ['with the legs running off the bottom of the photo', { fabric: FABRICS.black, straight: true, lower: 520, sheen: SHEEN }],
+      // A sheen on charcoal or black sloping away from the shade, as above.
+      ['turned the other way', { fabric: FABRICS.charcoal, turn: -4, sheen: { strength: 0.2, width: 10 } }, []],
+      ['with the legs running off the bottom of the photo', { fabric: FABRICS.black, straight: true, lower: 520, sheen: SHEEN }, [110]],
       // At 70 the shade reaches so far down these legs that too little of them shows below it to tell where they meet.
       ['with the legs running off the photo just below the shade', { fabric: FABRICS.black, straight: true, lower: 560, sheen: SHEEN }, [110]],
       ['with the legs laid further apart', { fabric: FABRICS.navy, spread: 2.5, patch: PATCH }],
-      ['with the legs touching for a while below the crotch', { fabric: FABRICS.black, touching: 120, sheen: SHEEN }],
+      ['with the legs touching for a while below the crotch', { fabric: FABRICS.black, touching: 120, sheen: SHEEN }, []],
       // No gap opens, so nothing changes.
       ['with the legs touching all the way down', { fabric: FABRICS.charcoal, touching: HEM, sheen: SHEEN }],
       ['on a white backdrop', { fabric: FABRICS.navy, backdrop: [245, 245, 245], patch: PATCH }],
-      ['in grey, on the grey backdrop', { fabric: [110, 110, 112] }],
+      // The shade's own colour, so the legs' edges don't show above the backdrop's reach.
+      ['in grey, on the grey backdrop', { fabric: [110, 110, 112] }, []],
     ]
     expect(ways.flatMap(([label, trousers, opensAt]) => failures(label, trousers, TOLERANCES, opensAt))).toEqual([])
   }, 300_000)

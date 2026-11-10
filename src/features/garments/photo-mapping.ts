@@ -683,10 +683,18 @@ function backdropShade(background: Rgb): ((color: Rgb) => boolean) | null {
 /** How far down from the top of a gap, as a multiple of tidyMask's closing radius, its sides are followed. */
 const GAP_SIDES = 4
 
-/** How far inside each side a pixel's centre must lie to be reopened: the pixels along a leg's edge blend it with the backdrop. */
+/**
+ * How far inside each side's line a pixel's centre must lie to be reopened: the
+ * pixels along a leg's edge blend it with the backdrop. An edge seen on a row
+ * already stops short of them.
+ */
 const EDGE_MARGIN = 1
 
-/** How far, in pixels, a point may lie off a side's first straight line and still count towards the final one. */
+/**
+ * How far, in pixels, a point may lie off a side's first straight line and still
+ * count towards the final one; and how far inside the lines a leg's edge seen
+ * above them may lie with the gap still as wide as they say.
+ */
 const SIDE_SPREAD = 1.5
 
 /** A side of a gap: the straight line x = at + slope * y, and how far off it may be at row y (its standard error). */
@@ -745,27 +753,31 @@ function fitSide(points: [number, number][]): Side | null {
  * so the narrow top of the gap is left as garment; it would be copied onto the
  * front and show as a grey sliver at the crotch.
  *
- * That tip can only be backdrop lying between the two legs and below the point
- * where their inner edges meet, the crotch. So for each gap reopenBackdrop sent
- * back (`tidied` less `reopened`), its sides are followed down from its top
- * through the backdrop between the legs, and taken on the rows where the
+ * That tip is backdrop lying between the two legs' inner edges, so it's opened
+ * only as far up as both edges are actually seen. For each gap reopenBackdrop
+ * sent back (`tidied` less `reopened`), its sides are followed down from its
+ * top through the backdrop between the legs, taken on the rows where the
  * backdrop stopped at a leg's edge (the colour jumps by more than the
- * backdrop's `step`) rather than running out of colour range in the shade or
- * a shadow, or on into a sheen that fades into the leg. Each side is carried
- * on up as a straight line to where the two lines meet. Between the lines (by
- * more than EDGE_MARGIN) and below that point, any garment that the closing
- * filled in or that shows the backdrop's colour in shade (see backdropShade),
- * joined to the gap, goes back to background. Fabric there would have to lie
- * on a leg or above the crotch, so a sheen down the inside of the legs, a
- * faded patch over the crotch or grey trousers, whatever their colour and
- * size, stay whole.
+ * backdrop's `step`), and each is fitted with a straight line. Then each leg's
+ * edge is looked for on each row above, out from the middle of the lines (see
+ * edgeFrom). The tip reaches up to the last row on which both are seen no
+ * further inside the lines than SIDE_SPREAD, each a step in colour rather than
+ * a slope like a sheen's (see sharp): the gap is still as wide there as
+ * straight sides make it, so it hasn't begun to round off. Below that row, any garment the closing filled in or that shows
+ * the backdrop's colour in shade (see backdropShade), joined to the gap, more
+ * than EDGE_MARGIN inside the lines and inside the edges seen, goes back to
+ * background; on a row where an edge isn't seen, the one seen on the nearest
+ * row above, carried down parallel to its line, bounds it instead.
  *
- * Where the lines can't be trusted to find the crotch, the gap is left as it
- * is: where a side's edge shows on too few rows, where the sides don't come
- * together going up (legs that never part, a corner), where they'd meet
- * further above the gap than they were followed below it (sides too near
- * parallel, which may well round off before they'd meet), or where either is
- * known too roughly there (its standard error) to stay within the margin.
+ * So whatever the crotch's shape, pointed, rounded, flat-topped or curving in,
+ * only the gap is opened, and a sheen down the inside of the legs, a faded
+ * patch over the crotch or grey trousers stay whole, whatever their colour.
+ * Where the lines can't be trusted, the gap is left as it is: where a side's
+ * edge shows on too few rows, or where the lines would meet further above the
+ * gap than they were followed below it, or never meet (sides that never come
+ * together give the tip no top, and a patch the colour of the shade can hide
+ * where the fabric closes it), or where either line is known too roughly there
+ * (its standard error) to stay within the margin.
  */
 function reopenShadedTips(
   image: RgbaImage,
@@ -780,9 +792,40 @@ function reopenShadedTips(
   const { width, height } = image
   const total = width * height
   const reach = GAP_SIDES * closingRadius(width, height)
-  // Whether the colour on row `y` jumps from the gap's pixel `inside` to the garment's `outside` by more than
-  // the backdrop steps: there the backdrop met a leg's edge, rather than running out of colour range in the shade.
-  const edge = (inside: number, outside: number, y: number) => colorDistance(pixel(image, inside, y), pixel(image, outside, y)) > step
+  const colour = (x: number, y: number) => (x < 0 || x >= width ? null : pixel(image, x, y))
+  const apart = (p: Rgb | null, q: Rgb | null) => (p && q ? colorDistance(p, q) : Infinity)
+  // From pixel x on row y out (`way`) to a leg's edge: to the first pixel where the colour moves on by more than
+  // the backdrop's `step` within two pixels and stays moved on a pixel further (as it can't within the shade,
+  // and a lone odd pixel is noise), then on past any pixel still nearer that pixel's colour than the leg's.
+  // Returns the last pixel short of the leg, or null if there's none by `limit`.
+  const edgeFrom = (x: number, y: number, way: number, limit: number) => {
+    for (; (limit - x) * way >= 0; x += way) {
+      const here = colour(x, y)
+      const [p1, p2, p3] = [1, 2, 3].map((k) => apart(here, colour(x + k * way, y)))
+      if (!(p2 > step && (p1 > step || p3 > step))) continue
+      const leg = colour(x + 3 * way, y)
+      if (!leg || !here) return x
+      const half = colorDistance(here, leg) / 2
+      let last = x
+      while (last !== x + 2 * way && apart(here, colour(last + way, y)) <= half) last += way
+      return last
+    }
+    return null
+  }
+  // Whether the edge just past pixel x on row y (`way` out) is a step rather than a slope, such as a sheen
+  // fading into the leg, or a sheen or patch over the crotch fading out round its top: whether pixel x's colour
+  // lies more than `step` off the leg's, carried on back to x at the rate it changes across the leg (from two
+  // pixels out to five).
+  const sharp = (x: number, y: number, way: number) => {
+    const at = [0, 2, 3, 5, 6].map((k) => colour(x + k * way, y))
+    if (at.some((c) => !c)) return true
+    const [here, n2, n3, f5, f6] = at as Rgb[]
+    const leg = [0, 1, 2].map((k) => {
+      const near = (n2[k] + n3[k]) / 2
+      return near + ((near - (f5[k] + f6[k]) / 2) / 3) * 2.5
+    }) as Rgb
+    return colorDistance(here, leg) > step
+  }
   const inGap = (i: number) => tidied[i] === 1 && reopened[i] === 0
   // The run of background on row `y` through the column nearest the middle of [lo, hi] that has any. Null if
   // there's none, or if it's wider than any gap could be: out round the end of a leg.
@@ -836,8 +879,8 @@ function reopenShadedTips(
       if (!run || run[0] === 0 || run[1] === width - 1) break
       const [a, b] = run
       ;[lo, hi, bottom] = [a, b, y]
-      if (edge(a, a - 1, y)) lefts.push([y + 0.5, a])
-      if (edge(b, b + 1, y)) rights.push([y + 0.5, b + 1])
+      if (colorDistance(pixel(image, a, y), pixel(image, a - 1, y)) > step) lefts.push([y + 0.5, a])
+      if (colorDistance(pixel(image, b, y), pixel(image, b + 1, y)) > step) rights.push([y + 0.5, b + 1])
     }
     if (Math.min(lefts.length, rights.length) < Math.max(4, reach / 8)) continue
     const left = fitSide(lefts)
@@ -849,12 +892,49 @@ function reopenShadedTips(
     // nearer parallel would meet far off, if at all. And each must be known there to well within the margin.
     if (!(apex < below) || below - apex > bottom - top) continue
     if (left.error(apex) + right.error(apex) > EDGE_MARGIN) continue
+
+    // How far each row may be opened: between the lines, and within the edges seen on it or, where one isn't,
+    // the one seen on the nearest row above, carried down parallel to its line. Nothing above the `crest`,
+    // the last row where both edges are seen where the lines say, is opened.
+    const sides = new Float64Array(2 * (bottom + 1))
+    let crest = top
+    {
+      const seenL = new Float64Array(bottom + 1).fill(NaN)
+      const seenR = new Float64Array(bottom + 1).fill(NaN)
+      for (const [y, x] of lefts) seenL[y - 0.5] = x
+      for (const [y, x] of rights) seenR[y - 0.5] = x
+      for (let y = top - 1; y >= 0 && y + 0.5 > apex; y--) {
+        const cy = y + 0.5
+        const [l, r] = [left.at + left.slope * cy, right.at + right.slope * cy]
+        if (r - l < 2) break
+        const middle = Math.floor((l + r) / 2)
+        if (!shade(pixel(image, middle, y))) continue
+        const a = edgeFrom(middle, y, -1, Math.floor(l) - 1)
+        const b = edgeFrom(middle, y, 1, Math.ceil(r))
+        if (a !== null) seenL[y] = a
+        if (b !== null) seenR[y] = b + 1
+        if (a === null || b === null) continue
+        // Both edges seen no further inside the lines than SIDE_SPREAD: the gap's still as wide as they are.
+        if (a - l <= SIDE_SPREAD && r - b - 1 <= SIDE_SPREAD && sharp(a, y, -1) && sharp(b, y, 1)) crest = y
+      }
+      let [aboveL, aboveR] = [NaN, NaN]
+      let [atL, atR] = [crest, crest]
+      for (let y = crest; y <= bottom; y++) {
+        const cy = y + 0.5
+        const [l, r] = [left.at + left.slope * cy, right.at + right.slope * cy]
+        // Below the crest the gap's within SIDE_SPREAD of the lines, so an edge seen further inside is the shade's own.
+        if (seenL[y] - l <= SIDE_SPREAD) [aboveL, atL] = [seenL[y], y]
+        if (r - seenR[y] <= SIDE_SPREAD) [aboveR, atR] = [seenR[y], y]
+        sides[2 * y] = Math.max(l + EDGE_MARGIN, aboveL + left.slope * (y - atL))
+        sides[2 * y + 1] = Math.min(r - EDGE_MARGIN, aboveR + right.slope * (y - atR))
+      }
+    }
     const inWedge = (x: number, y: number) => {
-      const [cx, cy] = [x + 0.5, y + 0.5]
-      return cy > apex && cy < bottom + 1 && cx > left.at + left.slope * cy + EDGE_MARGIN && cx < right.at + right.slope * cy - EDGE_MARGIN
+      const cx = x + 0.5
+      return y >= crest && y <= bottom && cx > sides[2 * y] && cx < sides[2 * y + 1]
     }
 
-    // Spread from the gap into the garment between the lines that the closing filled or that's the backdrop in shade.
+    // Spread from the gap into the garment within those bounds that the closing filled or that's the backdrop in shade.
     const next = result ?? (result = reopened.slice())
     let tip = tail
     for (let k = 0; k < tip; k++) {
