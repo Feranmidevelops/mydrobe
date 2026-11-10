@@ -823,8 +823,12 @@ function reopenShadedTips(
     const leg = [0, 1, 2].map((k) => {
       const near = (n2[k] + n3[k]) / 2
       return near + ((near - (f5[k] + f6[k]) / 2) / 3) * 2.5
-    }) as Rgb
-    return colorDistance(here, leg) > step
+    })
+    // As colorDistance measures it, but worked out here: fed the fractions of the leg's colour carried back,
+    // colorDistance would slow down wherever it's used, and the whole analysis with it.
+    const redMean = (here[0] + leg[0]) / 2
+    const [dr, dg, db] = [here[0] - leg[0], here[1] - leg[1], here[2] - leg[2]]
+    return Math.sqrt((2 + redMean / 256) * dr * dr + 4 * dg * dg + (2 + (255 - redMean) / 256) * db * db) > step
   }
   const inGap = (i: number) => tidied[i] === 1 && reopened[i] === 0
   // The run of background on row `y` through the column nearest the middle of [lo, hi] that has any. Null if
