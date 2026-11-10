@@ -885,7 +885,7 @@ function reopenShadedTips(
     if (Math.min(lefts.length, rights.length) < Math.max(4, reach / 8)) continue
     const left = fitSide(lefts)
     const right = fitSide(rights)
-    if (!left || !right || !(right.slope > left.slope)) continue
+    if (!left || !right) continue
     const below = top + 0.5
     const apex = below - (right.at + right.slope * below - left.at - left.slope * below) / (right.slope - left.slope)
     // The sides must meet above the gap, and no further above it than they were followed below it: sides
