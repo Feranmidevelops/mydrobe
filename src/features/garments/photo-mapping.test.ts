@@ -737,7 +737,8 @@ describe('neck opening', () => {
 
   it('takes the soft edge around a hanger with it, but leaves the same colour elsewhere', () => {
     const BLACK: Rgb = [20, 20, 20]
-    const EDGE: Rgb = [130, 120, 110]
+    // Blended more of the backdrop than of the shirt: what's nearer the shirt's colour is the shirt's own edge.
+    const EDGE: Rgb = [190, 185, 180]
     const front = blank(60, 80, BLACK)
     // Backdrop through the neck, ringed by a pixel of blended edge.
     paint(front, { x: 19, y: 1, width: 22, height: 8 }, EDGE)
@@ -750,6 +751,7 @@ describe('neck opening', () => {
 
     expect(colorAt(covered, 19, 5)).toEqual(BLACK)
     expect(colorAt(covered, 30, 1)).toEqual(BLACK)
+    expect(colorAt(covered, 30, 8)).toEqual(BLACK)
     expect(colorAt(covered, 4, 4)).toEqual(EDGE)
   })
 
@@ -759,7 +761,11 @@ describe('neck opening', () => {
     paint(front, { x: 18, y: 0, width: 4, height: 16 }, NAVY)
     paint(front, { x: 38, y: 0, width: 4, height: 16 }, NAVY)
     paint(front, { x: 18, y: 12, width: 24, height: 4 }, NAVY)
-    expect(colorAt(coverNeckOpening(front, 12, blank(16, 16, CREAM), CREAM), 30, 2)).toEqual(NAVY)
+    // Its front and sides, below the neckline its inner edge traces; above, the back's collar is seen through the opening.
+    const covered = coverNeckOpening(front, 12, blank(16, 16, CREAM), CREAM)
+    expect(colorAt(covered, 30, 13)).toEqual(NAVY)
+    expect(colorAt(covered, 20, 10)).toEqual(NAVY)
+    expect(colorAt(covered, 39, 10)).toEqual(NAVY)
   })
 
   describe('a label’s print', () => {
@@ -799,10 +805,10 @@ describe('neck opening', () => {
     })
 
     it('still takes the dim soft edge notched into a hanger it paints over', () => {
-      // A black tee: a brown hanger, edged by pixels blending it into the black.
+      // A black tee: a brown hanger, edged by pixels blending it into the black, more of the hanger than of the black.
       const BLACK: Rgb = [20, 20, 20]
       const BROWN: Rgb = [110, 60, 25]
-      const BLEND: Rgb = [45, 32, 22]
+      const BLEND: Rgb = [88, 50, 24]
       const front = blank(100, 80, BLACK)
       paint(front, { x: 20, y: 2, width: 60, height: 8 }, BROWN)
       for (const x of [30, 40, 50]) paint(front, { x, y: 9, width: 1, height: 1 }, BLEND)
@@ -824,7 +830,9 @@ describe('neck opening', () => {
   })
 
   describe('across the bottom of the band', () => {
-    // A front tall enough that a neckline dips 6 rows, under a band of 30.
+    // A front tall enough that a neckline dips 6 rows, under a band of 30. A hanger bar's shaded ends, in
+    // one shade or two, and a top button beside them, are pinned where they show through a drawn neck
+    // opening at the app's size, in photo-mapping.neck.test.ts.
     const BAND = 30
     const cover = (front: RgbaImage) => coverNeckOpening(front, BAND, blank(16, 16, CREAM), CREAM)
 
@@ -836,34 +844,6 @@ describe('neck opening', () => {
       // Nor is a sliver of it left below the band.
       expect(colorAt(covered, 50, 32)).toEqual(CREAM)
       expect(colorAt(covered, 30, 33)).toEqual(CREAM)
-    })
-
-    it('paints over the shaded end of a hanger bar too, though its colour turns up lower down', () => {
-      const BROWN: Rgb = [110, 60, 25]
-      const front = blank(100, 200, CREAM)
-      paint(front, { x: 10, y: 100, width: 20, height: 20 }, BROWN)
-      paint(front, { x: 30, y: 24, width: 40, height: 10 }, WOOD)
-      paint(front, { x: 26, y: 25, width: 4, height: 8 }, BROWN)
-      const covered = cover(front)
-      expect(colorAt(covered, 27, 28)).toEqual(CREAM)
-      expect(colorAt(covered, 27, 32)).toEqual(CREAM)
-      expect(colorAt(covered, 15, 110)).toEqual(BROWN)
-    })
-
-    it('paints over a shaded end that comes in two shades, the darker clear of the bar', () => {
-      const BROWN: Rgb = [110, 60, 25]
-      const DARKER: Rgb = [75, 38, 12]
-      const front = blank(100, 200, CREAM)
-      paint(front, { x: 10, y: 100, width: 20, height: 20 }, BROWN)
-      paint(front, { x: 60, y: 120, width: 20, height: 20 }, DARKER)
-      paint(front, { x: 30, y: 24, width: 40, height: 10 }, WOOD)
-      paint(front, { x: 26, y: 25, width: 4, height: 8 }, BROWN)
-      paint(front, { x: 20, y: 26, width: 6, height: 6 }, DARKER)
-      const covered = cover(front)
-      expect(colorAt(covered, 27, 28)).toEqual(CREAM)
-      expect(colorAt(covered, 21, 28)).toEqual(CREAM)
-      expect(colorAt(covered, 21, 31)).toEqual(CREAM)
-      expect(colorAt(covered, 65, 125)).toEqual(DARKER)
     })
 
     it('paints over the shaded end of a hanger bar lying wholly within the band', () => {
@@ -897,15 +877,6 @@ describe('neck opening', () => {
       const covered = coverNeckOpening(front, BAND, blank(16, 16, CREAM), CREAM, WHITE)
       expect(colorAt(covered, 50, 4)).toEqual(CREAM)
       expect(colorAt(covered, 27, 4)).toEqual(BROWN)
-    })
-
-    it('keeps a detail beside a hanger bar that reaches above it', () => {
-      const BROWN: Rgb = [110, 60, 25]
-      const front = blank(100, 200, CREAM)
-      paint(front, { x: 10, y: 100, width: 20, height: 20 }, BROWN)
-      paint(front, { x: 30, y: 24, width: 40, height: 10 }, WOOD)
-      paint(front, { x: 26, y: 20, width: 4, height: 15 }, BROWN)
-      expect(colorAt(cover(front), 27, 21)).toEqual(BROWN)
     })
 
     it('paints over the foot of a label printed in a colour seen nowhere else', () => {

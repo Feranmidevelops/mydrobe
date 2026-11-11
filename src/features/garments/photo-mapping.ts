@@ -1,4 +1,5 @@
 import type { GarmentTemplateId } from './garment.types'
+import { findNeckline, type Neckline } from './neckline'
 import type { FabricTile } from './pattern-tile'
 
 /*
@@ -28,10 +29,15 @@ export interface Rect {
 
 /** How different two colours look; a cheap perceptual weighting of RGB distance. */
 export function colorDistance(a: Rgb, b: Rgb): number {
-  const redMean = (a[0] + b[0]) / 2
-  const dr = a[0] - b[0]
-  const dg = a[1] - b[1]
-  const db = a[2] - b[2]
+  return channelDistance(a[0], a[1], a[2], b[0], b[1], b[2])
+}
+
+/** colorDistance between (r1, g1, b1) and (r2, g2, b2), for loops over many pixels. */
+export function channelDistance(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number): number {
+  const redMean = (r1 + r2) / 2
+  const dr = r1 - r2
+  const dg = g1 - g2
+  const db = b1 - b2
   return Math.sqrt((2 + redMean / 256) * dr * dr + 4 * dg * dg + (2 + (255 - redMean) / 256) * db * db)
 }
 
@@ -1018,10 +1024,10 @@ export function resampleTile(pixels: RgbaImage, size: number, wrap: 'repeat' | '
 }
 
 /** The smallest colour difference that can count as "not the fabric". */
-const FOREIGN_COLOR = 60
+export const FOREIGN_COLOR = 60
 
 /** How far a neckline dips below the shoulders, as a share of the crop's height. */
-const NECKLINE_DIP = 0.03
+export const NECKLINE_DIP = 0.03
 
 /**
  * How many rows at the top of a top's front crop its neck opening can show
@@ -1408,12 +1414,143 @@ function wholePrint(
 }
 
 /**
+ * Which of the first `band` rows of `front` show something other than the
+ * fabric, judged by colour alone: a colour is taken for what shows through
+ * the neck opening if it's the backdrop's, or if it turns up nowhere lower
+ * down the front, so the squares of a check, a stripe and a contrasting
+ * collar (whose front dips lower) stay as photographed. The soft edge around
+ * whatever is taken goes too, so no outline of a hanger is left. One byte per
+ * pixel of those rows, 1 where it's taken.
+ */
+export function colourCovered(front: RgbaImage, band: number, fabric: Rgb, background: Rgb | null): Uint8Array {
+  const { width } = front
+  const rows = Math.max(0, Math.min(band, front.height))
+  const below = colorBins(front, rows)
+  const enough = Math.max(1, (front.height - rows) * width * 0.001)
+  const backdrop = (color: Rgb) => background !== null && colorDistance(color, background) <= BACKDROP_MATCH
+  const covered = new Uint8Array(rows * width)
+  for (let i = 0; i < covered.length; i++) {
+    const color = pixel(front, i % width, Math.floor(i / width))
+    if (colorDistance(color, fabric) <= FOREIGN_COLOR) continue
+    if (backdrop(color) || nearbyCount(below, color) < enough) covered[i] = 1
+  }
+  for (let round = 0; round < EDGE_ROUNDS; round++) {
+    const edge: number[] = []
+    for (let i = 0; i < covered.length; i++) {
+      if (covered[i] || colorDistance(pixel(front, i % width, Math.floor(i / width)), fabric) <= FOREIGN_COLOR) continue
+      let next = false
+      forNeighbours(i, width, rows, (j) => {
+        if (covered[j]) next = true
+      })
+      if (next) edge.push(i)
+    }
+    for (const i of edge) covered[i] = 1
+  }
+  return covered
+}
+
+/** `front` with the pixels marked in `covered` (its first rows, a row of the front's width at a time) painted with the tiled fabric. */
+function paintCovered(front: RgbaImage, covered: Uint8Array, swatch: RgbaImage | FabricTile, offset: [number, number]) {
+  const { width } = front
+  const data = new Uint8ClampedArray(front.data)
+  for (let i = 0; i < covered.length; i++) {
+    if (!covered[i]) continue
+    const [x, y] = [i % width, Math.floor(i / width)]
+    data.set(tileAt(swatch, x, y, offset[0] + x, offset[1] + y), i * 4)
+  }
+  return { data, width, height: front.height }
+}
+
+/** How far below and beside the neckline its soft edge can reach: the step filter's reach. */
+const NECKLINE_EDGE = 4
+
+/**
+ * What to paint over at the neck when the `neckline` is known: everything
+ * seen through the opening, whatever its colour, from where the neckline's
+ * sides stop being seen as an edge down to the neckline itself, and never
+ * past it. Above that, and beside the opening above where the neckline ends
+ * on that side, the colours decide as they do with no neckline (see
+ * colourCovered). And the neckline's soft edge goes too: from the line down
+ * (or out, beside a climb), each pixel nearer the opening's colour just inside
+ * the line than the front's there (the middle of the soft edge's colours), up
+ * to the first that isn't. Nothing else changes, so whatever lies on the front below the
+ * neckline stays as photographed: a collar, a logo, a button, a print.
+ */
+function openingCovered(front: RgbaImage, band: number, neckline: Neckline, fabric: Rgb, background: Rgb | null) {
+  const { width, height } = front
+  const { rows, span, topRow, tilt, axis, window } = neckline
+  const [left, right] = span
+  const covered = new Uint8Array(width * window)
+  const topAt = (x: number) => topRow + Math.round(tilt * (x - axis))
+  for (let x = left; x <= right; x++) {
+    for (let y = Math.max(0, topAt(x)); y < Math.min(rows[x], window); y++) covered[y * width + x] = 1
+  }
+  const byColour = colourCovered(front, band, fabric, background)
+  const bandRows = byColour.length / width
+  const ends = [Math.min(bandRows, rows[left]), Math.min(bandRows, rows[right])]
+  for (let y = 0; y < Math.min(bandRows, window); y++) {
+    for (let x = 0; x < width; x++) {
+      const shown = x >= left && x <= right ? y < topAt(x) : y < ends[x < left ? 0 : 1]
+      if (shown && byColour[y * width + x]) covered[y * width + x] = 1
+    }
+  }
+  // The soft edge: from the front's first pixel (x, y) a pixel at a time along (dx, dy), away from the opening.
+  const soften = (x: number, y: number, dx: number, dy: number) => {
+    const [ix, iy, bx] = [x - 3 * dx, y - 3 * dy, x + (NECKLINE_EDGE - 1) * dx]
+    if (ix < 0 || ix >= width || iy < 0 || bx < 0 || bx >= width) return
+    const opening = pixel(front, ix, iy)
+    // The front's colour at the line: the middle of the soft edge's pixels, which a thin rib fills.
+    const reach = Array.from({ length: NECKLINE_EDGE }, (_, k) => pixel(front, x + dx * k, Math.min(height - 1, y + dy * k)))
+    const own = [0, 1, 2].map((c) => reach.map((color) => color[c]).sort((a, b) => a - b)[NECKLINE_EDGE >> 1]) as Rgb
+    for (let k = 0; k < NECKLINE_EDGE; k++) {
+      const [px, py] = [x + dx * k, y + dy * k]
+      if (py >= window) return
+      const color = pixel(front, px, py)
+      if (colorDistance(color, opening) >= colorDistance(color, own)) return
+      covered[py * width + px] = 1
+    }
+  }
+  const middle = Math.floor(axis)
+  for (let x = left; x <= right; x++) {
+    if (rows[x] < window && rows[x] > topAt(x)) soften(x, rows[x], 0, 1)
+    // Beside a climb the front lies outward: to the left on the left side, to the right on the right.
+    const inner = x <= middle ? x + 1 : x - 1
+    if (inner < left || inner > right) continue
+    for (let y = Math.max(0, topAt(x), rows[x]); y < Math.min(rows[inner], window); y++) soften(x, y, inner > x ? -1 : 1, 0)
+  }
+  return covered
+}
+
+/**
  * Paints over what shows through a top's neck opening, such as the rest of a
  * hanger, the shaded inside of the back, a size label or the backdrop, with
- * the fabric sample. Within the top `band` rows, a colour is painted over if
- * it's the backdrop's, or if it turns up nowhere lower down the front, so the
- * squares of a check, a stripe and a contrasting collar (whose front dips
- * lower) stay as photographed.
+ * the fabric sample, in its first `band` rows and the neckline's dip below.
+ *
+ * Where the front's neckline can be traced (see findNeckline), everything
+ * above it is painted and nothing below it, whatever its colour or shape (see
+ * openingCovered). Where it can't, what's painted is guessed (see
+ * guessNeckOpening). `offset` is where the front sits in the photo, so a tile
+ * of the fabric's repeat paints in step with the check around it.
+ */
+export function coverNeckOpening(
+  front: RgbaImage,
+  band: number,
+  swatch: RgbaImage | FabricTile,
+  fabric: Rgb,
+  background: Rgb | null = null,
+  offset: [number, number] = [0, 0],
+): RgbaImage {
+  const neckline = findNeckline(front, band)
+  if (!neckline) return guessNeckOpening(front, band, swatch, fabric, background, offset)
+  return paintCovered(front, openingCovered(front, band, neckline, fabric, background), swatch, offset)
+}
+
+/**
+ * Guesses what shows through a top's neck opening whose neckline can't be
+ * traced, by colour and shape. Within the top `band` rows, a colour is painted
+ * over if it's the backdrop's, or if it turns up nowhere lower down the front,
+ * so the squares of a check, a stripe and a contrasting collar (whose front
+ * dips lower) stay as photographed.
  *
  * What crosses the bottom of the band is read as a whole (see crossingKind).
  * The curve of a collar, or a logo on the front whose top reaches into the
@@ -1430,13 +1567,13 @@ function wholePrint(
  * `offset` is where the front sits in the photo, so a tile of the fabric's
  * repeat paints in step with the check around it.
  */
-export function coverNeckOpening(
+function guessNeckOpening(
   front: RgbaImage,
   band: number,
   swatch: RgbaImage | FabricTile,
   fabric: Rgb,
-  background: Rgb | null = null,
-  offset: [number, number] = [0, 0],
+  background: Rgb | null,
+  offset: [number, number],
 ): RgbaImage {
   const { width, height } = front
   const rows = Math.max(0, Math.min(band, height))

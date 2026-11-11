@@ -30,7 +30,7 @@ export type Behind =
    * third of it. Its word is printed `printAt` of the way down it, in `print`.
    */
   | { kind: 'label'; color: Rgb; print?: Rgb; size?: number; printAt?: number; over?: 'bar' }
-  /** The back's rib, along the top of the opening, with a 1 px highlight along its middle. */
+  /** The back's rib, along the top of the opening, with a 1 px highlight along its middle: the front's highlight, and its own (unchecked) rib. */
   | { kind: 'back rib'; color: Rgb; highlight: Rgb }
 
 /** Things on the front, below its neckline. */
@@ -43,6 +43,10 @@ export type OnFront =
   | { kind: 'placket'; width: number; color: Rgb }
   /** A detail `width` x `height` (at scale 1) just under the neckline, under the label's print or `beside` it. */
   | { kind: 'detail'; width: number; height: number; color: Rgb; beside?: boolean }
+  /** A panel `width` wide (at scale 1) down the middle of the front, from its top to its hem. */
+  | { kind: 'panel'; width: number; color: Rgb }
+  /** Two stripes `width` wide (at scale 1) down the front from its top, `apart` either side of the middle. */
+  | { kind: 'stripes'; width: number; apart: number; color: Rgb }
 
 export interface HangingTop {
   color: Rgb
@@ -50,6 +54,10 @@ export interface HangingTop {
   weave?: 'plain' | 'check' | 'twill'
   check?: Rgb
   neckline?: NecklineShape
+  /** Whether the neck opening shows at all: not on a front folded or laid flat, nor on a plain length of fabric. */
+  opening?: boolean
+  /** A side of the opening whose inside of the back shows in the front's own colour, so the neckline can't be seen there (black on black). */
+  hidden?: 'left' | 'right'
   /** How many rows (at scale 1) the neckline's lowest point lies below the band; negative above it. */
   depth?: number
   /** Half the opening's width at the top (at scale 1). */
@@ -247,6 +255,28 @@ function randoms(seed: number) {
   return () => (state = (state * 16807) % 2147483647) / 2147483647
 }
 
+/**
+ * A drawing (`planes`, one per channel, `width` x `height`) as a photo of it
+ * reaches the analysis: a camera's softness and noise, and the lossy round
+ * trip of a JPEG or a WebP.
+ */
+export function photographed(planes: Float32Array[], width: number, height: number, softness: 'none' | 'jpeg' | 'webp') {
+  const total = width * height
+  const random = randoms(11)
+  for (const plane of planes) gaussian(plane, width, height, 0.6)
+  for (let i = 0; i < total; i++) {
+    const noise = (random() - 0.5) * 6
+    for (const plane of planes) plane[i] = Math.round(Math.min(255, Math.max(0, plane[i] + noise)))
+  }
+  if (softness !== 'none') lossy(planes, width, height, softness)
+  const data = new Uint8ClampedArray(total * 4)
+  for (let i = 0; i < total; i++) {
+    for (let k = 0; k < 3; k++) data[i * 4 + k] = planes[k][i]
+    data[i * 4 + 3] = 255
+  }
+  return data
+}
+
 /** The front's size and neck band at `scale`, as the analysis gives them for a top photographed at the app's size. */
 export function frontSize(scale = 1) {
   const [width, height, band] = [Math.round(455 * scale), Math.round(600 * scale), Math.round(60 * scale)]
@@ -261,6 +291,8 @@ export function hangingTop(top: HangingTop): DrawnTop {
     weave = 'plain',
     check = shaded(color, 0.6),
     neckline = 'U',
+    opening: open = true,
+    hidden,
     depth = 0,
     half = 70,
     rib,
@@ -297,7 +329,7 @@ export function hangingTop(top: HangingTop): DrawnTop {
   }
   const front0 = (u: number) => curve(u, rx, bottom)
   const back0 = (u: number) => ends - 10 * s * (1 - Math.min(1, (u / rx) ** 2))
-  const opening: Shape = (u, y) => Math.abs(u) < rx && y > back0(u) && y < front0(u)
+  const opening: Shape = (u, y) => open && Math.abs(u) < rx && y > back0(u) && y < front0(u)
   /** The band `width` px wide along the front's neckline, outside the opening. */
   const alongNeckline = (width: number): Shape => {
     return (u, y) =>
@@ -321,7 +353,8 @@ export function hangingTop(top: HangingTop): DrawnTop {
   }
   const insideBox: Layer['box'] = [-rx - 1, rx + 1, ends - 11 * s, bottom + 1]
   // The inside of the back, in shade, filling the opening.
-  add('inside', opening, (u, y) => shaded(fabricAt(u + cx, y), shade), insideBox)
+  const unseen = (u: number) => (hidden === 'left' && u < 0) || (hidden === 'right' && u >= 0)
+  add('inside', opening, (u, y) => (unseen(u) ? fabricAt(u + cx, y) : shaded(fabricAt(u + cx, y), shade)), insideBox)
 
   const behindIds: string[] = ['inside']
   const frontIds: string[] = []
@@ -382,7 +415,7 @@ export function hangingTop(top: HangingTop): DrawnTop {
       const thick = Math.max(2, 6 * s)
       add('back rib', (u, y) => Math.abs(u) < rx && y < back0(u) && y >= back0(u) - thick, () => thing.color, [-rx, rx, ends - 10 * s - thick, ends])
       add('highlight', (u, y) => Math.abs(u) < rx && y < back0(u) - thick / 2 && y >= back0(u) - thick / 2 - 1, () => thing.highlight, [-rx, rx, ends - 10 * s - thick, ends])
-      frontIds.push('back rib', 'highlight')
+      frontIds.push('highlight')
     }
   }
   if (rib) {
@@ -418,6 +451,14 @@ export function hangingTop(top: HangingTop): DrawnTop {
       const w = (thing.width * s) / 2
       add('placket', (u, y) => Math.abs(u) < w && y >= under, () => thing.color, [-w, w, under, H + 40])
       frontIds.push('placket')
+    } else if (thing.kind === 'panel') {
+      const w = (thing.width * s) / 2
+      add('panel', (u) => Math.abs(u) < w, () => thing.color, [-w, w, -40, H + 40])
+      frontIds.push('panel')
+    } else if (thing.kind === 'stripes') {
+      const [w, apart] = [(thing.width * s) / 2, thing.apart * s]
+      add('stripes', (u) => Math.abs(Math.abs(u) - apart) < w, () => thing.color, [-apart - w, apart + w, -40, H + 40])
+      frontIds.push('stripes')
     } else {
       const [w, h] = [thing.width * s, thing.height * s]
       const u = thing.beside ? 30 * s : 0
@@ -493,19 +534,7 @@ export function hangingTop(top: HangingTop): DrawnTop {
       }
     }
   }
-  // A camera's softness and noise, and the lossy round trip.
-  const random = randoms(11)
-  for (const plane of planes) gaussian(plane, W, H, 0.6)
-  for (let i = 0; i < total; i++) {
-    const noise = (random() - 0.5) * 6
-    for (const plane of planes) plane[i] = Math.round(Math.min(255, Math.max(0, plane[i] + noise)))
-  }
-  if (softness !== 'none') lossy(planes, W, H, softness)
-  const data = new Uint8ClampedArray(total * 4)
-  for (let i = 0; i < total; i++) {
-    for (let k = 0; k < 3; k++) data[i * 4 + k] = planes[k][i]
-    data[i * 4 + 3] = 255
-  }
+  const data = photographed(planes, W, H, softness)
   const regions: Record<string, Uint8Array> = {}
   for (const [id, shown] of Object.entries(shares)) regions[id] = Uint8Array.from(shown, (v) => (v >= 0.75 ? 1 : 0))
   // The drawn neckline: under each column's lowest pixel that's mostly opening.
