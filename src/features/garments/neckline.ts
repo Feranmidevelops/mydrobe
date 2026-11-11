@@ -307,6 +307,17 @@ function reachOf(lattice: Lattice, { left, right }: Axis) {
   return { most, least }
 }
 
+/** traceRising's tables, reused between calls. */
+let risingReused: { best: Float32Array; from: Int16Array; level: Float32Array; rising: Float32Array } | null = null
+
+/** Tables for `size` cells and `rows` rows; the same ones again when they're big enough. */
+function risingTables(size: number, rows: number) {
+  if (!risingReused || risingReused.best.length < size || risingReused.level.length < rows) {
+    risingReused = { best: new Float32Array(size), from: new Int16Array(size), level: new Float32Array(rows), rising: new Float32Array(rows + 1) }
+  }
+  return risingReused
+}
+
 /**
  * The best path about one centre line and tilt that only ever rises going
  * out, ending at or above the shoulders' row: a quick first look, before the
@@ -316,9 +327,8 @@ function traceRising(lattice: Lattice, axis: Axis): Path | null {
   const { most, least } = reachOf(lattice, axis)
   if (most < 4) return null
   const rows = lattice.last + 1
-  const best = new Float32Array((most + 1) * rows).fill(NEG)
-  const from = new Int16Array((most + 1) * rows)
-  const [level, rising] = [new Float32Array(rows), new Float32Array(rows + 1)]
+  const { best, from, level, rising } = risingTables((most + 1) * rows, rows)
+  best.fill(NEG, 0, (most + 1) * rows)
   unitsAt(lattice, axis, 0, level, rising, null)
   for (let y = 1; y < lattice.last; y++) best[y] = level[y]
   let top = NEG
@@ -671,7 +681,11 @@ function innerEdge(lattice: Lattice, axis: Axis, outer: Path, dip: number) {
   const verdict = judged(lattice, axis, inner, dip, 0)
   if (!verdict.ok) return null
   const distances = pointsOf(inner)
-    .map(([d, y]) => Math.min(...outerPoints.map(([e, z]) => Math.hypot(d - e, y - z))))
+    .map(([d, y]) => {
+      let nearest = Infinity
+      for (const [e, z] of outerPoints) nearest = Math.min(nearest, Math.hypot(d - e, y - z))
+      return nearest
+    })
     .sort((a, b) => a - b)
   const middle = distances[distances.length >> 1]
   const spread = distances[Math.floor(distances.length * 0.9)] - distances[Math.floor(distances.length * 0.1)]
@@ -689,24 +703,41 @@ function centreLines(lattice: Lattice) {
   const { width, last, shoulders, level, upright } = lattice
   const reach = Math.round(MIRROR_REACH * width)
   const [from, to] = [Math.round(width - 2 * CENTRE_REACH * width), Math.round(width + 2 * CENTRE_REACH * width)]
-  const read = (map: Float32Array, x: number, y: number, tilt: number) => {
-    const column = x - Math.round(tilt * (y - shoulders))
-    return y < 0 || y >= last || column < 0 || column >= width ? 0 : map[y * width + column]
+  // Per tilt, how far each row of the window moves across: a turned top's centre line turns with it.
+  const shifts = new Map<number, Int32Array>()
+  const shiftOf = (tilt: number) => {
+    let shift = shifts.get(tilt)
+    if (!shift) {
+      shift = new Int32Array(last)
+      for (let y = 0; y < last; y++) shift[y] = Math.round(tilt * (y - shoulders))
+      shifts.set(tilt, shift)
+    }
+    return shift
   }
   const symmetry = (twice: number, tilt: number) => {
+    const shift = shiftOf(tilt)
+    const half = Math.floor(twice / 2)
     let both = 0
     let either = 0
-    const pair = (a: number, b: number) => {
-      both += a < b ? a : b
-      either += a < b ? b : a
-    }
     // Every other row. Level steps are a pixel's own: mirror x to twice - x. Upright ones sit between x - 1 and x.
     for (let y = 0; y < last; y += 2) {
       for (let k = 1; k <= reach; k++) {
-        const off = Math.round((tilt * (2 * k)) / 2)
-        const x = Math.floor((twice - 2 * k) / 2)
-        pair(read(level, x, y - off, tilt), read(level, twice - x, y + off, tilt))
-        pair(read(upright, x + 1, y - off, tilt), read(upright, twice - x, y + off, tilt))
+        const off = Math.round(tilt * k)
+        const x = half - k
+        const above = y - off
+        const below = y + off
+        const inAbove = above >= 0 && above < last
+        const inBelow = below >= 0 && below < last
+        const left = inAbove ? x - shift[above] : -1
+        const right = inBelow ? twice - x - shift[below] : -1
+        let a = inAbove && left >= 0 && left < width ? level[above * width + left] : 0
+        let b = inBelow && right >= 0 && right < width ? level[below * width + right] : 0
+        both += a < b ? a : b
+        either += a < b ? b : a
+        a = inAbove && left + 1 >= 0 && left + 1 < width ? upright[above * width + left + 1] : 0
+        b = inBelow && right >= 0 && right < width ? upright[below * width + right] : 0
+        both += a < b ? a : b
+        either += a < b ? b : a
       }
     }
     return either ? both / either : 0
