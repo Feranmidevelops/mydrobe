@@ -90,6 +90,26 @@ describe('leaving the front below the neckline alone', () => {
     ).toEqual([])
   }, 600_000)
 
+  it('keeps a contrasting collar running up to the shoulders round a round or square neck opening narrower than a fifth of the front', () => {
+    expect(
+      failures(({ rib }) =>
+        [38, 40, 44].flatMap((half) =>
+          [8, 12].map((width): [string, Partial<HangingTop>] => [
+            `a ${width} px collar round an opening ${2 * half} px wide`,
+            // The collar's sides carry on up past the opening's to the top of the front, as a tee's do.
+            {
+              half,
+              neckline: (['U', 'scoop', 'square'] as const)[(half + width) % 3],
+              rib: { width, color: rib },
+              front: [{ kind: 'stripes', width, apart: half + width / 2, color: rib }],
+              scale: 1,
+            },
+          ]),
+        ),
+      ),
+    ).toEqual([])
+  }, 600_000)
+
   it('keeps a collar’s shaded inner rim', () => {
     expect(
       failures(({ rib }) => [['a collar with a shaded rim', { rib: { width: 8, color: rib, rim: rib.map((v) => v * 0.55) as Rgb }, scale: 1 }]]),

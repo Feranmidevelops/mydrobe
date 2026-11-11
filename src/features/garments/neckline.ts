@@ -374,10 +374,17 @@ function traceRising(lattice: Lattice, axis: Axis): Path | null {
  * steady slope, and a rise may fall short of the steepest so far by one row
  * of digitisation per four columns. A notch round a button, rising one row
  * a column and then running level again, falls short by more. Cells marked in
- * `forbid` (a column `d` out at a time) can't be used.
+ * `forbid` (a column `d` out at a time) can't be used. It runs at most
+ * `most` columns out, and ends no nearer than `least` (wide enough to be an
+ * opening, unless it's the inner edge of a rib round one).
  */
-function traceConvex(lattice: Lattice, axis: Axis, forbid: Uint8Array | null = null, most = reachOf(lattice, axis).most): Path | null {
-  const { least } = reachOf(lattice, axis)
+function traceConvex(
+  lattice: Lattice,
+  axis: Axis,
+  forbid: Uint8Array | null = null,
+  most = reachOf(lattice, axis).most,
+  least = reachOf(lattice, axis).least,
+): Path | null {
   if (most < 1) return null
   const { last, shoulders } = lattice
   const rows = last + 1
@@ -688,7 +695,8 @@ function outerEdge(lattice: Lattice, axis: Axis, inner: Path, dip: number) {
 function innerEdge(lattice: Lattice, axis: Axis, outer: Path, dip: number) {
   const forbid = besides(lattice, outer, outer.end + 1, false, dip)
   const outerPoints = pointsOf(outer)
-  const found = traceConvex(lattice, axis, forbid, outer.end)
+  // As narrow as it likes: the opening is as wide as its outline, and a rib narrows it by its own width.
+  const found = traceConvex(lattice, axis, forbid, outer.end, 1)
   if (!found) return null
   const inner = trimmed(lattice, axis, found)
   // The opening is as wide as its outline: the rib narrows it by its own width.
