@@ -505,17 +505,20 @@ function traceConvex(lattice: Lattice, axis: Axis, forbid: Uint8Array | null = n
 /** Each unit of a path, walking out from its lowest point, level then climbing: the weaker side's step, and its row. */
 function unitsOf(lattice: Lattice, axis: Axis, { ys, end }: Path) {
   const { last } = lattice
-  const units: { step: number; row: number }[] = []
+  const units: { step: number; row: number; climb: boolean }[] = []
   for (let d = 0; d <= end; d++) {
     const off = offsetAt(axis, d)
     const [xl, xr] = [axis.left - d, axis.right + d]
-    if (ys[d] < last) units.push({ step: Math.min(stepAt(lattice, lattice.level, xl, ys[d] - off, axis.tilt), stepAt(lattice, lattice.level, xr, ys[d] + off, axis.tilt)), row: ys[d] })
+    if (ys[d] < last) {
+      const step = Math.min(stepAt(lattice, lattice.level, xl, ys[d] - off, axis.tilt), stepAt(lattice, lattice.level, xr, ys[d] + off, axis.tilt))
+      units.push({ step, row: ys[d], climb: false })
+    }
     if (d === 0) continue
     for (let y = ys[d]; y < Math.min(last, ys[d - 1]); y++) {
       const step = Math.min(stepAt(lattice, lattice.upright, xl + 1, y - off, axis.tilt), stepAt(lattice, lattice.upright, xr, y + off, axis.tilt))
       // A climb of one row is the staircase of a sloping edge, not a unit of its own unless it's an edge itself.
       if (ys[d - 1] - ys[d] === 1 && step < lattice.edge) continue
-      units.push({ step, row: y })
+      units.push({ step, row: y, climb: true })
     }
   }
   return units
@@ -559,6 +562,17 @@ function trimmed(lattice: Lattice, axis: Axis, path: Path): Path {
   const copy = ys.slice()
   copy[end] = y
   return { ...path, ys: copy }
+}
+
+/**
+ * Whether a path runs along the window's last row, where the neckline can be
+ * no lower, without that stretch being an edge (SUPPORT of its units): the
+ * neckline goes on below the window there, and what the path cuts off is the
+ * front's.
+ */
+function alongFloor(lattice: Lattice, axis: Axis, path: Path) {
+  const floor = unitsOf(lattice, axis, path).filter(({ climb, row }) => !climb && row >= lattice.last - 1)
+  return floor.length > 0 && floor.filter(({ step }) => step >= lattice.edge).length < SUPPORT * floor.length
 }
 
 /** Whether a path is a neckline found with confidence (see the module's notes), and how high its sides reach. */
@@ -921,6 +935,8 @@ export function findNeckline(front: RgbaImage, band: number): Neckline | null {
   for (let inner = innerEdge(lattice, axis, path, dip); inner; inner = innerEdge(lattice, axis, path, dip)) {
     ;({ path, verdict } = inner)
   }
+  // Run along the window's last row where it isn't an edge, it runs on below the window unseen, as a deep scoop or V does.
+  if (alongFloor(lattice, axis, path)) return null
   const { rows: drawn, span } = unfolded(lattice, axis, path)
   if (span[1] < span[0]) return null
   const rows = snapped(front, drawn, span, last, edge)

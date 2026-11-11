@@ -128,6 +128,18 @@ describe('findNeckline', () => {
     }
   })
 
+  it.each([
+    [20, 8],
+    [20, 12],
+    [22, 8],
+    [22, 12],
+  ])('finds no neckline cut off along the bottom of the window, round a neckline dipping %i px below the band inside a %i px collar', (depth, width) => {
+    // The neckline runs on below the rows it's looked for in: a line along their bottom would cut through the collar.
+    for (const [softness, turn, shift] of PHOTOS.slice(0, 3)) {
+      expect(found({ color: CREAM, shade: 0.55, depth, rib: { width, color: NAVY }, softness, turn, shift }).neckline, `${softness} ${turn}°`).toBeNull()
+    }
+  })
+
   it.each<[string, HangingTop]>([
     ['plain fabric', { color: CREAM, opening: false }],
     ['a check', { color: [150, 40, 40], weave: 'check', check: [40, 40, 60], opening: false }],
