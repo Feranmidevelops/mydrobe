@@ -64,8 +64,12 @@ const SUPPORT = 0.75
 /** Confidence: the longest stretch with no edge (a label hiding it), as a share of the front's width. */
 const LONGEST_GAP = 0.06
 
-/** Confidence: the least width of the opening, as a share of the front's width. */
-const LEAST_WIDTH = 0.15
+/**
+ * Confidence: the least width of the opening, as a share of the front's
+ * width. A neck opening is a fifth of the front wide or more; a label hanging
+ * into it, or a patch or print on the front, is narrower.
+ */
+const LEAST_WIDTH = 0.2
 
 /** How far inside a neckline another must stay to be the inner edge of a rib or collar along it. */
 const PEEL_GAP = 3
@@ -548,7 +552,7 @@ function trimmed(lattice: Lattice, axis: Axis, path: Path): Path {
 }
 
 /** Whether a path is a neckline found with confidence (see the module's notes), and how high its sides reach. */
-function judged(lattice: Lattice, axis: Axis, path: Path, dip: number) {
+function judged(lattice: Lattice, axis: Axis, path: Path, dip: number, least = LEAST_WIDTH) {
   const units = unitsOf(lattice, axis, path)
   let [supported, gap, longest] = [0, 0, 0]
   // The sides must rise through the shoulders' row, and be seen as an edge there, not just reach it.
@@ -568,7 +572,7 @@ function judged(lattice: Lattice, axis: Axis, path: Path, dip: number) {
   const ok =
     supported >= SUPPORT * Math.max(1, units.length) &&
     longest <= Math.max(2, Math.round(LONGEST_GAP * lattice.width)) &&
-    width >= LEAST_WIDTH * lattice.width &&
+    width >= least * lattice.width &&
     path.ys[0] - path.ys[path.end] >= Math.max(2, Math.round(dip / 2)) &&
     reach.row <= lattice.shoulders &&
     through > 0 &&
@@ -663,7 +667,8 @@ function innerEdge(lattice: Lattice, axis: Axis, outer: Path, dip: number) {
   const found = traceConvex(lattice, axis, forbid, outer.end)
   if (!found) return null
   const inner = trimmed(lattice, axis, found)
-  const verdict = judged(lattice, axis, inner, dip)
+  // The opening is as wide as its outline: the rib narrows it by its own width.
+  const verdict = judged(lattice, axis, inner, dip, 0)
   if (!verdict.ok) return null
   const distances = pointsOf(inner)
     .map(([d, y]) => Math.min(...outerPoints.map(([e, z]) => Math.hypot(d - e, y - z))))

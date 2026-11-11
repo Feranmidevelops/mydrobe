@@ -132,6 +132,10 @@ describe('findNeckline', () => {
     ['plain fabric', { color: CREAM, opening: false }],
     ['a check', { color: [150, 40, 40], weave: 'check', check: [40, 40, 60], opening: false }],
     ['a logo straddling the band', { color: CREAM, opening: false, front: [{ kind: 'logo', width: 80, height: 16, below: 0.5, at: 'centre', color: [200, 40, 40] }] }],
+    ...([68, 76, 84] as const).map((width): [string, HangingTop] => [
+      `a patch ${width} px wide from above the shoulders to below the band, as narrow as a label`,
+      { color: CREAM, opening: false, front: [{ kind: 'patch', width, top: 20, bottom: 70, color: NAVY }] },
+    ]),
     ['a panel down the middle', { color: CREAM, opening: false, front: [{ kind: 'panel', width: 90, color: NAVY }] }],
     ['two stripes down the front', { color: CREAM, opening: false, front: [{ kind: 'stripes', width: 6, apart: 45, color: NAVY }] }],
     ['an opening whose left side is black on black', { color: [25, 25, 28], shade: 0.4, hidden: 'left' }],

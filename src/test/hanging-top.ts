@@ -47,6 +47,8 @@ export type OnFront =
   | { kind: 'panel'; width: number; color: Rgb }
   /** Two stripes `width` wide (at scale 1) down the front from its top, `apart` either side of the middle. */
   | { kind: 'stripes'; width: number; apart: number; color: Rgb }
+  /** A patch `width` wide (at scale 1) in the middle of the front, from row `top` to row `bottom` (at scale 1). */
+  | { kind: 'patch'; width: number; top: number; bottom: number; color: Rgb }
 
 export interface HangingTop {
   color: Rgb
@@ -455,6 +457,10 @@ export function hangingTop(top: HangingTop): DrawnTop {
       const w = (thing.width * s) / 2
       add('panel', (u) => Math.abs(u) < w, () => thing.color, [-w, w, -40, H + 40])
       frontIds.push('panel')
+    } else if (thing.kind === 'patch') {
+      const [w, top, low] = [(thing.width * s) / 2, thing.top * s, thing.bottom * s]
+      add('patch', (u, y) => Math.abs(u) < w && y >= top && y < low, () => thing.color, [-w, w, top, low])
+      frontIds.push('patch')
     } else if (thing.kind === 'stripes') {
       const [w, apart] = [(thing.width * s) / 2, thing.apart * s]
       add('stripes', (u) => Math.abs(Math.abs(u) - apart) < w, () => thing.color, [-apart - w, apart + w, -40, H + 40])
