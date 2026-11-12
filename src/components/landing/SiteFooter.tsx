@@ -13,6 +13,9 @@ export function SiteFooter() {
           <Link to={ROUTES.fittingRoom} className="transition hover:text-espresso">
             Fitting room
           </Link>
+          <Link to={ROUTES.privacy} className="transition hover:text-espresso">
+            Privacy
+          </Link>
           <span>© {new Date().getFullYear()} Mydrobe</span>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { PageLoadError } from '../components/ui/PageLoadError'
 import { PageLoading } from '../components/ui/PageLoading'
 import LandingPage from './LandingPage'
 import { loadFittingRoomPage } from './pages'
+import PrivacyPage from './PrivacyPage'
 import { ROUTES, useRoute, type Route } from './router'
 
 const FittingRoomPage = lazy(loadFittingRoomPage)
@@ -11,6 +12,7 @@ const FittingRoomPage = lazy(loadFittingRoomPage)
 const PAGE_TITLES: Record<Route, string> = {
   [ROUTES.home]: 'Mydrobe · Virtual wardrobe',
   [ROUTES.fittingRoom]: 'Fitting room · Mydrobe',
+  [ROUTES.privacy]: 'Privacy · Mydrobe',
 }
 
 export default function App() {
@@ -29,6 +31,8 @@ export default function App() {
       </ErrorBoundary>
     )
   }
+
+  if (route === ROUTES.privacy) return <PrivacyPage />
 
   return <LandingPage />
 }

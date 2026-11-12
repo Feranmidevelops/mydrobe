@@ -12,6 +12,11 @@ describe('matchRoute', () => {
     expect(matchRoute('/fitting-room/')).toBe(ROUTES.fittingRoom)
   })
 
+  it('recognises the privacy page', () => {
+    expect(matchRoute('/privacy')).toBe(ROUTES.privacy)
+    expect(matchRoute('/privacy/')).toBe(ROUTES.privacy)
+  })
+
   it('sends the root and unknown paths home', () => {
     expect(matchRoute('/')).toBe(ROUTES.home)
     expect(matchRoute('')).toBe(ROUTES.home)
