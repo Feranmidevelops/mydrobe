@@ -437,7 +437,9 @@ function shadowTest(background: Rgb): ((color: Rgb) => boolean) | null {
  * a dark check on a dark backdrop that the garment encloses, counts as
  * garment. Tidying the mask fills notches along its edge, but a stretch of
  * backdrop bigger than a notch that looks nothing like the garment goes back
- * to being background (see reopenBackdrop). Only the largest patch of garment
+ * to being background (see reopenBackdrop). Squares of a pattern that match
+ * the backdrop, which it takes for its own where they meet the garment's
+ * edge, are filled back in (see fillBites). Only the largest patch of garment
  * is kept.
  *
  * Which patch that is gets decided by colour alone: the barrier only fills in
@@ -456,13 +458,18 @@ export function garmentMask(
   const garment = (isBackground: Uint8Array) => {
     const mask = new Uint8Array(total)
     for (let i = 0; i < total; i++) mask[i] = isBackground[i] ? 0 : 1
-    return reopenBackdrop(image, tidyMask(mask, width, height), isBackground)
+    const tidied = tidyMask(mask, width, height)
+    const looksOwn = ownColorTest(image, tidied, isBackground)
+    return { mask: reopenBackdrop(image, tidied, isBackground, looksOwn), looksOwn }
   }
+  // Bites take a while to find, so they're filled only in the mask returned.
+  const whole = ({ mask, looksOwn }: ReturnType<typeof garment>) => fillBites(mask, width, height, looksOwn)
 
   if (!background) {
+    // Transparency leaves nothing to take a bite.
     const isBackground = new Uint8Array(total)
     for (let i = 0; i < total; i++) if (data[i * 4 + 3] < 128) isBackground[i] = 1
-    return largestComponent(garment(isBackground), width, height)
+    return largestComponent(garment(isBackground).mask, width, height)
   }
 
   // A busy backdrop (concrete, wood grain) needs more slack than a plain
@@ -478,12 +485,13 @@ export function garmentMask(
     if (colorDistance(color, background) <= range || shadow?.(color)) inRange[i] = 1
   }
   const backdrop = growBackdrop(image, inRange, step, null)
-  const byColour = largestComponent(garment(backdrop), width, height)
+  const colours = garment(backdrop)
+  const byColour = largestComponent(colours.mask, width, height)
   // When the barrier holds back none of the backdrop the colours alone take,
   // growing it again would give the same mask, so that work is skipped.
   const blocked = textureBarrier(image, inRange, tolerance)
-  if (!blocked.some((held, i) => held === 1 && backdrop[i] === 1)) return byColour
-  const withBarrier = garment(growBackdrop(image, inRange, step, blocked))
+  if (!blocked.some((held, i) => held === 1 && backdrop[i] === 1)) return largestComponent(whole(colours), width, height)
+  const withBarrier = whole(garment(growBackdrop(image, inRange, step, blocked)))
   return byColour.includes(1)
     ? largestComponent(withBarrier, width, height, byColour)
     : largestComponent(withBarrier, width, height)
@@ -589,6 +597,30 @@ function closingRadius(width: number, height: number) {
 const OWN_COLOR = 0.01
 
 /**
+ * A test for whether a pixel shows one of the garment's own colours: those
+ * of the pixels in `tidied` the backdrop never reached. A transparent pixel
+ * never does, so in a cut-out the test always fails.
+ */
+function ownColorTest(image: RgbaImage, tidied: Uint8Array, isBackground: Uint8Array): (i: number) => boolean {
+  const { data, width } = image
+  const bins = new Uint32Array(4096)
+  let garment = 0
+  for (let i = 0; i < tidied.length; i++) {
+    if (!tidied[i] || isBackground[i]) continue
+    bins[colorBin(data, i * 4)]++
+    garment++
+  }
+  const enough = Math.max(1, garment * OWN_COLOR)
+  const ownBin = new Int8Array(4096).fill(-1)
+  return (i: number) => {
+    if (data[i * 4 + 3] < 128) return false
+    const bin = colorBin(data, i * 4)
+    if (ownBin[bin] < 0) ownBin[bin] = nearbyCount(bins, pixel(image, i % width, Math.floor(i / width))) >= enough ? 1 : 0
+    return ownBin[bin] === 1
+  }
+}
+
+/**
  * Sends back to background each patch of backdrop that tidyMask's closing
  * filled in although the backdrop had reached it, such as the strip of wall
  * between an arm and the body, the gap between trouser legs or the corner
@@ -596,32 +628,20 @@ const OWN_COLOR = 0.01
  * copied onto the front as they are; as background, they get the fabric.
  *
  * A patch stays filled if it's no bigger than a notch, or if most of it shows
- * colours the garment itself does: the dark squares of a check lost to a dark
- * backdrop, or deep shadow in a fold, are part of the garment, and look it.
- * In a cut-out, where `isBackground` is the transparent pixels, only the size
- * counts.
+ * colours the garment itself does (see ownColorTest): the dark squares of a
+ * check lost to a dark backdrop, or deep shadow in a fold, are part of the
+ * garment, and look it. In a cut-out, where `isBackground` is the transparent
+ * pixels, only the size counts.
  */
-function reopenBackdrop(image: RgbaImage, tidied: Uint8Array, isBackground: Uint8Array): Uint8Array {
-  const { data, width, height } = image
+function reopenBackdrop(
+  image: RgbaImage,
+  tidied: Uint8Array,
+  isBackground: Uint8Array,
+  looksOwn: (i: number) => boolean,
+): Uint8Array {
+  const { width, height } = image
   const total = width * height
   const notch = (closingRadius(width, height) / 2) ** 2
-  // The garment's own colours: those of the pixels the backdrop never reached.
-  const bins = new Uint32Array(4096)
-  let garment = 0
-  for (let i = 0; i < total; i++) {
-    if (!tidied[i] || isBackground[i]) continue
-    bins[colorBin(data, i * 4)]++
-    garment++
-  }
-  const enough = Math.max(1, garment * OWN_COLOR)
-  const ownBin = new Int8Array(4096).fill(-1)
-  const looksOwn = (i: number) => {
-    if (data[i * 4 + 3] < 128) return false
-    const bin = colorBin(data, i * 4)
-    if (ownBin[bin] < 0) ownBin[bin] = nearbyCount(bins, pixel(image, i % width, Math.floor(i / width))) >= enough ? 1 : 0
-    return ownBin[bin] === 1
-  }
-
   const result = tidied.slice()
   const seen = new Uint8Array(total)
   const queue = new Int32Array(total)
@@ -646,6 +666,179 @@ function reopenBackdrop(image: RgbaImage, tidied: Uint8Array, isBackground: Uint
     }
     if (tail <= notch || own * 2 >= tail) continue
     for (let k = 0; k < tail; k++) result[queue[k]] = 0
+  }
+  return result
+}
+
+/** How far a bite (see fillBites) may reach, as a share of the photo's long side: a little more than a big check's square. */
+const BITE = 0.08
+
+/** How far a bite's walls may step from one line to the next, as a share of BITE. */
+const BITE_STEP = 1 / 8
+
+/**
+ * The slants of the lines down which fillBites looks for walls above and
+ * below, in pixels across for each pixel down: straight down, and leaning a
+ * little either way, as a sleeve hangs out from the body.
+ */
+const BITE_SLANTS = [0, 1 / 4, -1 / 4]
+
+/**
+ * The image as lines of pixels: rows, or columns slanting `slant` pixels
+ * across for each pixel down. `index` gives the pixel `at` steps along a
+ * line, or -1 where a slanting column runs outside the image. For columns,
+ * `across` gives how far across each row a column's pixel lies from its number.
+ */
+function pixelLines(width: number, height: number, down: boolean, slant = 0) {
+  if (!down) return { lines: height, length: width, across: null, index: (line: number, at: number) => line * width + at }
+  const drift = Math.floor((height - 1) * slant)
+  const first = Math.min(0, -drift)
+  const across = Int32Array.from({ length: height }, (_, y) => first + Math.floor(y * slant))
+  return {
+    lines: width + Math.abs(drift),
+    length: height,
+    across,
+    index: (line: number, at: number) => {
+      const x = line + across[at]
+      return x >= 0 && x < width ? at * width + x : -1
+    },
+  }
+}
+
+/**
+ * Fills back the bites the backdrop takes out of a garment's edge where
+ * squares of its pattern match the backdrop, such as the light squares of a
+ * grey check hung on a grey wall, or the black squares of a flannel on black:
+ * the backdrop grows into each such square it meets on the garment's edge,
+ * leaving a notch too wide for tidyMask's closing.
+ *
+ * A bite is a stretch of backdrop between two walls of garment at most BITE
+ * apart, such as the darker squares either side of the light one, that:
+ * - runs no further than that along the walls, where the gap between an arm
+ *   and the body, or between trouser legs, runs on much further;
+ * - has walls that run on smoothly from line to line, so a square on a sleeve
+ *   isn't taken for part of a gap beside the sleeve;
+ * - opens out at one end, at least, onto backdrop at least twice as wide, as
+ *   a square on the garment's edge opens onto the backdrop beyond it; where
+ *   the gap under an arm narrows for a while, it meets garment at one end and
+ *   the gap going on only a little wider at the other;
+ * - mostly shows the garment's own colours, as a square matching others
+ *   inside the garment does, so backdrop that looks nothing like the garment
+ *   stays as it is.
+ *
+ * Gaps between walls above and below, such as a light square on the side of
+ * a sleeve between two darker ones, are filled first, then gaps between
+ * walls to the left and right, such as a light square on the hem. The order
+ * matters for trousers: light squares down the inside of each leg widen the
+ * gap between the legs in places, leaving square-sized stretches of it
+ * between darker squares that would pass for bites; with the legs' squares
+ * filled first, the gap runs whole again.
+ */
+function fillBites(mask: Uint8Array, width: number, height: number, looksOwn: (i: number) => boolean): Uint8Array {
+  // A backdrop showing none of the garment's own colours can't hold a bite.
+  if (!mask.some((garment, i) => garment === 0 && looksOwn(i))) return mask
+  const longest = Math.max(1, Math.round(Math.max(width, height) * BITE))
+  const step = Math.max(2, Math.round(longest * BITE_STEP))
+  // Columns (straight and slanting) to find gaps between walls above and
+  // below, then rows to find gaps between walls to the left and right.
+  const passes = [
+    ...BITE_SLANTS.map((slant) => pixelLines(width, height, true, slant)),
+    pixelLines(width, height, false),
+  ]
+  let result = mask
+  for (const { lines, length, across, index } of passes) {
+    const garmentAt = (i: number) => i >= 0 && result[i] === 1
+
+    // The gaps: stretches of background along a line between two garment
+    // pixels, no longer than `longest`. Each line is walked noting where it
+    // last met garment; a slanting column's stretch outside the image never
+    // lies between two.
+    const gaps: { line: number; start: number; end: number }[] = []
+    const firstOnLine = new Int32Array(lines + 1)
+    for (let line = 0; line < lines; line++) {
+      firstOnLine[line] = gaps.length
+      let last = -1
+      for (let at = 0; at < length; at++) {
+        let i = line * width + at
+        if (across) {
+          const x = line + across[at]
+          if (x < 0 || x >= width) continue
+          i = at * width + x
+        }
+        if (!result[i]) continue
+        if (last >= 0 && at - last > 1 && at - last - 1 <= longest) gaps.push({ line, start: last + 1, end: at - 1 })
+        last = at
+      }
+    }
+    firstOnLine[lines] = gaps.length
+
+    // Patches of gaps: each joined to those on the next line that overlap it,
+    // with walls no more than `step` further on or back.
+    const parent = Int32Array.from(gaps, (_, k) => k)
+    const root = (k: number): number => {
+      while (parent[k] !== k) k = parent[k] = parent[parent[k]]
+      return k
+    }
+    for (let line = 0; line + 1 < lines; line++) {
+      let a = firstOnLine[line]
+      let b = firstOnLine[line + 1]
+      while (a < firstOnLine[line + 1] && b < firstOnLine[line + 2]) {
+        const [p, q] = [gaps[a], gaps[b]]
+        if (p.start <= q.end && q.start <= p.end && Math.abs(p.start - q.start) <= step && Math.abs(p.end - q.end) <= step) {
+          parent[root(a)] = root(b)
+        }
+        if (p.end < q.end) a++
+        else b++
+      }
+    }
+
+    // Whether a gap opens out on the next line beyond its patch: mostly onto
+    // backdrop, in a stretch at least twice as long or never walled in.
+    const opensOut = (gap: (typeof gaps)[number], line: number) => {
+      if (line < 0 || line >= lines) return true
+      const span = gap.end - gap.start + 1
+      let backdrop = 0
+      let wide = false
+      for (let at = gap.start; at <= gap.end; at++) {
+        if (garmentAt(index(line, at))) continue
+        // Follow this stretch either way, only as far as it takes to show it's twice as long.
+        let [from, to] = [at, at]
+        while (from > 0 && to - from + 1 < 2 * span && !garmentAt(index(line, from - 1))) from--
+        while (to < length - 1 && to - from + 1 < 2 * span && !garmentAt(index(line, to + 1))) to++
+        wide ||= to - from + 1 >= 2 * span || from === 0 || to === length - 1
+        backdrop += Math.min(to, gap.end) - at + 1
+        at = Math.min(to, gap.end)
+      }
+      return backdrop * 2 > span && wide
+    }
+
+    // Each patch's reach along the lines, size, pixels in the garment's own
+    // colours, and whether it opens out before its first line or after its last.
+    const low = new Int32Array(gaps.length).fill(lines)
+    const high = new Int32Array(gaps.length).fill(-1)
+    const size = new Int32Array(gaps.length)
+    const own = new Int32Array(gaps.length)
+    gaps.forEach((gap, k) => {
+      const r = root(k)
+      low[r] = Math.min(low[r], gap.line)
+      high[r] = Math.max(high[r], gap.line)
+      size[r] += gap.end - gap.start + 1
+      for (let at = gap.start; at <= gap.end; at++) if (looksOwn(index(gap.line, at))) own[r]++
+    })
+    const opens = new Uint8Array(gaps.length)
+    gaps.forEach((gap, k) => {
+      const r = root(k)
+      if (gap.line === low[r] && opensOut(gap, gap.line - 1)) opens[r] = 1
+      if (gap.line === high[r] && opensOut(gap, gap.line + 1)) opens[r] = 1
+    })
+
+    const filled = result.slice()
+    gaps.forEach((gap, k) => {
+      const r = root(k)
+      if (high[r] - low[r] >= longest || own[r] * 2 < size[r] || !opens[r]) return
+      for (let at = gap.start; at <= gap.end; at++) filled[index(gap.line, at)] = 1
+    })
+    result = filled
   }
   return result
 }
