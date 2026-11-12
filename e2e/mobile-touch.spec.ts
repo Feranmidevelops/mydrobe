@@ -51,6 +51,18 @@ test('one finger turns the mannequin a full circle, and the page stays still', a
   expect(changedShare(home, await settledStageShot(page), figure)).toBeLessThan(0.02)
 })
 
+test('a drag that starts level with the body size buttons, off to one side, still turns the mannequin', async ({
+  page,
+}) => {
+  await openFittingRoom(page)
+  const home = await settledStageShot(page)
+  const { box } = await canvasCentre(page)
+  const presets = await stage(page).getByRole('radiogroup', { name: 'Body preset' }).boundingBox()
+  // The row the buttons sit in spans the whole stage, but only the buttons should take touches.
+  await touchDrag(page, { x: box.x + 20, y: presets!.y + presets!.height / 2 }, box.height / 4)
+  expect(changedShare(home, await settledStageShot(page), homeRegion(home, FIGURE))).toBeGreaterThan(0.05)
+})
+
 test('two fingers zoom, and the page stays still', async ({ page }) => {
   await openFittingRoom(page)
   const home = await settledStageShot(page)
