@@ -1,14 +1,15 @@
 import { useSyncExternalStore } from 'react'
 
 /*
- * A deliberately tiny router: two pages don't justify a routing library.
+ * A deliberately tiny router: three pages don't justify a routing library.
  * It keeps the path in the address bar, so links can be shared and the back
- * button works; hosting needs the usual single-page-app fallback to index.html.
+ * button works; hosting has to serve index.html for each page's path.
  */
 
 export const ROUTES = {
   home: '/',
   fittingRoom: '/fitting-room',
+  privacy: '/privacy',
 } as const
 
 export type Route = (typeof ROUTES)[keyof typeof ROUTES]
@@ -27,7 +28,7 @@ function subscribe(listener: () => void) {
 /** Maps any path to a known page; unknown paths land on the home page. */
 export function matchRoute(pathname: string): Route {
   const path = pathname.replace(/\/+$/, '') || '/'
-  return path === ROUTES.fittingRoom ? ROUTES.fittingRoom : ROUTES.home
+  return Object.values(ROUTES).find((route) => route === path) ?? ROUTES.home
 }
 
 export function navigate(to: Route) {
