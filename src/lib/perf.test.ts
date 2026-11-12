@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mark, measure, PERF_MARKS } from './perf'
+import { mark, measure, PERF_MARKS, PERF_PROBE } from './perf'
 
 describe('performance marks', () => {
   afterEach(() => {
@@ -24,5 +24,10 @@ describe('performance marks', () => {
       throw new Error('not supported')
     })
     expect(() => mark(PERF_MARKS.firstFrame)).not.toThrow()
+  })
+
+  it('leaves the performance probe off unless the address asks for it with ?perf', () => {
+    expect(window.location.search).toBe('')
+    expect(PERF_PROBE).toBe(false)
   })
 })
