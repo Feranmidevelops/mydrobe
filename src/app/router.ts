@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react'
 /*
  * A deliberately tiny router: three pages don't justify a routing library.
  * It keeps the path in the address bar, so links can be shared and the back
- * button works; hosting has to serve index.html for each page's path.
+ * button works; the host serves index.html for each page's path (public/_redirects).
  */
 
 export const ROUTES = {
