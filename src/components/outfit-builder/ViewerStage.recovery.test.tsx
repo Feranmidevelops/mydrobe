@@ -1,9 +1,10 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { reloadViewer } from './load-viewer'
 import { ViewerStage } from './ViewerStage'
 
-const viewer = vi.hoisted(() => ({ crash: false }))
+const viewer = vi.hoisted(() => ({ crash: false, failDownload: false }))
 
 // jsdom has no WebGL, so a stand-in plays the 3D view: it can crash, or lose its context.
 vi.mock('../../features/mannequin/webgl', () => ({ supportsWebGL: () => true }))
@@ -17,10 +18,24 @@ vi.mock('../../features/mannequin/FittingRoom', () => ({
     )
   },
 }))
+// The real module's contract, over a download that a test can make fail once.
+vi.mock('./load-viewer', async () => {
+  const { lazy } = await import('react')
+  const load = () => {
+    if (!viewer.failDownload) return import('../../features/mannequin/FittingRoom')
+    viewer.failDownload = false
+    return Promise.reject(
+      new TypeError('Failed to fetch dynamically imported module: http://localhost/assets/FittingRoom-a1.js'),
+    )
+  }
+  let current = lazy(load)
+  return { currentViewer: () => current, reloadViewer: () => (current = lazy(load)) }
+})
 
 describe('ViewerStage', () => {
   afterEach(() => {
     viewer.crash = false
+    viewer.failDownload = false
   })
 
   it('offers to restart when the browser takes the 3D context away', async () => {
@@ -42,6 +57,20 @@ describe('ViewerStage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('The 3D viewer stopped')
     viewer.crash = false
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    expect(await screen.findByRole('button', { name: 'Lose the 3D context' })).toBeInTheDocument()
+    quiet.mockRestore()
+  })
+
+  it('lets you try again after the 3D viewer fails to download', async () => {
+    const user = userEvent.setup()
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+    viewer.failDownload = true
+    reloadViewer() // start from a 3D view that hasn't been downloaded yet
+    render(<ViewerStage />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The 3D viewer stopped')
     await user.click(screen.getByRole('button', { name: 'Try again' }))
 
     expect(await screen.findByRole('button', { name: 'Lose the 3D context' })).toBeInTheDocument()

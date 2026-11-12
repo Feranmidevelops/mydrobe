@@ -121,10 +121,6 @@ test.describe('when part of the app fails to download', () => {
   })
 
   test('Try again brings the 3D viewer back without a reload', async ({ page }) => {
-    test.fail(
-      true,
-      'Known gap: React.lazy keeps the failed import and Chromium caches the failed module, so the retry fails again. A reload works.',
-    )
     await page.route(VIEWER_CHUNK, (route) => route.abort('failed'))
     await page.goto('/fitting-room')
     const stopped = alertWith(page, 'The 3D viewer stopped')
