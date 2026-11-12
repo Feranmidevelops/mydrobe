@@ -1,4 +1,4 @@
-import { loadFittingRoomPage } from '../../app/pages'
+import { prefetchFittingRoomPage } from '../../app/pages'
 import { ROUTES } from '../../app/router'
 import { HangerIcon } from '../ui/icons'
 import { Link } from '../ui/Link'
@@ -32,8 +32,8 @@ export function SiteHeader() {
 
         <Link
           to={ROUTES.fittingRoom}
-          onPointerEnter={loadFittingRoomPage}
-          onFocus={loadFittingRoomPage}
+          onPointerEnter={prefetchFittingRoomPage}
+          onFocus={prefetchFittingRoomPage}
           className="inline-flex items-center gap-2 rounded-full bg-espresso px-4 py-2 text-sm font-medium text-cream transition hover:bg-cocoa"
         >
           <HangerIcon className="size-4" />

@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { PHOTOS } from './fixtures/photos.ts'
 import { openFittingRoom } from './support/fitting-room.ts'
 import { expect, test } from './support/test.ts'
@@ -10,6 +10,15 @@ async function openUpload(page: Page) {
   const dialog = page.getByRole('dialog', { name: 'Add clothes' })
   await expect(dialog).toBeVisible()
   return dialog
+}
+
+/**
+ * The suggested name takes its colour from the finished analysis, which can
+ * take more than the usual 10 s when other tests keep the machine busy.
+ */
+async function waitForAnalysis(dialog: Locator) {
+  await expect(dialog.getByRole('heading', { name: 'Check how it came out' })).toBeVisible()
+  await expect(dialog.getByText('Finding the garment…')).toHaveCount(0, { timeout: 30_000 })
 }
 
 test('turns away a photo too small to use', async ({ page }) => {
@@ -31,6 +40,7 @@ test('turns away a file that only pretends to be a photo', async ({ page }) => {
 test('warns when a shirt is called trousers, and names a short-sleeved shirt a tee', async ({ page }) => {
   const dialog = await openUpload(page)
   await dialog.getByLabel('Choose a photo').setInputFiles(PHOTOS.shirt)
+  await waitForAnalysis(dialog)
   const name = dialog.getByRole('textbox', { name: 'Name', exact: true })
   await expect(name).toHaveValue('Red shirt')
 
@@ -53,6 +63,6 @@ test('accepts a photo dropped onto the dialog', async ({ page }) => {
     { base64: PHOTOS.shirt.buffer.toString('base64'), name: PHOTOS.shirt.name, type: PHOTOS.shirt.mimeType },
   )
   await dialog.getByRole('group', { name: 'Add a photo' }).dispatchEvent('drop', { dataTransfer })
-  await expect(dialog.getByRole('heading', { name: 'Check how it came out' })).toBeVisible()
+  await waitForAnalysis(dialog)
   await expect(dialog.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Red shirt')
 })
