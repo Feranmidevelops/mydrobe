@@ -1,10 +1,8 @@
-import { lazy, Suspense, useCallback, useState } from 'react'
+import { Suspense, useCallback, useState } from 'react'
 import { supportsWebGL } from '../../features/mannequin/webgl'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
+import { currentViewer, reloadViewer } from './load-viewer'
 import { ViewerLoading } from './ViewerLoading'
-
-// Three.js is the heaviest part of the app, so it loads after the shell.
-const FittingRoom = lazy(() => import('../../features/mannequin/FittingRoom'))
 
 interface ViewerMessageProps {
   title: string
@@ -36,6 +34,8 @@ function ViewerMessage({ title, children, role = 'status', action }: ViewerMessa
 
 export function ViewerStage() {
   const [webgl] = useState(supportsWebGL)
+  /** The 3D view, loaded on demand. Try again swaps in a new one after a failed download. */
+  const [FittingRoom, setFittingRoom] = useState(currentViewer)
   /** Bumped to start the 3D view again from scratch, with a fresh WebGL context. */
   const [attempt, setAttempt] = useState(0)
   const [contextLost, setContextLost] = useState(false)
@@ -72,7 +72,18 @@ export function ViewerStage() {
     <ErrorBoundary
       label="3D viewer"
       fallback={(retry) => (
-        <ViewerMessage role="alert" title="The 3D viewer stopped" action={{ label: 'Try again', onClick: retry }}>
+        <ViewerMessage
+          role="alert"
+          title="The 3D viewer stopped"
+          action={{
+            label: 'Try again',
+            onClick: () => {
+              const fresh = reloadViewer()
+              setFittingRoom(() => fresh)
+              retry()
+            },
+          }}
+        >
           Something went wrong while drawing the mannequin. Your outfit is unaffected. If it keeps
           happening, reload the page.
         </ViewerMessage>
