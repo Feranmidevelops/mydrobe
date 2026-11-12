@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test'
+import type { GarmentRecord } from '../../src/lib/db.ts'
 import { waitForFirstFrame } from './marks.ts'
 
 /** The lazily loaded chunks in the production build. Rolldown's hashes can contain - and _. */
@@ -47,6 +48,85 @@ export async function blockWebGL(page: Page, kinds = ['webgl', 'webgl2', 'experi
       return blocked.includes(type) ? null : (original as (...args: unknown[]) => unknown).call(this, type, ...rest)
     } as typeof original
   }, kinds)
+}
+
+export interface SavedGarment {
+  record: GarmentRecord
+  photo: Buffer
+  /** Saved under record.thumbnailKey, when the record has one. */
+  thumbnail?: Buffer
+}
+
+/** A saved photo garment made from a test photo, as the app would store it after an upload. */
+export function photoGarment(
+  name: string,
+  photo: { buffer: Buffer; mimeType: string },
+  kind: 'shirt' | 'trousers',
+  colour: string,
+): SavedGarment {
+  const id = `e2e-${name.toLowerCase().replace(/\W+/g, '-')}`
+  const now = Date.now()
+  return {
+    record: {
+      id,
+      name,
+      category: kind,
+      templateId: kind === 'shirt' ? 'shirt-long-sleeve' : 'trousers-straight',
+      tags: [],
+      palette: [colour],
+      createdAt: now,
+      updatedAt: now,
+      imageKey: `${id}-photo`,
+      thumbnailKey: `${id}-thumbnail`,
+      mimeType: photo.mimeType,
+      fileSize: photo.buffer.length,
+    },
+    photo: photo.buffer,
+    thumbnail: photo.buffer,
+  }
+}
+
+/**
+ * Writes garments and their photos straight into the saved wardrobe, as if
+ * they had been added on an earlier visit. Call it once the saved wardrobe has
+ * loaded: before that, opening the database would create an empty one.
+ */
+export async function seedGarments(page: Page, garments: SavedGarment[]) {
+  await page.evaluate(
+    async (garments) => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('mydrobe')
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      try {
+        // Dexie's version 1 is IndexedDB version 10. Anything else means the schema moved on.
+        if (db.version !== 10 || !db.objectStoreNames.contains('garments') || !db.objectStoreNames.contains('images')) {
+          throw new Error(`Unexpected saved wardrobe: version ${db.version}`)
+        }
+        const bytes = (base64: string) => Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)).buffer
+        await new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction(['garments', 'images'], 'readwrite')
+          for (const { record, photo, thumbnail } of garments) {
+            transaction.objectStore('images').put({ id: record.imageKey, bytes: bytes(photo), type: record.mimeType })
+            if (thumbnail && record.thumbnailKey) {
+              transaction.objectStore('images').put({ id: record.thumbnailKey, bytes: bytes(thumbnail), type: record.mimeType })
+            }
+            transaction.objectStore('garments').put(record)
+          }
+          transaction.oncomplete = () => resolve()
+          transaction.onerror = () => reject(transaction.error)
+        })
+      } finally {
+        db.close()
+      }
+    },
+    garments.map(({ record, photo, thumbnail }) => ({
+      record,
+      photo: photo.toString('base64'),
+      thumbnail: thumbnail?.toString('base64'),
+    })),
+  )
 }
 
 /**
