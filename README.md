@@ -121,13 +121,13 @@ Shots are defined in `src/capture/shots.ts`. The capture page isn't part of the 
 
 ## Mannequin asset
 
-**No licensed GLB/GLTF mannequin has been verified yet.** The figure is generated in code (`src/features/mannequin/body-shape.ts`) and labelled "Procedural mannequin · placeholder" in the UI (`mannequin-asset.ts`).
+The mannequin is generated in code (`src/features/mannequin/body-shape.ts`), so there's no third-party model to license. It's the mannequin Mydrobe launches with. A licensed GLB/GLTF model could replace it later.
 
 ### Replacing the procedural mannequin
 
 1. Source one GLB per preset (or one rigged GLB with shape keys). Confirm the licence allows commercial redistribution, and record the source, author and licence below.
 2. Add the files under `public/models/`. The planned names are `mannequin-small.glb`, `mannequin-medium.glb` and `mannequin-large.glb`.
-3. Load them in `Mannequin.tsx` with Drei's `useGLTF`, and switch `MANNEQUIN_ASSET` away from `procedural` so the placeholder label disappears.
+3. Load them in `Mannequin.tsx` with Drei's `useGLTF`.
 4. Keep garments fitting: templates currently follow the procedural body's cross-sections. A new body needs matching cross-sections measured from the model, or garment meshes authored against it.
 
 | Asset | Source | Licence |
@@ -142,7 +142,7 @@ Shots are defined in `src/capture/shots.ts`. The capture page isn't part of the 
 - What's on the mannequin isn't remembered between visits; save it as an outfit to keep it.
 - Only shirts and trousers can be worn on the mannequin. Other uploads (outerwear, shoes, accessories) are kept in the wardrobe in 2D.
 - Photos that break the [photo rules](docs/milestone-2-photo-trial.md#the-input-contract-for-uploads) (worn, folded, busy backgrounds) separate poorly. The review step shows this before anything is added. A hanger can show at the collar, and background can peek through a neck opening.
-- The mannequin is a stylised placeholder, not a realistic body scan. Garments are fitted shells with no cloth simulation, folds or drape.
+- The mannequin is a stylised figure generated in code, not a realistic body scan. Garments are fitted shells with no cloth simulation, folds or drape.
 - The presets are visual only. They don't predict fit or recommend sizes.
 - The failure states were checked with simulated failures (a failed download, a forced WebGL context loss) in desktop Chrome with phone-sized windows, not yet on real low-end phones.
 

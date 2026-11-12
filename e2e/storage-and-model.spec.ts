@@ -1,5 +1,4 @@
 import type { Page } from '@playwright/test'
-import { MANNEQUIN_ASSET } from '../src/features/mannequin/mannequin-asset.ts'
 import type { GarmentRecord } from '../src/lib/db.ts'
 import { alertWith, currentOutfit, garmentCard, stageCanvas, storageReady } from './support/fitting-room.ts'
 import { fitFailures, pageNow, waitForFitted } from './support/marks.ts'
@@ -126,8 +125,8 @@ test('a saved photo that no longer opens is shown in plain colour, with a note s
   await expect(garmentCard(page, 'Broken photo shirt')).toHaveAttribute('aria-pressed', 'true')
 })
 
-test('labels the 3D figure as a placeholder until a licensed mannequin model is added', async ({ page }) => {
-  test.skip(MANNEQUIN_ASSET.kind !== 'procedural', 'a licensed mannequin model has replaced the placeholder')
+test('shows the 3D figure as the finished mannequin, with no placeholder label', async ({ page }) => {
   await page.goto('/fitting-room')
-  await expect(page.getByTitle(MANNEQUIN_ASSET.note)).toContainText(/Placeholder model|Procedural mannequin · placeholder/)
+  await expect(stageCanvas(page)).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Fitting room' }).getByText(/placeholder/i)).toHaveCount(0)
 })

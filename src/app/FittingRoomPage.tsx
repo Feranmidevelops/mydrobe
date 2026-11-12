@@ -8,7 +8,6 @@ import { ViewerStage } from '../components/outfit-builder/ViewerStage'
 import { NoticeToast } from '../components/ui/NoticeToast'
 import { UploadDialog } from '../components/upload/UploadDialog'
 import { WardrobePanel } from '../components/wardrobe/WardrobePanel'
-import { MANNEQUIN_ASSET } from '../features/mannequin/mannequin-asset'
 import { restoreSavedWardrobe } from '../features/storage/storage.service'
 import { mark, PERF_MARKS } from '../lib/perf'
 import { useWardrobeGarments } from '../hooks/useWardrobeGarments'
@@ -44,15 +43,6 @@ export default function FittingRoomPage() {
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-4 sm:p-6">
           <div>
             <AppHeader />
-            {MANNEQUIN_ASSET.kind === 'procedural' && (
-              <p
-                className="pointer-events-auto mt-2 inline-block rounded-full whitespace-nowrap bg-surface/80 px-2 py-0.5 text-[10px] sm:mt-3 sm:px-2.5 sm:py-1 sm:text-[11px] text-muted ring-1 ring-line backdrop-blur"
-                title={MANNEQUIN_ASSET.note}
-              >
-                <span className="sm:hidden">{MANNEQUIN_ASSET.shortLabel}</span>
-                <span className="hidden sm:inline">{MANNEQUIN_ASSET.label}</span>
-              </p>
-            )}
           </div>
           <div className="pointer-events-auto">
             <ViewControls />
