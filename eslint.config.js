@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'test-results', 'playwright-report', 'blob-report', 'perf-results']),
+  // .claude holds Claude Code's working copies of the repo (git worktrees), not this project's code.
+  globalIgnores(['dist', 'test-results', 'playwright-report', 'blob-report', 'perf-results', '.claude']),
   {
     files: ['src/**/*.{ts,tsx}'],
     extends: [
