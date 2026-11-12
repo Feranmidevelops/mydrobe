@@ -2,6 +2,7 @@ import {
   BufferGeometry,
   DoubleSide,
   Float32BufferAttribute,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   Raycaster,
@@ -16,6 +17,8 @@ import {
   buildGarmentGeometry,
   COLLAR,
   COLLAR_OPENING,
+  ellipseArc,
+  neckFacing,
   SHIRT_DRAPE,
   SHIRT_HEM_Y,
   shirtCollar,
@@ -69,6 +72,43 @@ function shirtReach(torso: TorsoProfile, point: Vector3, margin = 0) {
 }
 
 /**
+ * The points of `geometry` that lie on `ring` (at its height, on its ellipse),
+ * in the frame `toLocal` takes them into, with their place in the fabric
+ * across, in fabric order. `back` keeps only the back half.
+ */
+function pointsOnRing(geometry: BufferGeometry, ring: Ring, { toLocal, back = false }: { toLocal?: Matrix4; back?: boolean } = {}) {
+  const position = geometry.getAttribute('position')
+  const uv = geometry.getAttribute('uv')
+  const points: { at: Vector3; u: number }[] = []
+  for (let i = 0; i < position.count; i++) {
+    const at = new Vector3().fromBufferAttribute(position, i)
+    if (toLocal) at.applyMatrix4(toLocal)
+    const dz = at.z - (ring.cz ?? 0)
+    if (Math.abs(at.y - ring.y) > 1e-6 || (back && dz > 1e-6)) continue
+    if (Math.abs(((at.x - (ring.cx ?? 0)) / ring.rx) ** 2 + (dz / ring.rz) ** 2 - 1) > 1e-3) continue
+    points.push({ at, u: uv.getX(i) })
+  }
+  return points.sort((a, b) => a.u - b.u)
+}
+
+/**
+ * Checks that, from each point on a ring to the next, the fabric moves as far
+ * as the surface does, to within 1%: a check or stripe keeps its width all the
+ * way round. Points that coincide (where two parts share an edge) must share a
+ * place in the fabric too. Returns how many steps were checked.
+ */
+function expectFabricToFollowRing(points: { at: Vector3; u: number }[]) {
+  let steps = 0
+  for (let k = 1; k < points.length; k++) {
+    const distance = points[k].at.distanceTo(points[k - 1].at)
+    const across = points[k].u - points[k - 1].u
+    expect(Math.abs(across - distance)).toBeLessThanOrEqual(0.01 * distance + 2e-6)
+    if (distance > 1e-4) steps++
+  }
+  return steps
+}
+
+/**
  * Where a point sits against a pair of trousers: below 1 is inside the seat
  * or a leg, whichever it is deepest in.
  */
@@ -95,6 +135,37 @@ function trouserReach(shape: BodyShape, point: Vector3) {
   }
   return Math.min(...reaches)
 }
+
+describe('ellipseArc', () => {
+  it('measures the true distance round an ellipse, either way round', () => {
+    // Round a circle, the radius times the angle.
+    expect(ellipseArc(0.1, 0.1, 0.3, 2.5)).toBeCloseTo(0.22, 9)
+    // Round an oval, the sum of many short chords.
+    const [rx, rz] = [0.18, 0.11]
+    const chords = (from: number, to: number) => {
+      const n = 20000
+      let sum = 0
+      for (let i = 0; i < n; i++) {
+        const [a, b] = [from + ((to - from) * i) / n, from + ((to - from) * (i + 1)) / n]
+        sum += Math.hypot(rx * (Math.cos(b) - Math.cos(a)), rz * (Math.sin(b) - Math.sin(a)))
+      }
+      return sum
+    }
+    for (const [from, to] of [
+      [1.5 * Math.PI, 2 * Math.PI],
+      [1.5 * Math.PI, Math.PI],
+      [0, 0.1],
+      [2, 7.4],
+      [7.4, 2],
+    ]) {
+      expect(ellipseArc(rx, rz, from, to)).toBeCloseTo(Math.sign(to - from) * chords(Math.min(from, to), Math.max(from, to)), 7)
+    }
+    expect(ellipseArc(rx, rz, 1, 1)).toBe(0)
+    // A short step goes rx per radian at the centre back, and rz at the side.
+    expect(ellipseArc(rx, rz, 1.5 * Math.PI, 1.5 * Math.PI + 1e-3) / 1e-3).toBeCloseTo(rx, 6)
+    expect(ellipseArc(rx, rz, Math.PI, Math.PI + 1e-3) / 1e-3).toBeCloseTo(rz, 6)
+  })
+})
 
 describe.each(BODY_PRESETS)('%s garments', (preset) => {
   const shape = createBodyShape(preset)
@@ -252,6 +323,11 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
       expect(Math.abs(point.y - top.y)).toBeLessThan(0.001)
       expect(Math.hypot(point.x - onTop.x, point.z - onTop.z)).toBeLessThan(0.001)
     }
+    // Along that edge the back, the neckband and the collar share one run of
+    // fabric. (Not quite at the right side, where the neckband's own ends meet, inside the neck.)
+    const { rest } = buildGarmentGeometry('shirt-long-sleeve', shape)
+    const edge = pointsOnRing(rest, top, { back: true }).filter((point) => point.at.x < top.rx - 1e-5)
+    expect(expectFabricToFollowRing(edge)).toBeGreaterThanOrEqual(39 + 10)
   })
 
   it.each(['long', 'short'] as const)(
@@ -306,6 +382,77 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
     },
   )
 
+  it.each(['long', 'short'] as const)(
+    'lays the fabric round the back of a %s-sleeve shirt as far as the surface goes, so a check keeps its shape',
+    (sleeve) => {
+      // The back is wider than it is deep, so from the centre back, where it
+      // is flattest, to the sides, where it meets the front, the distance per
+      // radian falls: the fabric follows it rather than an average, which
+      // stretched a check across the centre back and squeezed it at the sides.
+      // (The top ring, shared with the neckband and collar, is checked with them.)
+      const { rest } = buildGarmentGeometry(sleeve === 'long' ? 'shirt-long-sleeve' : 'shirt-short-sleeve', shape)
+      for (const ring of shirtTorsoRings(shape, sleeve).back.slice(0, -1)) {
+        const points = pointsOnRing(rest, ring, { back: true })
+        expect(points[0].at.x).toBeCloseTo(-ring.rx, 4)
+        expect(points[points.length - 1].at.x).toBeCloseTo(ring.rx, 4)
+        expect(expectFabricToFollowRing(points)).toBeGreaterThanOrEqual(40)
+      }
+    },
+  )
+
+  it('lays the fabric round the back of the trouser seat as far as the surface goes', () => {
+    // The seat's bottom ring is also the legs' top edge, which shares its fabric.
+    const { rest } = buildGarmentGeometry('trousers-straight', shape)
+    for (const ring of trouserSeatRings(shape).back) {
+      expect(expectFabricToFollowRing(pointsOnRing(rest, ring, { back: true }))).toBeGreaterThanOrEqual(40)
+    }
+  })
+
+  it('lays the fabric round each long sleeve as far as the surface goes, down to the oval wrist', () => {
+    // Arms hang palms-in, so the forearm and wrist are deeper than they are wide.
+    const { rest } = buildGarmentGeometry('shirt-long-sleeve', shape)
+    const rings = sleeveRings(shape, 'long')
+    expect(rings[0].rz / rings[0].rx).toBeGreaterThan(1.1)
+    for (const side of SIDES) {
+      const toLocal = limbTransform(shape.arm, side).invert()
+      // Not the top ring, which the shoulder cap shares.
+      for (const ring of rings.slice(0, -1)) {
+        expect(expectFabricToFollowRing(pointsOnRing(rest, ring, { toLocal }))).toBeGreaterThanOrEqual(24)
+      }
+    }
+  })
+
+  it('lays the fabric round the back of each trouser leg as far as the surface goes, from the hem up into the seat', () => {
+    // Low down the calves are a little deeper than they are wide; where the
+    // legs grow into the seat they are much wider than deep.
+    const { rest } = buildGarmentGeometry('trousers-straight', shape)
+    const position = rest.getAttribute('position')
+    const uv = rest.getAttribute('uv')
+    // The back of the seat comes first, then each leg's back, ring by ring
+    // from the hem up, with 41 points round each ring.
+    const columns = 41
+    const legRings = trouserLegRings(shape).back.length
+    const legsStart = trouserSeatRings(shape).back.length * columns
+    expect(position.count).toBe(legsStart + 2 * legRings * columns)
+    for (let ring = 0; ring < 2 * legRings; ring++) {
+      const points = Array.from({ length: columns }, (_, j) => {
+        const i = legsStart + ring * columns + j
+        return { at: new Vector3().fromBufferAttribute(position, i), u: uv.getX(i) }
+      })
+      expect(expectFabricToFollowRing(points.sort((a, b) => a.u - b.u))).toBe(columns - 1)
+    }
+  })
+
+  it('lays a collar and neckband round an oval neckline as far as the surface goes, in step with each other', () => {
+    // A neckline much wider than it is deep; the neckband's back half takes the shirt's own fabric.
+    const top = topOf(shirtTorsoRings(shape, 'long').back)
+    const neckline = { ...top, rx: top.rz * 1.4 }
+    const points = [shirtCollar(shape, neckline), neckFacing(shape, neckline)]
+      .flatMap((part) => pointsOnRing(part, neckline))
+      .sort((a, b) => a.u - b.u)
+    expect(expectFabricToFollowRing(points)).toBeGreaterThanOrEqual(80)
+  })
+
   it('runs the sleeve fabric on over the shoulder cap, unstretched and the same way round', () => {
     const rings = sleeveRings(shape, 'short')
     const top = rings[rings.length - 1]
@@ -313,7 +460,6 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
     const position = cap.getAttribute('position')
     const uv = cap.getAttribute('uv')
     const toArm = limbTransform(shape.arm, 1).invert()
-    const radius = (top.rx + top.rz) / 2
     // The dome is a grid of 9 rings of 25 points, from its top down to its rim.
     const at = (ring: number, point: number) => ring * 25 + point
     const where = (i: number) => new Vector3().fromBufferAttribute(position, i)
@@ -333,8 +479,44 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
       const local = where(at(8, point)).applyMatrix4(toArm)
       let theta = Math.atan2(local.z / top.rz, local.x / top.rx)
       while (theta < Math.PI) theta += Math.PI * 2
-      expect(uv.getX(at(8, point))).toBeCloseTo((theta - Math.PI * 2) * radius, 4)
+      expect(uv.getX(at(8, point))).toBeCloseTo(ellipseArc(top.rx, top.rz, Math.PI * 2, theta), 4)
       expect(uv.getY(at(8, point))).toBeCloseTo(top.y, 6)
+    }
+  })
+
+  it('lays the fabric over a shoulder cap on an oval sleeve as far as the surface goes', () => {
+    // A sleeve opening deeper than it is wide: round the rim and up the dome
+    // the fabric follows the surface, not an average radius.
+    const real = sleeveRings(shape, 'short')
+    const top = { ...real[real.length - 1], rz: real[real.length - 1].rx * 1.3 }
+    const cap = shoulderCap(shape, 1, top)
+    const toArm = limbTransform(shape.arm, 1).invert()
+    expect(expectFabricToFollowRing(pointsOnRing(cap, top, { toLocal: toArm }))).toBe(24)
+    const position = cap.getAttribute('position')
+    const uv = cap.getAttribute('uv')
+    // The dome is a grid of 9 rings of 25 points, from its top down to its
+    // rim. (Not from the very top, where every angle meets.)
+    for (let ring = 1; ring < 8; ring++) {
+      for (let point = 0; point < 25; point++) {
+        const [a, b] = [ring * 25 + point, (ring + 1) * 25 + point]
+        const up = new Vector3().fromBufferAttribute(position, a).distanceTo(new Vector3().fromBufferAttribute(position, b))
+        expect(Math.abs(Math.abs(uv.getY(a) - uv.getY(b)) / up - 1)).toBeLessThan(0.01)
+      }
+    }
+  })
+
+  it('carries the sleeve fabric on into the shoulder cap without a jump, even on an oval arm', () => {
+    // Arms deeper than they are wide all the way up, so the sleeve's top ring,
+    // which the cap shares, is an oval too.
+    const oval = { ...shape, arm: { ...shape.arm, rings: shape.arm.rings.map((ring) => ({ ...ring, rz: ring.rx * 1.3 })) } }
+    const { rest } = buildGarmentGeometry('shirt-long-sleeve', oval)
+    const rings = sleeveRings(oval, 'long')
+    const top = rings[rings.length - 1]
+    for (const side of SIDES) {
+      // The sleeve's top ring and the cap's rim, point for point.
+      const points = pointsOnRing(rest, top, { toLocal: limbTransform(oval.arm, side).invert() })
+      expect(points.length).toBe(2 * 25)
+      expect(expectFabricToFollowRing(points)).toBe(24)
     }
   })
 
@@ -498,6 +680,26 @@ describe.each(BODY_PRESETS)('%s garments', (preset) => {
       }
     }
     expect(pairs).toBeGreaterThanOrEqual(40)
+  })
+
+  it('runs each trouser leg’s own fabric on up into the seat’s, with no step a ring below the join', () => {
+    // The legs' top ring takes the seat's fabric; the rings below it lay their
+    // own the same way, so a check runs on across the join without a jump.
+    const { rest } = buildGarmentGeometry('trousers-straight', shape)
+    const uv = rest.getAttribute('uv')
+    // The back of the seat comes first, then each leg's back, ring by ring
+    // from the hem up, with 41 points round each ring.
+    const columns = 41
+    const legRings = trouserLegRings(shape).back.length
+    const legsStart = trouserSeatRings(shape).back.length * columns
+    for (let leg = 0; leg < 2; leg++) {
+      const u = (ring: number, j: number) => uv.getX(legsStart + (leg * legRings + ring) * columns + j)
+      for (let j = 0; j < columns; j++) {
+        // Where the three rings below would carry on to, as a parabola.
+        const [a, b, c] = [legRings - 4, legRings - 3, legRings - 2].map((ring) => u(ring, j))
+        expect(Math.abs(u(legRings - 1, j) - (3 * c - 3 * b + a))).toBeLessThan(0.004)
+      }
+    }
   })
 
   it('shades the seat and the legs alike where they meet, so no line shows across the seat', () => {
