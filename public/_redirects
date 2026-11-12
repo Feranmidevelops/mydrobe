@@ -1,0 +1,8 @@
+# Netlify and Cloudflare Pages: serve the app for each of its pages (ROUTES
+# in src/app/router.ts; "/" is index.html already), with or without a
+# trailing slash. Only these paths, so a script missing after a deploy gets
+# a real 404 instead of the page.
+/fitting-room   /index.html  200
+/fitting-room/  /index.html  200
+/privacy        /index.html  200
+/privacy/       /index.html  200

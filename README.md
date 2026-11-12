@@ -43,6 +43,24 @@ npm run dev        # http://localhost:5173
 
 No environment variables or secrets are needed.
 
+## Deploying
+
+Mydrobe is a static site: `npm run build` puts everything in `dist/`, with no server code, environment variables or secrets. It's set up for **Netlify** or **Cloudflare Pages**:
+
+| Setting | Value |
+| ------- | ----- |
+| Build command | `npm run build` |
+| Publish (output) directory | `dist` |
+| Node version | from `.node-version` (22) |
+
+Three files in `public/` go out with the build:
+
+- `_redirects` serves the app for `/fitting-room` and `/privacy`, the pages besides `/` (`ROUTES` in `src/app/router.ts`). Add a line for any new page: `e2e/hosting.test.ts` fails if one is missing. There's deliberately no catch-all, so a script that's gone after a deploy gets a real 404, which the fitting room explains with a Try again, instead of being answered with the page.
+- `_headers` caches the hashed files in `/assets` for a year and has pages checked again on every visit. Its content security policy lets only the site's own scripts run (photos load from `blob:` URLs, and the photo worker is a file in `/assets`). It also sets nosniff, a referrer policy, and no camera, microphone or location access.
+- `404.html` is shown, with a 404 status, for any other path. Having it also stops Cloudflare Pages treating the site as a single-page app that answers every path with the home page.
+
+Other hosts need the same rules in their own format (on Vercel, rewrites and headers in `vercel.json`). GitHub Pages can't set headers or rewrites, so it won't do.
+
 ## How it's built
 
 React 19, TypeScript and Vite, styled with Tailwind CSS v4. Type is set in Helvetica Neue on Apple devices and in the bundled Inter everywhere else. The 3D view uses Three.js with React Three Fiber and Drei. Zustand holds the state that the wardrobe panel and the viewer share, and Dexie keeps clothes and outfits in IndexedDB. Vitest and Testing Library run the tests, against an in-memory IndexedDB (fake-indexeddb) rather than mocks.
