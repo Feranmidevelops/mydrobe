@@ -7,6 +7,7 @@ const CI = !!process.env.CI
 
 // Specs that need their own browser flags run only in their own projects.
 const WEBGL_OFF = /webgl-off\.spec\.ts$/
+const TOUCH = /mobile-touch\.spec\.ts$/
 
 export default defineConfig({
   testDir: './e2e',
@@ -36,7 +37,7 @@ export default defineConfig({
     {
       name: 'desktop',
       use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
-      testIgnore: [WEBGL_OFF],
+      testIgnore: [WEBGL_OFF, TOUCH],
     },
     // Real browser switches rather than a patched page: no WebGL at all, then WebGL 1 only.
     // (--disable-gpu isn't one of them: Chromium falls back to software rendering.)
@@ -49,6 +50,13 @@ export default defineConfig({
       name: 'webgl1-only',
       use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--disable-webgl2'] } },
       testMatch: WEBGL_OFF,
+    },
+    // A phone held upright, with a touch screen. Chromium's Pixel 7, sized like a
+    // 390×844 phone, since the iPhone descriptors need WebKit, which isn't installed.
+    {
+      name: 'phone',
+      use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 },
+      testMatch: TOUCH,
     },
   ],
   webServer: {
