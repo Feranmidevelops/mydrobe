@@ -719,9 +719,11 @@ function pixelLines(width: number, height: number, down: boolean, slant = 0) {
  * - has walls that run on smoothly from line to line, so a square on a sleeve
  *   isn't taken for part of a gap beside the sleeve;
  * - opens out at one end, at least, onto backdrop at least twice as wide, as
- *   a square on the garment's edge opens onto the backdrop beyond it; where
- *   the gap under an arm narrows for a while, it meets garment at one end and
- *   the gap going on only a little wider at the other;
+ *   a square on the garment's edge opens onto the backdrop beyond it;
+ * - between walls to the left and right, is shut off by garment at the other
+ *   end, as a square on the hem is by the square above it. Where the gap
+ *   between an arm and the body narrows for a while, even just above where it
+ *   opens out below the hem, it goes on above only a little wider;
  * - mostly shows the garment's own colours, as a square matching others
  *   inside the garment does, so backdrop that looks nothing like the garment
  *   stays as it is.
@@ -792,10 +794,13 @@ function fillBites(mask: Uint8Array, width: number, height: number, looksOwn: (i
       }
     }
 
-    // Whether a gap opens out on the next line beyond its patch: mostly onto
-    // backdrop, in a stretch at least twice as long or never walled in.
-    const opensOut = (gap: (typeof gaps)[number], line: number) => {
-      if (line < 0 || line >= lines) return true
+    // What lies beyond a gap on the next line out of its patch: mostly
+    // garment (SHUT), or mostly backdrop in a stretch at least twice as long
+    // or never walled in (OPEN). Anything else is the gap going on a little
+    // wider, and neither.
+    const [SHUT, OPEN] = [1, 2]
+    const beyond = (gap: (typeof gaps)[number], line: number) => {
+      if (line < 0 || line >= lines) return OPEN
       const span = gap.end - gap.start + 1
       let backdrop = 0
       let wide = false
@@ -809,11 +814,12 @@ function fillBites(mask: Uint8Array, width: number, height: number, looksOwn: (i
         backdrop += Math.min(to, gap.end) - at + 1
         at = Math.min(to, gap.end)
       }
-      return backdrop * 2 > span && wide
+      if (backdrop * 2 <= span) return SHUT
+      return wide ? OPEN : 0
     }
 
     // Each patch's reach along the lines, size, pixels in the garment's own
-    // colours, and whether it opens out before its first line or after its last.
+    // colours, and what lies before its first line and after its last.
     const low = new Int32Array(gaps.length).fill(lines)
     const high = new Int32Array(gaps.length).fill(-1)
     const size = new Int32Array(gaps.length)
@@ -825,17 +831,25 @@ function fillBites(mask: Uint8Array, width: number, height: number, looksOwn: (i
       size[r] += gap.end - gap.start + 1
       for (let at = gap.start; at <= gap.end; at++) if (looksOwn(index(gap.line, at))) own[r]++
     })
-    const opens = new Uint8Array(gaps.length)
+    const before = new Uint8Array(gaps.length)
+    const after = new Uint8Array(gaps.length)
     gaps.forEach((gap, k) => {
       const r = root(k)
-      if (gap.line === low[r] && opensOut(gap, gap.line - 1)) opens[r] = 1
-      if (gap.line === high[r] && opensOut(gap, gap.line + 1)) opens[r] = 1
+      if (gap.line === low[r]) before[r] |= beyond(gap, gap.line - 1)
+      if (gap.line === high[r]) after[r] |= beyond(gap, gap.line + 1)
     })
+    // Down a column, a bite opening out at one end will do: a square can cut
+    // right across a sleeve. Along a row, it must also be shut off at the
+    // other, as a square on the hem is by the square above it.
+    const ends = (r: number) =>
+      across
+        ? (before[r] | after[r]) & OPEN
+        : (before[r] & OPEN && after[r] & SHUT) || (before[r] & SHUT && after[r] & OPEN)
 
     const filled = result.slice()
     gaps.forEach((gap, k) => {
       const r = root(k)
-      if (high[r] - low[r] >= longest || own[r] * 2 < size[r] || !opens[r]) return
+      if (high[r] - low[r] >= longest || own[r] * 2 < size[r] || !ends(r)) return
       for (let at = gap.start; at <= gap.end; at++) filled[index(gap.line, at)] = 1
     })
     result = filled

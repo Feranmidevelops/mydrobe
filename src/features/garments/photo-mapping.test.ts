@@ -524,6 +524,25 @@ describe('a check whose light squares match the backdrop', () => {
     for (const y of [150, 300]) expect(mask[y * SIZE + 195]).toBe(0)
   })
 
+  it('leaves the gap beside an arm open where the hem flares into it at the bottom', () => {
+    // As above, but the arm and body end together, and for their last 24 px
+    // the hem flares out towards the arm, narrowing the gap to 32 px just
+    // where it opens onto the wall below.
+    const image = blank(SIZE, SIZE, WALL)
+    const origin = { x: 105, y: 60 }
+    const shoulders = { x: 105, y: 60, width: 9 * SQUARE, height: SQUARE }
+    const arm = { x: 105, y: 60, width: 2 * SQUARE, height: 9 * SQUARE }
+    const body = { x: 225, y: 60, width: 5 * SQUARE, height: 9 * SQUARE }
+    for (const part of [shoulders, arm, body]) paintCheck(image, part, origin, 1, 1)
+    const flare = { x: 197, y: 306, width: 28, height: 24 }
+    paint(image, flare, DARK)
+    const mask = garmentMask(image, estimateBackground(image))
+    for (const row of [1, 3, 5, 7]) expect(kept(mask, origin, 1, row)).toBe(true)
+    for (let y = flare.y; y < flare.y + flare.height; y++) {
+      for (const x of [170, 180, 190]) expect(mask[y * SIZE + x]).toBe(0)
+    }
+  })
+
   it('keeps the light squares down both sides of a sleeve that hangs at a slant', () => {
     // A sleeve three bands wide, leaning a pixel across for every four down
     // with its check leaning along, hung from the shoulders of a shirt body
