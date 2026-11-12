@@ -1,4 +1,4 @@
-import { loadFittingRoomPage } from '../../app/pages'
+import { prefetchFittingRoomPage } from '../../app/pages'
 import { ROUTES } from '../../app/router'
 import heroLineup from '../../assets/landing/hero-lineup.webp'
 import { Link } from '../ui/Link'
@@ -34,8 +34,8 @@ export function Hero() {
           <div className="mt-7 flex flex-wrap justify-center gap-3">
             <Link
               to={ROUTES.fittingRoom}
-              onPointerEnter={loadFittingRoomPage}
-              onFocus={loadFittingRoomPage}
+              onPointerEnter={prefetchFittingRoomPage}
+              onFocus={prefetchFittingRoomPage}
               className="rounded-full bg-white px-6 py-2.5 text-sm font-medium text-espresso transition hover:bg-cream"
             >
               Enter the fitting room

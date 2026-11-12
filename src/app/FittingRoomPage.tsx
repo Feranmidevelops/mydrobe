@@ -59,7 +59,8 @@ export default function FittingRoomPage() {
           </div>
         </div>
 
-        <div className="absolute inset-x-0 bottom-4 z-10 flex flex-col items-center gap-2 px-4 sm:bottom-6">
+        {/* Only the notices and buttons take touches and clicks, so a drag that starts beside them still turns the mannequin. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex flex-col items-center gap-2 px-4 *:pointer-events-auto sm:bottom-6">
           <HiddenGarmentsNotice garments={garments} />
           <FittingStatus garments={garments} />
           <BodyPresetControl />

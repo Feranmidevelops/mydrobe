@@ -12,9 +12,12 @@ export const stage = (page: Page) => page.getByRole('region', { name: 'Fitting r
 export const stageCanvas = (page: Page) => stage(page).locator('canvas[data-engine^="three.js"]')
 export const wardrobe = (page: Page) => page.getByRole('complementary', { name: 'Wardrobe' })
 export const currentOutfit = (page: Page) => page.getByRole('region', { name: 'Current outfit' })
-/** Anchored, because "Take off X" and "Remove X from your wardrobe" contain the name too. */
+/**
+ * Anchored, because "Take off X" and "Remove X from your wardrobe" contain the
+ * name too. Pieces with no 3D template start with their "2D only" badge.
+ */
 export const garmentCard = (page: Page, name: string) =>
-  wardrobe(page).getByRole('button', { name: new RegExp(`^${escapeRegExp(name)}`) })
+  wardrobe(page).getByRole('button', { name: new RegExp(`^(2D only )?${escapeRegExp(name)}`) })
 export const preset = (page: Page, name: 'Small' | 'Medium' | 'Large') =>
   stage(page).getByRole('radiogroup', { name: 'Body preset' }).getByRole('radio', { name, exact: true })
 export const cameraButton = (page: Page, name: 'Front' | 'Side' | 'Back') =>
