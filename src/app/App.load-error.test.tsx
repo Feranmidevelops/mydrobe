@@ -6,6 +6,7 @@ import App from './App'
 // The fitting room's code fails to download, as on a dropped connection.
 vi.mock('./pages', () => ({
   loadFittingRoomPage: () => Promise.reject(new TypeError('Failed to fetch dynamically imported module')),
+  prefetchFittingRoomPage: () => {},
 }))
 
 describe('App when the fitting room fails to load', () => {
