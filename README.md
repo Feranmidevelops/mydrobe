@@ -43,6 +43,8 @@ npm run dev        # http://localhost:5173
 
 Browser tests run with Playwright against the production build: `npx playwright test --project=desktop` in Chrome, and `npx playwright test --project=safari` in WebKit, Safari's engine (install it once with `npx playwright install webkit`). Other projects cover WebGL switched off and a touch phone.
 
+GitHub Actions runs all of it on every pull request and every push to `main` (`.github/workflows/ci.yml`): types, lint, unit tests and a build, then every browser project in Chrome and WebKit. If a browser test fails, the run keeps the Playwright report to download.
+
 No environment variables or secrets are needed.
 
 ## Deploying
