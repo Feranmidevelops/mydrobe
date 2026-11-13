@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 import { statusWith } from './fitting-room.ts'
 
 const WARNINGS = /cut off at the edge|quite small in the photo|background may show on the mannequin/
@@ -13,6 +13,16 @@ export interface ClothesToAdd {
   suggested: string
   /** The name to give it instead. */
   name: string
+}
+
+/**
+ * Waits for the review step to finish analysing the photo, which can take
+ * more than the usual 10 s when other tests keep the machine busy, or in
+ * WebKit.
+ */
+export async function waitForAnalysis(dialog: Locator) {
+  await expect(dialog.getByRole('heading', { name: 'Check how it came out' })).toBeVisible()
+  await expect(dialog.getByText('Finding the garment…')).toHaveCount(0, { timeout: 30_000 })
 }
 
 /** Adds a garment through the real upload dialog, the way a person would. */
@@ -36,8 +46,8 @@ export async function addClothes(page: Page, clothes: ClothesToAdd) {
 
   // Each choice analyses the photo again, and "Add to wardrobe" waits until that's done.
   const add = dialog.getByRole('button', { name: 'Add to wardrobe' })
+  await waitForAnalysis(dialog)
   await expect(add).toBeEnabled()
-  await expect(dialog.getByText('Finding the garment…')).toHaveCount(0)
   await expect(dialog.getByText(WARNINGS)).toHaveCount(0)
   await expect(dialog.getByRole('img', { name: /^Your photo with the background faded/ })).toBeVisible()
   const nameField = dialog.getByRole('textbox', { name: 'Name', exact: true })

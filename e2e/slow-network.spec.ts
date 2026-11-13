@@ -68,7 +68,8 @@ test('while the fitting room downloads slowly, it says so, then opens', async ({
   await expect(stageCanvas(page)).toBeVisible()
 })
 
-test('on a slow 4G connection the wardrobe and then the 3D view arrive', async ({ page, context }) => {
+test('on a slow 4G connection the wardrobe and then the 3D view arrive', async ({ page, context, browserName }) => {
+  test.skip(browserName !== 'chromium', 'the connection is slowed through the Chrome DevTools Protocol')
   test.slow()
   const cdp = await context.newCDPSession(page)
   await cdp.send('Network.enable')

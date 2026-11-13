@@ -1,7 +1,8 @@
-import type { Locator, Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import { PHOTOS } from './fixtures/photos.ts'
 import { openFittingRoom } from './support/fitting-room.ts'
 import { expect, test } from './support/test.ts'
+import { waitForAnalysis } from './support/upload.ts'
 
 /** Opens the upload dialog and returns it. */
 async function openUpload(page: Page) {
@@ -10,15 +11,6 @@ async function openUpload(page: Page) {
   const dialog = page.getByRole('dialog', { name: 'Add clothes' })
   await expect(dialog).toBeVisible()
   return dialog
-}
-
-/**
- * The suggested name takes its colour from the finished analysis, which can
- * take more than the usual 10 s when other tests keep the machine busy.
- */
-async function waitForAnalysis(dialog: Locator) {
-  await expect(dialog.getByRole('heading', { name: 'Check how it came out' })).toBeVisible()
-  await expect(dialog.getByText('Finding the garment…')).toHaveCount(0, { timeout: 30_000 })
 }
 
 test('turns away a photo too small to use', async ({ page }) => {
