@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import { PHOTOS } from './fixtures/photos.ts'
 import { stage, storageReady, wardrobe } from './support/fitting-room.ts'
 import { expect, test } from './support/test.ts'
+import { waitForAnalysis } from './support/upload.ts'
 
 /*
  * Where the stage and wardrobe sit at phone, landscape and desktop sizes.
@@ -49,7 +50,7 @@ const LAYOUTS = [
     position: 'sticky',
     wardrobe: { x: 0, y: 422, width: 390 },
     // A card scrolled into view stops below the stage instead of behind it.
-    scrollPaddingTop: '434px',
+    scrollPaddingTop: 434,
     hint: null,
   },
   {
@@ -58,7 +59,7 @@ const LAYOUTS = [
     stage: { x: 0, y: 0, width: 424, height: 390 },
     position: 'relative',
     wardrobe: { x: 424, y: 0, width: 420, height: 390 },
-    scrollPaddingTop: '0px',
+    scrollPaddingTop: 0,
     hint: 'Drag to rotate · pinch to zoom',
   },
   {
@@ -67,7 +68,7 @@ const LAYOUTS = [
     stage: { x: 0, y: 0, width: 860, height: 800 },
     position: 'relative',
     wardrobe: { x: 860, y: 0, width: 420, height: 800 },
-    scrollPaddingTop: '0px',
+    scrollPaddingTop: 0,
     hint: 'Drag to rotate · scroll to zoom',
   },
 ] as const
@@ -81,9 +82,9 @@ for (const layout of LAYOUTS) {
       await expectBox(stage(page), layout.stage)
       await expect(stage(page)).toHaveCSS('position', layout.position)
       await expectBox(wardrobe(page), layout.wardrobe)
-      expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollPaddingTop)).toBe(
-        layout.scrollPaddingTop,
-      )
+      // Within half a pixel: WebKit works it out as 433.999969px.
+      const scrollPaddingTop = await page.evaluate(() => getComputedStyle(document.documentElement).scrollPaddingTop)
+      expect(parseFloat(scrollPaddingTop)).toBeCloseTo(layout.scrollPaddingTop, 0)
       const hints = stage(page).getByText(HINT).filter({ visible: true })
       if (layout.hint) await expect(hints).toHaveText([layout.hint])
       else await expect(hints).toHaveCount(0)
@@ -121,7 +122,7 @@ for (const viewport of [
       await page.getByRole('button', { name: /^Add clothes/ }).click()
       const dialog = page.getByRole('dialog', { name: 'Add clothes' })
       await dialog.getByLabel('Choose a photo').setInputFiles(PHOTOS.shirt)
-      await expect(dialog.getByRole('heading', { name: 'Check how it came out' })).toBeVisible()
+      await waitForAnalysis(dialog)
 
       const box = await dialog.boundingBox()
       expect(box!.x).toBeGreaterThanOrEqual(0)

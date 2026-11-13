@@ -39,6 +39,13 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
       testIgnore: [WEBGL_OFF, TOUCH],
     },
+    // The same specs in WebKit, Safari's engine, as the nearest thing to an iPhone here.
+    // Needs `npx playwright install webkit` once.
+    {
+      name: 'safari',
+      use: { ...devices['Desktop Safari'], viewport: { width: 1280, height: 800 } },
+      testIgnore: [WEBGL_OFF, TOUCH],
+    },
     // Real browser switches rather than a patched page: no WebGL at all, then WebGL 1 only.
     // (--disable-gpu isn't one of them: Chromium falls back to software rendering.)
     {
@@ -52,7 +59,7 @@ export default defineConfig({
       testMatch: WEBGL_OFF,
     },
     // A phone held upright, with a touch screen. Chromium's Pixel 7, sized like a
-    // 390×844 phone, since the iPhone descriptors need WebKit, which isn't installed.
+    // 390×844 phone, since the fingers are driven through the Chrome DevTools Protocol.
     {
       name: 'phone',
       use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 },

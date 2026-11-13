@@ -41,6 +41,8 @@ npm run dev        # http://localhost:5173
 | `npm run build`     | Type-check, then a production build   |
 | `npm run preview`   | Serve the production build locally    |
 
+Browser tests run with Playwright against the production build: `npx playwright test --project=desktop` in Chrome, and `npx playwright test --project=safari` in WebKit, Safari's engine (install it once with `npx playwright install webkit`). Other projects cover WebGL switched off and a touch phone.
+
 No environment variables or secrets are needed.
 
 ## Deploying
@@ -163,7 +165,8 @@ The mannequin is generated in code (`src/features/mannequin/body-shape.ts`), so 
 - Photos that break the [photo rules](docs/milestone-2-photo-trial.md#the-input-contract-for-uploads) (worn, folded, busy backgrounds) separate poorly. The review step shows this before anything is added. A hanger can show at the collar, and background can peek through a neck opening.
 - The mannequin is a stylised figure generated in code, not a realistic body scan. Garments are fitted shells with no cloth simulation, folds or drape.
 - The presets are visual only. They don't predict fit or recommend sizes.
-- The failure states were checked with simulated failures (a failed download, a forced WebGL context loss) in desktop Chrome with phone-sized windows, not yet on real low-end phones.
+- The failure states were checked with simulated failures (a failed download, a forced WebGL context loss) in desktop Chrome and in WebKit, with phone-sized windows, not yet on real phones.
+- In Safari's engine, if the 3D viewer's download fails, Try again and even a reload can't fetch it again in that tab, because WebKit remembers the failure. Opening the site in a new tab works. This was seen in WebKit on Windows, not yet confirmed on a real iPhone.
 
 ## Roadmap
 
