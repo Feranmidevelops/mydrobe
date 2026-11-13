@@ -17,6 +17,10 @@
 
 /favicon.svg
   Cache-Control: public, max-age=86400
+/apple-touch-icon.png
+  Cache-Control: public, max-age=86400
+/share.jpg
+  Cache-Control: public, max-age=86400
 
 # Everything comes from the site itself. Photos show and are mapped from
 # blob: and data: URLs made in the browser, and the photo worker is a file
