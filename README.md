@@ -49,19 +49,22 @@ No environment variables or secrets are needed.
 
 ## Deploying
 
-Mydrobe is a static site: `npm run build` puts everything in `dist/`, with no server code, environment variables or secrets. It's set up for **Netlify** or **Cloudflare Pages**:
+Mydrobe is a static site: `npm run build` puts everything in `dist/`, with no server code or secrets. It's set up for **Netlify** or **Cloudflare Pages**:
 
 | Setting | Value |
 | ------- | ----- |
 | Build command | `npm run build` |
 | Publish (output) directory | `dist` |
 | Node version | from `.node-version` (22) |
+| `SITE_URL` (Cloudflare Pages) | the site's address, such as `https://mydrobe.app`; Netlify gives the build its own |
 
 Three files in `public/` go out with the build:
 
 - `_redirects` serves the app for `/fitting-room` and `/privacy`, the pages besides `/` (`ROUTES` in `src/app/router.ts`). Add a line for any new page: `e2e/hosting.test.ts` fails if one is missing. There's deliberately no catch-all, so a script that's gone after a deploy gets a real 404, which the fitting room explains with a Try again, instead of being answered with the page.
 - `_headers` caches the hashed files in `/assets` for a year and has pages checked again on every visit. Its content security policy lets only the site's own scripts run (photos load from `blob:` URLs, and the photo worker is a file in `/assets`). It also sets nosniff, a referrer policy, and no camera, microphone or location access.
 - `404.html` is shown, with a 404 status, for any other path. Having it also stops Cloudflare Pages treating the site as a single-page app that answers every path with the home page.
+
+A shared link shows the page's title, description and `public/share.jpg` (four mannequins from the landing page, 1200 × 630). Facebook, LinkedIn and X want the picture as a full address, so the build makes it one from `SITE_URL`, or on Netlify from the address Netlify gives every build (`vite.share-links.ts`); without either, it stays a path from the root. `public/apple-touch-icon.png` is the icon an iPhone uses on the home screen.
 
 Other hosts need the same rules in their own format (on Vercel, rewrites and headers in `vercel.json`). GitHub Pages can't set headers or rewrites, so it won't do.
 

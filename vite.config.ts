@@ -2,10 +2,11 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import { shareLinks } from './vite.share-links.ts'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), shareLinks()],
   build: {
     // The Three.js viewer is a single lazy-loaded chunk (~280 kB gzipped) that
     // only downloads after the app shell is usable.

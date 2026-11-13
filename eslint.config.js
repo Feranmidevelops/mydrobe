@@ -23,7 +23,7 @@ export default defineConfig([
   {
     // Node-side code: the Playwright tests, tool configs and scripts. React's hook rules
     // would misread Playwright's `use` fixture callback, so they stay with src.
-    files: ['e2e/**/*.ts', '*.config.ts', 'scripts/**/*.mjs'],
+    files: ['e2e/**/*.ts', '*.config.ts', 'vite.share-links.ts', 'scripts/**/*.mjs'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
     languageOptions: {
       // page.evaluate callbacks run in the page, so DOM globals are fair game too.
