@@ -48,12 +48,21 @@ export function reviewWarnings(
   } else if (templateId && templateId !== 'trousers-straight' && analysis.crop.width > analysis.crop.height * FOLDED_ASPECT) {
     warnings.push('This looks folded or cut short, so only part of its front will show. A whole front, laid flat or on a hanger, works best.')
   }
+  // Trial photos found this little only when most of the garment was missed
+  // (a close-up, a busy background, a garment close in colour to it), so
+  // that comes first, though a far-off shot of a whole garment can do it too.
   if ((bounds.width * bounds.height) / (image.width * image.height) < SMALL_GARMENT) {
-    warnings.push('The garment is quite small in the photo. A closer shot will show more detail.')
+    warnings.push(
+      "Only a small part of the photo was picked out as the garment. If some of the garment looks faded, try a photo of it on its own against a plain background that's clearly lighter or darker. If it's all there, a closer shot will show more detail.",
+    )
   }
+  // What isn't picked out inside the front is filled with the garment's fabric,
+  // so nothing of the background reaches the mannequin; what's missed is the photo's own detail.
   if (templateId && analysis.coverage < LOW_COVERAGE) {
     warnings.push(
-      'Some background may show on the mannequin. Try sliding towards "Remove more", or a plainer background.',
+      templateId === 'trousers-straight'
+        ? "Part of the front wasn't picked out as garment, so it will be filled in with the garment's fabric. That's expected between the legs. If some of the trousers look faded, slide towards \"Keep more\"."
+        : "Part of the front wasn't picked out as garment, so it will be filled in with the garment's fabric. If some of the garment looks faded, slide towards \"Keep more\".",
     )
   }
   return warnings

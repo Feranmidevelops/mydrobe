@@ -55,7 +55,7 @@ describe('the generated garment photos', () => {
 
   it('warn when the shirt is called trousers, as the upload checks expect', () => {
     const analysis = analyseGarmentPhoto(shirtPhoto(), 'trousers-straight')
-    expect(reviewWarnings(analysis, 'trousers-straight')).toEqual([expect.stringMatching(/background may show/)])
+    expect(reviewWarnings(analysis, 'trousers-straight')).toEqual([expect.stringMatching(/filled in with the garment's fabric/)])
   })
 
   it('keep every colour well out of reach of the background fill', () => {

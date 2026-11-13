@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 import { statusWith } from './fitting-room.ts'
 
-const WARNINGS = /cut off at the edge|quite small in the photo|background may show on the mannequin/
+const WARNINGS = /cut off at the edge|small part of the photo was picked out|filled in with the garment's fabric/
 
 export interface ClothesToAdd {
   photo: { name: string; mimeType: string; buffer: Buffer }
