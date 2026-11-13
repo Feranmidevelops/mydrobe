@@ -4,7 +4,8 @@ import { Link } from '../ui/Link'
 export function AppHeader() {
   return (
     <header>
-      <Link to={ROUTES.home} aria-label="Mydrobe home" className="pointer-events-auto inline-block">
+      {/* Named by what it shows, "Mydrobe Virtual wardrobe", so voice control can say what's on screen. */}
+      <Link to={ROUTES.home} className="pointer-events-auto inline-block">
         <span className="block text-lg leading-none font-bold tracking-[0.24em] text-ink uppercase">
           Mydrobe
         </span>

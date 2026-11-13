@@ -50,6 +50,8 @@ export default function FittingRoom({ onContextLost }: FittingRoomProps) {
       dpr={[1, 2]}
       camera={{ position: [0, 1.2, 4.5], fov: CAMERA_FOV, near: 0.1, far: 40 }}
       gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+      // A label alone on the wrapper div isn't read out; as a picture it is.
+      role="img"
       aria-label="3D mannequin. Drag to rotate, scroll or pinch to zoom."
       onCreated={({ gl }) => {
         // This runs before anything is drawn. With frameloop="demand" frames only
