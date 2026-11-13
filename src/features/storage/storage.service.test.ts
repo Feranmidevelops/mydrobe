@@ -77,3 +77,33 @@ describe('restoreSavedWardrobe', () => {
     expect(useWardrobeStore.getState()).toMatchObject({ storage: 'unavailable', uploads: [] })
   })
 })
+
+describe('keeping saved data', () => {
+  const storage = { persisted: vi.fn(async () => false), persist: vi.fn(async () => true) }
+
+  beforeEach(async () => {
+    useWardrobeStore.setState(initialState, true)
+    await Promise.all(db.tables.map((table) => table.clear()))
+    vi.stubGlobal('navigator', { ...navigator, storage })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('asks the browser to keep it once something has been saved, and only once', async () => {
+    await restoreSavedWardrobe()
+    expect(storage.persist).not.toHaveBeenCalled()
+
+    const shirt = createUploadedGarment({ url: 'blob:shirt' }, undefined, [[36, 55, 94]], {
+      name: 'Navy shirt',
+      category: 'shirt',
+      templateId: 'shirt-long-sleeve',
+      backgroundTolerance: 70,
+    })
+    await addUploadedGarment(shirt, { photo: new Blob(['photo'], { type: 'image/webp' }), mimeType: 'image/jpeg', fileSize: 1000 })
+    await saveCurrentOutfit('Weekend')
+
+    expect(storage.persist).toHaveBeenCalledTimes(1)
+  })
+})

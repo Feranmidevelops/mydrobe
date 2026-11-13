@@ -1,6 +1,7 @@
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import type { Garment } from '../garments/garment.types'
 import { wardrobeGarments } from '../garments/wardrobe-garments'
+import { keepSavedData } from '../storage/keep-saved-data'
 import { toStorageError } from '../storage/storage-error'
 import {
   checkOutfit,
@@ -42,7 +43,10 @@ export async function saveCurrentOutfit(name: string): Promise<Outfit> {
   if (!check.ok) throw new OutfitError(check.problem)
 
   const outfit = createOutfit(cleaned, check.garmentIds, bodyPreset)
-  await persist(() => putOutfit(outfit))
+  await persist(async () => {
+    await putOutfit(outfit)
+    void keepSavedData()
+  })
   const { addOutfit, showNotice } = useWardrobeStore.getState()
   addOutfit(outfit)
   showNotice('success', `Saved “${outfit.name}”`)
