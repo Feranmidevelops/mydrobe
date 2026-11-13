@@ -2,7 +2,7 @@
 
 Style your own clothes on an interactive 3D mannequin, right in the browser. Mydrobe is local-first: no account, no backend and no paid AI. Everything runs on the device.
 
-> **Status: Milestones 1 to 5 of the seven-day MVP plan are done.** The 3D fitting room, body presets and garment templates work with a built-in demo wardrobe. You can add your own clothes from a photo, save outfits, and find both again after a reload, all kept in this browser. It works on phones, tablets and desktops, and recovers from the failures you'd meet on a phone. The photo trial showed which photos look convincing ([write-up](docs/milestone-2-photo-trial.md)), and the upload screen teaches those rules. End-to-end tests, performance and deployment come next (see [Roadmap](#roadmap)).
+> **Status: Milestones 1 to 5 of the seven-day MVP plan are done, and most of 6 and 7.** The 3D fitting room, body presets and garment templates work with a built-in demo wardrobe. You can add your own clothes from a photo, save outfits, and find both again after a reload, all kept in this browser. It works on phones, tablets and desktops, and recovers from the failures you'd meet on a phone. The photo trial showed which photos look convincing ([write-up](docs/milestone-2-photo-trial.md)), and the upload screen teaches those rules. Browser tests cover the whole journey in Chrome and WebKit, and the site is ready to host on Netlify or Cloudflare Pages. Performance tuning, the first deploy and smoke tests on the live site come next (see [Roadmap](#roadmap)).
 
 ## What works today
 
@@ -181,5 +181,5 @@ From the implementation blueprint's seven-day plan:
 3. **Upload validation, thumbnails and the user's own wardrobe** ✅: the photo rules are shown at upload, then a review step to check the separation before adding
 4. **IndexedDB persistence (Dexie) and outfit save, rename, reopen and delete** ✅: clothes and outfits survive reloads, and deleted pieces show as missing in outfits
 5. **Responsive polish across every empty, error and loading state** ✅: the mannequin stays in view on phones, and load failures, crashes and a dropped 3D view all recover
-6. End-to-end tests (Playwright) and performance tuning
-7. Docs, deployment and smoke tests
+6. **End-to-end tests (Playwright)** ✅: the full journey, upload checks, failures and slow networks, saving, layouts at every size, WebGL switched off and a touch phone in Chrome, and the desktop specs in WebKit too. Performance tuning is still to come.
+7. **Docs and deployment** ✅: hosting rules for Netlify or Cloudflare Pages (see [Deploying](#deploying)). The first deploy and smoke tests on the live site are still to come.
