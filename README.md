@@ -166,7 +166,6 @@ The mannequin is generated in code (`src/features/mannequin/body-shape.ts`), so 
 - The mannequin is a stylised figure generated in code, not a realistic body scan. Garments are fitted shells with no cloth simulation, folds or drape.
 - The presets are visual only. They don't predict fit or recommend sizes.
 - The failure states were checked with simulated failures (a failed download, a forced WebGL context loss) in desktop Chrome and in WebKit, with phone-sized windows, not yet on real phones.
-- In Safari's engine, if the 3D viewer's download fails, Try again and even a reload can't fetch it again in that tab, because WebKit remembers the failure. Opening the site in a new tab works. This was seen in WebKit on Windows, not yet confirmed on a real iPhone.
 
 ## Roadmap
 

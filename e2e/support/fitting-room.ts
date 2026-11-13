@@ -3,7 +3,8 @@ import { waitForFirstFrame } from './marks.ts'
 
 /** The lazily loaded chunks in the production build. Rolldown's hashes can contain - and _. */
 export const PAGE_CHUNK = /\/assets\/FittingRoomPage-[\w-]+\.js$/
-export const VIEWER_CHUNK = /\/assets\/FittingRoom-[\w-]+\.js$/
+/** The 3D viewer's file, including when the app asks for it again under a fresh address. */
+export const VIEWER_CHUNK = /\/assets\/FittingRoom-[\w-]+\.js(\?.*)?$/
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 

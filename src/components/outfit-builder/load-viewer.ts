@@ -1,8 +1,14 @@
 import { lazy } from 'react'
 import { retryableImport } from '../../lib/retryable-import'
 
-/** Three.js is the heaviest part of the app, so the 3D view loads after the shell. */
-const loadViewer = retryableImport(() => import('../../features/mannequin/FittingRoom'))
+/**
+ * Three.js is the heaviest part of the app, so the 3D view loads after the
+ * shell. Vite names the built file after the module, which is how a retry
+ * finds it in Safari.
+ */
+const loadViewer = retryableImport(() => import('../../features/mannequin/FittingRoom'), {
+  file: /\/FittingRoom-[\w-]+\.js$/,
+})
 
 /** Shared by every fitting room, so the 3D view downloads once however often it renders. */
 let viewer = lazy(loadViewer)
