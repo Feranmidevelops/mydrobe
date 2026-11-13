@@ -263,7 +263,10 @@ export function GarmentReview({ photo, onChooseAnother, onAdd }: GarmentReviewPr
               <div role="alert" className="rounded-lg bg-warn-soft px-3 py-2 text-xs leading-relaxed text-warn">
                 <p className="font-medium">{failure.error}</p>
                 {failure.noGarment && (
-                  <p className="mt-1">Try sliding towards "Keep more", or choose a photo with a plainer background.</p>
+                  <p className="mt-1">
+                    This usually means the garment is close in colour to the background. Try a photo against a plain
+                    background that's clearly lighter or darker than it, or slide towards "Keep more".
+                  </p>
                 )}
               </div>
             )}

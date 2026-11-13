@@ -125,7 +125,7 @@ describe('GarmentReview', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent("Couldn't find a garment in this photo.")
-    expect(alert).toHaveTextContent('plainer background')
+    expect(alert).toHaveTextContent('close in colour to the background')
     expect(addButton()).toBeDisabled()
 
     await user.click(screen.getByRole('button', { name: 'Choose another photo' }))

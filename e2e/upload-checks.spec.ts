@@ -40,7 +40,7 @@ test('warns when a shirt is called trousers, and names a short-sleeved shirt a t
   await expect(name).toHaveValue('Red tee')
 
   await dialog.getByRole('group', { name: 'What is it?' }).getByText('Trousers', { exact: true }).click()
-  await expect(dialog.getByText(/background may show on the mannequin/)).toBeVisible()
+  await expect(dialog.getByText(/filled in with the garment's fabric/)).toBeVisible()
 })
 
 test('accepts a photo dropped onto the dialog', async ({ page }) => {

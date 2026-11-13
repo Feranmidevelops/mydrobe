@@ -38,18 +38,30 @@ describe('reviewWarnings', () => {
     ])
   })
 
-  it('suggests a closer shot for a tiny garment', () => {
+  it('says when only a small part of the photo was picked out', () => {
     const tiny = { x: 450, y: 500, width: 100, height: 150 }
     expect(reviewWarnings({ image, bounds: tiny, crop: tiny, coverage: 0.95 }, 'trousers-straight')).toEqual([
-      expect.stringMatching(/quite small/),
+      expect.stringMatching(/Only a small part of the photo was picked out/),
     ])
   })
 
-  it('warns about background showing on the mannequin only when it will be worn', () => {
+  it('says when part of the front will be filled in, only when it will be worn', () => {
     expect(reviewWarnings({ image, bounds: centred, crop, coverage: 0.6 }, 'shirt-long-sleeve')).toEqual([
-      expect.stringMatching(/background may show/),
+      expect.stringMatching(/filled in with the garment's fabric/),
     ])
     expect(reviewWarnings({ image, bounds: centred, crop, coverage: 0.6 }, null)).toEqual([])
+  })
+
+  it('points towards keeping more, never removing more, when part of the front is missed', () => {
+    for (const templateId of ['shirt-long-sleeve', 'trousers-straight'] as const) {
+      const [note] = reviewWarnings({ image, bounds: centred, crop, coverage: 0.6 }, templateId)
+      expect(note).toContain('"Keep more"')
+      expect(note).not.toContain('Remove more')
+    }
+    // Between trouser legs it's expected, and the note says so.
+    expect(reviewWarnings({ image, bounds: centred, crop, coverage: 0.6 }, 'trousers-straight')[0]).toMatch(
+      /expected between the legs/,
+    )
   })
 
   it('notices a top that looks folded or cut short', () => {
