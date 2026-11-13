@@ -2,6 +2,7 @@ import { db } from '../../lib/db'
 import { cutOutThumbnail, decodeImage, downscaleImage } from '../../lib/image-processing'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { removeGarmentFromOutfits } from '../outfits/outfit.repository'
+import { keepSavedData } from '../storage/keep-saved-data'
 import { toStorageError } from '../storage/storage-error'
 import { forgetPhoto } from './analyse-photo'
 import { toHex } from './garment.colors'
@@ -125,6 +126,7 @@ export async function addUploadedGarment(garment: Garment, files: GarmentFiles) 
     } catch (error) {
       throw toStorageError(error)
     }
+    void keepSavedData()
   }
   const { addUpload, wear, showNotice } = useWardrobeStore.getState()
   addUpload(garment)
