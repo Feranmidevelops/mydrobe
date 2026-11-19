@@ -6,7 +6,8 @@ import { nextFrames, pageNow, waitForFitted } from '../../support/marks.ts'
 /** What the observers collect in the page, on window.__perfObserved. */
 export interface Observed {
   lcp: number
-  events: { name: string; duration: number; start: number; target: string }[]
+  /** Event Timing entries of 16 ms or more. interactionId is 0 for moves and hovers, which aren't interactions. */
+  events: { name: string; duration: number; start: number; target: string; interactionId: number }[]
   loafs: { start: number; duration: number; blocking: number }[]
   lastPointerDown: number
   lastPointerUp: number
@@ -46,9 +47,22 @@ export function installObservers(page: Page) {
       observed.lcp = entry.startTime
     })
     observe('event', { durationThreshold: 16 }, (entry) => {
-      const target = (entry as PerformanceEventTiming).target as Element | null
-      const label = target?.getAttribute('aria-label') ?? target?.textContent ?? target?.tagName ?? ''
-      observed.events.push({ name: entry.name, duration: entry.duration, start: entry.startTime, target: label.trim().slice(0, 40) })
+      const timing = entry as PerformanceEventTiming & { interactionId?: number }
+      const target = timing.target as Element | null
+      // What was pressed: its own label or text, else the nearest labelled container (the 3D canvas has none of its own).
+      const label =
+        target?.getAttribute('aria-label') ||
+        target?.textContent?.trim() ||
+        target?.closest('[aria-label]')?.getAttribute('aria-label') ||
+        target?.tagName ||
+        ''
+      observed.events.push({
+        name: entry.name,
+        duration: entry.duration,
+        start: entry.startTime,
+        target: label.trim().slice(0, 40),
+        interactionId: timing.interactionId ?? 0,
+      })
     })
     observe('long-animation-frame', {}, (entry) => {
       const blocking = (entry as PerformanceEntry & { blockingDuration?: number }).blockingDuration ?? 0
@@ -272,12 +286,24 @@ export async function longFramesBetween(page: Page, from: number, to: number) {
   }
 }
 
-/** Interactions the browser timed at 100 ms or more, and the slowest of all. */
+/**
+ * Presses, taps and key strokes, timed the way Chrome's Interaction to Next
+ * Paint is: each interaction counts as its slowest event. Pointer moves during
+ * a drag aren't interactions, so they don't count.
+ */
 export async function slowInteractions(page: Page) {
   const { events } = await observed(page)
-  const worst = [...events].sort((a, b) => b.duration - a.duration)[0] ?? null
+  const slowest = new Map<number, (typeof events)[number]>()
+  for (const event of events) {
+    if (!event.interactionId) continue
+    const known = slowest.get(event.interactionId)
+    if (!known || event.duration > known.duration) slowest.set(event.interactionId, event)
+  }
+  const interactions = [...slowest.values()].sort((a, b) => b.duration - a.duration)
   return {
-    over100ms: events.filter((event) => event.duration >= 100).length,
-    worst: worst && { name: worst.name, ms: round(worst.duration), target: worst.target },
+    slowerThan16ms: interactions.length,
+    over100ms: interactions.filter((event) => event.duration >= 100).length,
+    over200ms: interactions.filter((event) => event.duration >= 200).length,
+    slowest: interactions.slice(0, 5).map((event) => ({ name: event.name, ms: round(event.duration), target: event.target })),
   }
 }
