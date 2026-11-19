@@ -19,6 +19,57 @@ export const PERF_MARKS = {
   photoAnalysis: 'mydrobe:photo-analysis',
 } as const
 
+/**
+ * True when the page was opened with ?perf. The performance suite uses it to
+ * load a probe that records every frame; normal visits never download it.
+ */
+export const PERF_PROBE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('perf')
+
+/** One frame the 3D view drew: when it started, and the CPU time spent updating and drawing it. */
+export interface FrameSample {
+  start: number
+  cpu: number
+}
+
+export interface RendererSnapshot {
+  geometries: number
+  textures: number
+  programs: number
+  /** Draw calls and triangles in the last frame drawn. */
+  calls: number
+  triangles: number
+  frames: number
+  pixelRatio: number
+  drawingBuffer: { width: number; height: number; samples: number; estimatedBytes: number }
+  gpu: string
+}
+
+/** The textures the scene uses, sorted by kind, with a rough size in GPU memory. */
+export interface TextureEstimate {
+  count: number
+  canvas: number
+  renderTargets: number
+  other: number
+  estimatedBytes: number
+}
+
+/** What the ?perf probe exposes on window.__MYDROBE_PERF__. */
+export interface MydrobePerfProbe {
+  frames(): FrameSample[]
+  clearFrames(): void
+  renderer(): RendererSnapshot
+  textures(): TextureEstimate
+  geometryBytes(): number
+  /** When the body preset last changed, as a performance.now() reading. */
+  lastPresetChange(): number | null
+}
+
+declare global {
+  interface Window {
+    __MYDROBE_PERF__?: MydrobePerfProbe
+  }
+}
+
 export function mark(name: string, detail?: unknown) {
   try {
     performance.mark(name, { detail })
