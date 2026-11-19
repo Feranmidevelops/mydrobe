@@ -24,10 +24,15 @@ export function record(section: string, data: unknown) {
   writeFileSync(latest(), `${JSON.stringify({ ...read(), [section]: data }, null, 2)}\n`)
 }
 
-/** Keeps a dated copy of the run's results and says where they are. */
+/**
+ * Keeps a dated copy of the run's results and says where they are. A failed
+ * test restarts the worker, so this can run more than once in a run: the copy
+ * is named after when the run started, so a later call just brings it up to date.
+ */
 export function finishRun() {
   if (!existsSync(latest())) return
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const started = (read().environment as { measuredAt?: string } | undefined)?.measuredAt ?? new Date().toISOString()
+  const stamp = started.replace(/[:.]/g, '-')
   const dated = new URL(`${test.info().project.name}-${stamp}.json`, DIR)
   copyFileSync(latest(), dated)
   console.log(`Performance results: ${decodeURIComponent(dated.pathname).replace(/^\/([A-Za-z]:)/, '$1')}`)
