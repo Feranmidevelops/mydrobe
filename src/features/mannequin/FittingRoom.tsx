@@ -1,8 +1,8 @@
 import { ContactShadows } from '@react-three/drei'
 import { addAfterEffect, Canvas } from '@react-three/fiber'
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { useWardrobeGarments } from '../../hooks/useWardrobeGarments'
-import { mark, PERF_MARKS } from '../../lib/perf'
+import { mark, PERF_MARKS, PERF_PROBE } from '../../lib/perf'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { resolveSelection } from '../outfits/outfit.selection'
 import { createBodyShape } from './body-shape'
@@ -19,6 +19,9 @@ import { StudioLighting } from './StudioLighting'
  * shadow camera and the shadow comes out empty.
  */
 const CONTACT_SHADOW_Y = -0.001
+
+/** Only with ?perf: frame timings and renderer figures for the performance suite. */
+const PerfProbe = PERF_PROBE ? lazy(() => import('./PerfProbe')) : null
 
 /** The plinth's top sits just under the contact shadow; see CONTACT_SHADOW_Y. */
 function Plinth() {
@@ -96,6 +99,11 @@ export default function FittingRoom({ onContextLost }: FittingRoomProps) {
         color="#3a2a1e"
       />
       <CameraRig />
+      {PerfProbe && (
+        <Suspense fallback={null}>
+          <PerfProbe />
+        </Suspense>
+      )}
     </Canvas>
   )
 }

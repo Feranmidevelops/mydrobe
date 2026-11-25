@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import type { GarmentRecord } from '../src/lib/db.ts'
-import { alertWith, currentOutfit, garmentCard, stageCanvas, storageReady } from './support/fitting-room.ts'
+import { alertWith, currentOutfit, garmentCard, seedGarments, stageCanvas, storageReady } from './support/fitting-room.ts'
 import { fitFailures, pageNow, waitForFitted } from './support/marks.ts'
 import { expect, test } from './support/test.ts'
 
@@ -12,39 +12,6 @@ async function saveAnOutfit(page: Page) {
   await outfit.getByRole('button', { name: 'Save outfit' }).click()
   await outfit.getByRole('button', { name: 'Save', exact: true }).click()
   return outfit
-}
-
-/**
- * Writes a garment and its photo straight into the saved wardrobe, as if it had
- * been added on an earlier visit. Call it once the saved wardrobe has loaded.
- */
-async function seedGarment(page: Page, record: GarmentRecord, photo: Buffer) {
-  await page.evaluate(
-    async ({ record, photo }) => {
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open('mydrobe')
-        request.onsuccess = () => resolve(request.result)
-        request.onerror = () => reject(request.error)
-      })
-      try {
-        // Dexie's version 1 is IndexedDB version 10. Anything else means the schema moved on.
-        if (db.version !== 10 || !db.objectStoreNames.contains('garments') || !db.objectStoreNames.contains('images')) {
-          throw new Error(`Unexpected saved wardrobe: version ${db.version}`)
-        }
-        const bytes = Uint8Array.from(atob(photo.base64), (c) => c.charCodeAt(0)).buffer
-        await new Promise<void>((resolve, reject) => {
-          const transaction = db.transaction(['garments', 'images'], 'readwrite')
-          transaction.objectStore('images').put({ id: record.imageKey, bytes, type: photo.type })
-          transaction.objectStore('garments').put(record)
-          transaction.oncomplete = () => resolve()
-          transaction.onerror = () => reject(transaction.error)
-        })
-      } finally {
-        db.close()
-      }
-    },
-    { record, photo: { base64: photo.toString('base64'), type: record.mimeType } },
-  )
 }
 
 test.describe("when the browser won't let Mydrobe save", () => {
@@ -112,7 +79,7 @@ test('a saved photo that no longer opens is shown in plain colour, with a note s
 
   await page.goto('/fitting-room')
   await expect(storageReady(page)).toBeVisible()
-  await seedGarment(page, broken, Buffer.from([0xde, 0xad, 0xbe, 0xef]))
+  await seedGarments(page, [{ record: broken, photo: Buffer.from([0xde, 0xad, 0xbe, 0xef]) }])
   await page.reload()
   await expect(storageReady(page)).toBeVisible()
   await expect(stageCanvas(page)).toBeVisible()
