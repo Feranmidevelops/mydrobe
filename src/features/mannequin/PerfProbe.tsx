@@ -14,6 +14,7 @@ import {
 } from 'three'
 import type { FrameSample, RendererSnapshot, TextureEstimate } from '../../lib/perf'
 import { useWardrobeStore } from '../../store/wardrobe.store'
+import { geometryBuilds } from './body-geometry'
 
 /** Well over a minute of frames at 60 FPS. */
 const MAX_FRAMES = 5000
@@ -117,6 +118,7 @@ export default function PerfProbe() {
       textures: () => textureEstimate(scene),
       geometryBytes: () => geometryBytes(scene),
       lastPresetChange: () => lastPresetChange,
+      geometryBuilds,
     }
     return () => {
       stopBefore()

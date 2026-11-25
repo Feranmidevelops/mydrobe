@@ -1,10 +1,11 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
+import { mannequinGeometryFor } from './body-geometry'
 import type { BodyShape } from './body-shape'
-import { buildMannequinGeometry } from './geometry/mannequin-geometry'
 import { MANNEQUIN_COLOR } from './light-rig'
 
 export function Mannequin({ shape }: { shape: BodyShape }) {
-  const geometry = useMemo(() => buildMannequinGeometry(shape), [shape])
+  const geometry = mannequinGeometryFor(shape)
+  // Frees its graphics buffers when the body changes; the geometry itself is kept (see body-geometry).
   useEffect(() => () => geometry.dispose(), [geometry])
 
   return (

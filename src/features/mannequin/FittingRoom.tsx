@@ -1,11 +1,12 @@
 import { ContactShadows } from '@react-three/drei'
 import { addAfterEffect, Canvas } from '@react-three/fiber'
-import { lazy, Suspense, useMemo } from 'react'
+import { lazy, Suspense } from 'react'
 import { useWardrobeGarments } from '../../hooks/useWardrobeGarments'
 import { mark, PERF_MARKS, PERF_PROBE } from '../../lib/perf'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import { resolveSelection } from '../outfits/outfit.selection'
-import { createBodyShape } from './body-shape'
+import { bodyShapeFor } from './body-geometry'
+import { BodySizePrefetch } from './BodySizePrefetch'
 import { CameraRig } from './CameraRig'
 import { CAMERA_FOV } from './camera-views'
 import { GarmentMesh } from './GarmentMesh'
@@ -43,7 +44,7 @@ export default function FittingRoom({ onContextLost }: FittingRoomProps) {
   const preset = useWardrobeStore((state) => state.bodyPreset)
   const selection = useWardrobeStore((state) => state.selection)
   const garments = useWardrobeGarments()
-  const shape = useMemo(() => createBodyShape(preset), [preset])
+  const shape = bodyShapeFor(preset)
   const worn = resolveSelection(selection, garments).flatMap(({ garment, renderability }) =>
     renderability.renderable ? [{ garment, templateId: renderability.template.id }] : [],
   )
@@ -103,6 +104,7 @@ export default function FittingRoom({ onContextLost }: FittingRoomProps) {
       />
       <CameraRig />
       <ShaderWarmup />
+      <BodySizePrefetch templateIds={worn.map(({ templateId }) => templateId)} />
       {PerfProbe && (
         <Suspense fallback={null}>
           <PerfProbe />

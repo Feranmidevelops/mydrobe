@@ -1,18 +1,10 @@
-import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useState } from 'react'
+import { useThree } from '@react-three/fiber'
+import { useEffect } from 'react'
 import { Group, Mesh, MeshStandardMaterial, PlaneGeometry, SRGBColorSpace, Texture } from 'three'
+import { whenIdle } from '../../lib/idle'
 import { mark, PERF_MARKS } from '../../lib/perf'
 import { GARMENT_MATERIAL } from './garment-material'
-
-/** Runs `task` once the page has nothing else to do, or shortly after where it can't say. Returns a cancel. */
-function whenIdle(task: () => void) {
-  if (typeof requestIdleCallback === 'function') {
-    const id = requestIdleCallback(task, { timeout: 2000 })
-    return () => cancelIdleCallback(id)
-  }
-  const id = setTimeout(task, 200)
-  return () => clearTimeout(id)
-}
+import { useFirstFrameDrawn } from './useFirstFrameDrawn'
 
 /**
  * Compiles the shaders garments are drawn with while the fitting room stands
@@ -28,10 +20,7 @@ export function ShaderWarmup() {
   const scene = useThree((state) => state.scene)
   const camera = useThree((state) => state.camera)
   // Only after the first frame, so this never holds it up.
-  const [drawn, setDrawn] = useState(false)
-  useFrame(() => {
-    if (!drawn) setDrawn(true)
-  })
+  const drawn = useFirstFrameDrawn()
 
   useEffect(() => {
     if (!drawn) return
