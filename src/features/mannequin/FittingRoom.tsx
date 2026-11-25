@@ -88,7 +88,9 @@ export default function FittingRoom({ onContextLost }: FittingRoomProps) {
       </group>
       <Plinth />
       <ContactShadows
-        key={[preset, ...worn.map(({ garment }) => garment.id)].join()}
+        // Drawn once, then again each time this re-renders, which every change of
+        // body size or outfit does. Never remount it to redraw it (with a key, say):
+        // drei doesn't free its render targets, so each remount kept nearly 4 MB of GPU memory.
         frames={1}
         position={[0, CONTACT_SHADOW_Y, 0]}
         scale={1.6}
