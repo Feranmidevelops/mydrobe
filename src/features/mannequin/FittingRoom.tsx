@@ -11,6 +11,7 @@ import { CAMERA_FOV } from './camera-views'
 import { GarmentMesh } from './GarmentMesh'
 import { PLINTH_COLOR } from './light-rig'
 import { Mannequin } from './Mannequin'
+import { ShaderWarmup } from './ShaderWarmup'
 import { StudioLighting } from './StudioLighting'
 
 /**
@@ -101,6 +102,7 @@ export default function FittingRoom({ onContextLost }: FittingRoomProps) {
         color="#3a2a1e"
       />
       <CameraRig />
+      <ShaderWarmup />
       {PerfProbe && (
         <Suspense fallback={null}>
           <PerfProbe />

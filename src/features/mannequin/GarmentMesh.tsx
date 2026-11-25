@@ -1,8 +1,8 @@
 import { useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
-import { DoubleSide } from 'three'
 import type { Garment, GarmentTemplateId } from '../garments/garment.types'
 import type { BodyShape } from './body-shape'
+import { GARMENT_MATERIAL } from './garment-material'
 import { buildGarmentGeometry } from './geometry/garment-geometry'
 import { placeholderColor } from './placeholder-color'
 import { useGarmentTextures } from './useGarmentTextures'
@@ -46,19 +46,17 @@ export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
       <mesh geometry={geometry.front}>
         <meshStandardMaterial
           key={materialKey}
+          {...GARMENT_MATERIAL}
           map={textures?.front ?? null}
           color={fallbackColor}
-          roughness={0.88}
-          side={DoubleSide}
         />
       </mesh>
       <mesh geometry={geometry.rest}>
         <meshStandardMaterial
           key={materialKey}
+          {...GARMENT_MATERIAL}
           map={textures?.swatch ?? null}
           color={fallbackColor}
-          roughness={0.88}
-          side={DoubleSide}
         />
       </mesh>
     </group>

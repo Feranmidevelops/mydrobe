@@ -11,6 +11,8 @@ export const PERF_MARKS = {
   canvasCreated: 'mydrobe:canvas-created',
   /** The 3D view has drawn its first frame. */
   firstFrame: 'mydrobe:first-frame',
+  /** The shaders garments are drawn with have been compiled, ahead of the first piece worn. */
+  shadersReady: 'mydrobe:shaders-ready',
   /** A photo garment started being fitted onto the mannequin, and finished or failed. */
   fitStart: 'mydrobe:fit-start',
   garmentFitted: 'mydrobe:garment-fitted',
