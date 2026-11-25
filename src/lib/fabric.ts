@@ -11,15 +11,30 @@ export function seededRandom(seed: number) {
   }
 }
 
+/**
+ * Flecks averaging less than this many pixels across can't be seen, yet each one is
+ * its own draw. A wardrobe card's swatch would have tens of thousands, and where
+ * Chrome draws 2D canvases on the GPU it replays every one, holding up the 3D view.
+ * The 3D garment textures draw them at 0.6 px or more, so they keep theirs.
+ */
+const MIN_FLECK_PX = 0.5
+
+/** Device pixels per unit of the canvas's current transform (one unit is a millimetre here). */
+function pixelsPerUnit(ctx: CanvasRenderingContext2D) {
+  const { a, b, c, d } = ctx.getTransform()
+  return Math.sqrt(Math.abs(a * d - b * c))
+}
+
 function speckle(
   ctx: CanvasRenderingContext2D,
   widthMm: number,
   heightMm: number,
   options: { mm2PerSpeck: number; size: [number, number]; alpha: number; streak?: number },
 ) {
+  const [minSize, maxSize] = options.size
+  if (((minSize + maxSize) / 2) * pixelsPerUnit(ctx) < MIN_FLECK_PX) return
   const random = seededRandom(Math.round(widthMm * 31 + heightMm * 17))
   const count = Math.round((widthMm * heightMm) / options.mm2PerSpeck)
-  const [minSize, maxSize] = options.size
   for (let i = 0; i < count; i++) {
     const light = random() > 0.5
     ctx.fillStyle = light ? `rgba(255,255,255,${options.alpha})` : `rgba(0,0,0,${options.alpha})`
