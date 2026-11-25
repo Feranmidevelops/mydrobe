@@ -60,7 +60,7 @@ Text contrast: `ink` on `canvas` is 11:1, `muted` on `canvas` 5.3:1 and on `mist
 |---|---|---|
 | Primary button | `rounded-full bg-ink text-cream font-semibold hover:bg-cocoa`, at md `px-5 py-2.5 text-sm`, sm `px-4 py-2 text-sm`, xs `px-3 py-1 text-xs` | Save, Add to wardrobe, Try again |
 | Quiet button | `rounded-full text-ink-soft hover:bg-sand hover:text-ink`, hovering to `canvas` inside floating tracks | Camera views, Reset camera, Take off, Remove, Close |
-| On-photo buttons | White fill with `text-espresso`, or a `white/80` outline | Landing hero only |
+| Outline button | `rounded-full border border-ink/25 font-semibold text-ink`, a darker border and `sand` on hover | The landing hero's second action |
 | Choice chip | `rounded-full bg-mist text-xs font-medium text-ink-soft`, checked `bg-ink text-cream` | Wardrobe filters, upload choices |
 | Floating track | The floating recipe above with `p-1`. It holds radio segments (the selected one dark) or quiet buttons | Body size, camera views |
 | Tabs | `rounded-full bg-mist p-1` track, selected tab `bg-surface shadow-sm` | Wardrobe / Outfits |
@@ -75,13 +75,13 @@ Text contrast: `ink` on `canvas` is 11:1, `muted` on `canvas` 5.3:1 and on `mist
 
 ## Drift to tidy
 
-1. **Palette names where a role exists:** `text-espresso` (18 uses, the same colour as `ink`), `text-taupe` (8, the same as `muted`), and `bg-espresso` on two buttons. These are mostly the landing and privacy pages. Retheming the roles would miss them.
-2. **Roles the code reaches around:** hover (`cocoa`), wells and chips (`mist`, `sand`), text on dark (`cream`) and a white field (`bg-white`, 4 uses). The toast's error icon uses a raw `#f4c9a8`.
+1. **Palette names where a role exists:** `text-espresso` (17 uses, the same colour as `ink`), `text-taupe` (8, the same as `muted`), and `bg-espresso` on two buttons. These are mostly the landing and privacy pages. Retheming the roles would miss them.
+2. **Roles the code reaches around:** hover (`cocoa`), wells and chips (`mist`, `sand`), text on dark (`cream`) and a white field (`bg-white`, 3 uses). The toast's error icon uses a raw `#f4c9a8`.
 3. **Off-scale values:**
    - 11 px is a real size (11 uses in 9 files) and 10 px appears once; they could be one `text-2xs` token.
    - The tracked uppercase labels use 0.18, 0.22 and 0.24em for one role.
    - Headings at one level mix bold and semibold: the landing's are bold, the privacy title semibold, and dialog titles bold where stage messages are semibold.
-4. **The primary button is written out 9 times**, with `ink` or `espresso`, `semibold` or `medium`, and `py-2` or `py-2.5`. That's well past three uses, so it's ready to be one `<Button size>` component.
+4. **The primary button is written out 10 times**, with `ink` or `espresso`, `semibold` or `medium`, and `py-2` or `py-2.5`. That's well past three uses, so it's ready to be one `<Button size>` component.
 5. **Colours outside the theme:** the stage gradient's hexes in `FittingRoomPage.tsx`, and `SeparationPreview.tsx`'s canvas colours, which repeat `tan` and `espresso`.
 6. **Contrast:**
    - `line` is 1.24:1 on `canvas`, too faint to outline the text field (WCAG asks 3:1 for a control's edge).

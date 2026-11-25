@@ -136,6 +136,40 @@ for (const viewport of [
   })
 }
 
+// The landing page's promise and its lineup of dressed figures each get their own
+// ground, so the words never sit on the clothes.
+for (const { name, use } of [
+  { name: 'a desktop window', use: { viewport: { width: 1280, height: 800 } } },
+  { name: 'a phone held upright', use: { viewport: { width: 390, height: 844 }, ...PHONE } },
+]) {
+  test.describe(`the landing hero on ${name}`, () => {
+    test.use(use)
+
+    test('keeps its words and buttons off the lineup of dressed figures', async ({ page }) => {
+      await page.goto('/')
+      const hero = page.getByRole('region', { name: 'See it on before you wear it' })
+      const lineup = hero.getByRole('img', { name: /^Four mannequins/ })
+      await expect(lineup).toBeVisible()
+      const picture = (await lineup.boundingBox())!
+      const words = [
+        hero.getByRole('heading', { level: 1 }),
+        hero.getByText(/^Put outfits together/),
+        hero.getByRole('link', { name: 'Enter the fitting room' }),
+        hero.getByRole('link', { name: 'Explore the wardrobe' }),
+      ]
+      for (const word of words) {
+        const box = (await word.boundingBox())!
+        const overlaps =
+          box.x < picture.x + picture.width &&
+          picture.x < box.x + box.width &&
+          box.y < picture.y + picture.height &&
+          picture.y < box.y + box.height
+        expect(overlaps, `"${await word.textContent()}" sits on the lineup`).toBe(false)
+      }
+    })
+  })
+}
+
 test.describe('turning a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, ...PHONE })
 
