@@ -1,9 +1,9 @@
 import { useThree } from '@react-three/fiber'
-import { useEffect, useMemo } from 'react'
-import { DoubleSide } from 'three'
+import { useEffect } from 'react'
 import type { Garment, GarmentTemplateId } from '../garments/garment.types'
+import { garmentGeometryFor } from './body-geometry'
 import type { BodyShape } from './body-shape'
-import { buildGarmentGeometry } from './geometry/garment-geometry'
+import { GARMENT_MATERIAL } from './garment-material'
 import { placeholderColor } from './placeholder-color'
 import { useGarmentTextures } from './useGarmentTextures'
 
@@ -15,7 +15,7 @@ interface GarmentMeshProps {
 
 /** A garment template fitted to the current body preset and dressed in the garment's fabric. */
 export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
-  const geometry = useMemo(() => buildGarmentGeometry(templateId, shape), [templateId, shape])
+  const geometry = garmentGeometryFor(templateId, shape)
   const textures = useGarmentTextures(garment, templateId, geometry.panel, shape)
   const invalidate = useThree((state) => state.invalidate)
 
@@ -46,19 +46,17 @@ export function GarmentMesh({ garment, templateId, shape }: GarmentMeshProps) {
       <mesh geometry={geometry.front}>
         <meshStandardMaterial
           key={materialKey}
+          {...GARMENT_MATERIAL}
           map={textures?.front ?? null}
           color={fallbackColor}
-          roughness={0.88}
-          side={DoubleSide}
         />
       </mesh>
       <mesh geometry={geometry.rest}>
         <meshStandardMaterial
           key={materialKey}
+          {...GARMENT_MATERIAL}
           map={textures?.swatch ?? null}
           color={fallbackColor}
-          roughness={0.88}
-          side={DoubleSide}
         />
       </mesh>
     </group>

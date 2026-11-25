@@ -170,24 +170,52 @@ function drawTrousersFront(
   })
 }
 
+/** Fabric repeats already drawn, by scale and fabric, newest last. */
+const repeats = new Map<string, HTMLCanvasElement>()
+const MAX_REPEATS = 16
+
 /**
- * Draws a demo garment's fabric and construction details at true scale for
- * the given body, so stripes stay the same width on every preset. Returns
- * null when the browser offers no 2D canvas.
+ * One seamless repeat of the fabric, `tileMm` across, drawn `tilePx` pixels
+ * square and kept for next time: drawing its flecks is the slow part.
  */
-export function createDemoGarmentTextures(
+function fabricRepeat(fabric: FabricPattern, tileMm: number, tilePx: number) {
+  const key = `${tilePx}|${JSON.stringify(fabric)}`
+  const kept = repeats.get(key)
+  if (kept) return kept
+  const tile = context2d(tilePx, tilePx)
+  if (!tile) return null
+  tile.ctx.scale(tilePx / tileMm, tilePx / tileMm)
+  drawFabric(tile.ctx, fabric, tileMm, tileMm)
+  repeats.set(key, tile.canvas)
+  if (repeats.size > MAX_REPEATS) repeats.delete(repeats.keys().next().value!)
+  return tile.canvas
+}
+
+/**
+ * The front of a demo garment for the given body: its fabric at true scale, so
+ * stripes stay the same width on every preset, with the seams, buttons and
+ * pockets drawn over it. The fabric is one repeat filled across as a pattern,
+ * which the graphics card tiles in a single draw, instead of every fleck drawn
+ * again over the whole front for each body size. Returns null when the browser
+ * offers no 2D canvas.
+ */
+export function createDemoFrontTexture(
   fabric: FabricPattern,
   templateId: GarmentTemplateId,
   panel: FrontPanel,
   shape: BodyShape,
-): GarmentTextures | null {
+): Texture | null {
   const widthMm = (panel.maxX - panel.minX) * 1000
   const heightMm = (panel.maxY - panel.minY) * 1000
-  const pxPerMm = Math.min(FRONT_PX_PER_MM, MAX_TEXTURE_PX / widthMm, MAX_TEXTURE_PX / heightMm)
+  const tileMm = fabricTileMm(fabric)
+  // A whole number of pixels per repeat, so the pattern tiles without resampling.
+  const tilePx = Math.max(1, Math.floor(tileMm * Math.min(FRONT_PX_PER_MM, MAX_TEXTURE_PX / widthMm, MAX_TEXTURE_PX / heightMm)))
+  const pxPerMm = tilePx / tileMm
 
   const front = context2d(Math.round(widthMm * pxPerMm), Math.round(heightMm * pxPerMm))
-  const swatch = context2d(SWATCH_PX, SWATCH_PX)
-  if (!front || !swatch) return null
+  const repeat = fabricRepeat(fabric, tileMm, tilePx)
+  const pattern = repeat && front?.ctx.createPattern(repeat, 'repeat')
+  if (!front || !pattern) return null
 
   const map: PanelMap = {
     x: (metres) => (metres - panel.minX) * 1000,
@@ -195,8 +223,9 @@ export function createDemoGarmentTextures(
     widthMm,
     heightMm,
   }
+  front.ctx.fillStyle = pattern
+  front.ctx.fillRect(0, 0, front.canvas.width, front.canvas.height)
   front.ctx.scale(pxPerMm, pxPerMm)
-  drawFabric(front.ctx, fabric, widthMm, heightMm)
   switch (templateId) {
     case 'shirt-long-sleeve':
       drawShirtFront(front.ctx, map, fabric)
@@ -209,20 +238,29 @@ export function createDemoGarmentTextures(
       break
   }
 
+  const texture = new CanvasTexture(front.canvas)
+  texture.colorSpace = SRGBColorSpace
+  texture.anisotropy = 8
+  return texture
+}
+
+/**
+ * The demo fabric for the back, sleeves and collar: a seamless repeat that the
+ * texture tiles, so it's the same on every body size. Returns null when the
+ * browser offers no 2D canvas.
+ */
+export function createDemoSwatchTexture(fabric: FabricPattern): Texture | null {
   const tileMm = fabricTileMm(fabric)
+  const swatch = context2d(SWATCH_PX, SWATCH_PX)
+  if (!swatch) return null
   swatch.ctx.scale(SWATCH_PX / tileMm, SWATCH_PX / tileMm)
   drawFabric(swatch.ctx, fabric, tileMm, tileMm)
 
-  const frontTexture = new CanvasTexture(front.canvas)
-  frontTexture.colorSpace = SRGBColorSpace
-  frontTexture.anisotropy = 8
-
-  const swatchTexture = new CanvasTexture(swatch.canvas)
-  swatchTexture.colorSpace = SRGBColorSpace
-  swatchTexture.anisotropy = 8
-  swatchTexture.wrapS = RepeatWrapping
-  swatchTexture.wrapT = RepeatWrapping
-  swatchTexture.repeat.set(1000 / tileMm, 1000 / tileMm)
-
-  return { front: frontTexture, swatch: swatchTexture }
+  const texture = new CanvasTexture(swatch.canvas)
+  texture.colorSpace = SRGBColorSpace
+  texture.anisotropy = 8
+  texture.wrapS = RepeatWrapping
+  texture.wrapT = RepeatWrapping
+  texture.repeat.set(1000 / tileMm, 1000 / tileMm)
+  return texture
 }

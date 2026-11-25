@@ -11,6 +11,10 @@ export const PERF_MARKS = {
   canvasCreated: 'mydrobe:canvas-created',
   /** The 3D view has drawn its first frame. */
   firstFrame: 'mydrobe:first-frame',
+  /** The shaders garments are drawn with have been compiled, ahead of the first piece worn. */
+  shadersReady: 'mydrobe:shaders-ready',
+  /** Every body size of the mannequin and of the pieces worn is built; detail.templates says which pieces. */
+  bodySizesReady: 'mydrobe:body-sizes-ready',
   /** A photo garment started being fitted onto the mannequin, and finished or failed. */
   fitStart: 'mydrobe:fit-start',
   garmentFitted: 'mydrobe:garment-fitted',
@@ -62,6 +66,8 @@ export interface MydrobePerfProbe {
   geometryBytes(): number
   /** When the body preset last changed, as a performance.now() reading. */
   lastPresetChange(): number | null
+  /** How many mannequin and garment geometries have been built since the page loaded. */
+  geometryBuilds(): number
 }
 
 declare global {
