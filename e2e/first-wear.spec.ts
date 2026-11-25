@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 import type { MydrobePerfProbe } from '../src/lib/perf.ts'
 import { PHOTOS } from './fixtures/photos.ts'
 import { garmentCard, openFittingRoom, photoGarment, seedGarments, storageReady } from './support/fitting-room.ts'
-import { pageNow, waitForFitted } from './support/marks.ts'
+import { nextFrames, pageNow } from './support/marks.ts'
 import { expect, test } from './support/test.ts'
 
 /*
@@ -25,10 +25,14 @@ test('putting on the first pieces never waits for a shader to compile', async ({
   await expect.poll(() => page.evaluate(() => performance.getEntriesByName('mydrobe:shaders-ready').length)).toBe(1)
   const ready = await programs(page)
 
-  // A demo piece is drawn in its fabric at once; a photo piece shows in plain colour until it's fitted.
+  // A demo piece is drawn in its fabric at once. A photo piece shows in plain colour while
+  // its photo is fitted, then in the fabric's shader too, so it needn't be waited for.
   await garmentCard(page, 'Indigo denim').click()
   const since = await pageNow(page)
   await garmentCard(page, 'Saved red shirt').click()
-  await waitForFitted(page, since)
+  await expect
+    .poll(() => page.evaluate((since) => performance.getEntriesByName('mydrobe:fit-start').some((entry) => entry.startTime >= since), since))
+    .toBe(true)
+  await nextFrames(page)
   expect(await programs(page), 'shaders compiled on the spot').toBe(ready)
 })
