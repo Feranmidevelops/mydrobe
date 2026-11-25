@@ -3,7 +3,7 @@ import { mark, PERF_MARKS } from '../../lib/perf'
 import { useWardrobeStore } from '../../store/wardrobe.store'
 import type { Garment, GarmentTemplateId } from '../garments/garment.types'
 import type { BodyShape } from './body-shape'
-import { createDemoGarmentTextures, type GarmentTextures } from './garment-textures'
+import { createDemoFrontTexture, createDemoSwatchTexture, type GarmentTextures } from './garment-textures'
 import type { FrontPanel } from './geometry/garment-geometry'
 import { createPhotoGarmentTextures } from './photo-textures'
 
@@ -26,16 +26,18 @@ export function useGarmentTextures(
 ): GarmentTextures | null {
   const { source } = garment
 
-  const demo = useMemo(
-    () =>
-      source.kind === 'demo' ? createDemoGarmentTextures(source.fabric, templateId, panel, shape) : null,
-    [source, templateId, panel, shape],
+  const fabric = source.kind === 'demo' ? source.fabric : null
+  // The back, sleeves and collar don't change with the body, so a new size keeps their fabric.
+  const demoSwatch = useMemo(() => (fabric ? createDemoSwatchTexture(fabric) : null), [fabric])
+  const demoFront = useMemo(
+    () => (fabric ? createDemoFrontTexture(fabric, templateId, panel, shape) : null),
+    [fabric, templateId, panel, shape],
   )
-  useEffect(
-    () => () => {
-      if (demo) disposeTextures(demo)
-    },
-    [demo],
+  useEffect(() => () => demoSwatch?.dispose(), [demoSwatch])
+  useEffect(() => () => demoFront?.dispose(), [demoFront])
+  const demo = useMemo(
+    () => (demoFront && demoSwatch ? { front: demoFront, swatch: demoSwatch } : null),
+    [demoFront, demoSwatch],
   )
 
   const request = useMemo(
